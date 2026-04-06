@@ -1,510 +1,426 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Controle de Remédios das Crianças 💊</title>
-
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
 <style>
 :root {
-  --arthur: #3B82F6;
-  --arthur-light: #DBEAFE;
-  --arthur-mid: #93C5FD;
-  --alice: #EC4899;
-  --alice-light: #FCE7F3;
-  --alice-mid: #F9A8D4;
-  --bg: #F0F4FF;
-  --card: #FFFFFF;
-  --text: #1E1B4B;
-  --text-muted: #6B7280;
-  --border: #E5E7EB;
-  --green: #10B981;
-  --green-light: #D1FAE5;
-  --red: #EF4444;
-  --red-light: #FEE2E2;
-  --yellow: #F59E0B;
-  --shadow: 0 4px 20px rgba(59,82,246,0.08);
-  --shadow-hover: 0 8px 32px rgba(59,82,246,0.15);
-  --radius: 18px;
+  --arthur:#3B82F6; --arthur-l:#DBEAFE; --arthur-m:#93C5FD;
+  --alice:#EC4899;  --alice-l:#FCE7F3;  --alice-m:#F9A8D4;
+  --bg:#F0F4FF; --card:#FFFFFF; --text:#1E1B4B; --muted:#6B7280;
+  --border:#E5E7EB;
+  --green:#10B981; --green-l:#D1FAE5;
+  --red:#EF4444;   --red-l:#FEE2E2;
+  --indigo:#6366F1; --indigo-l:#EEF2FF;
+  --shadow:0 4px 20px rgba(59,82,246,.08);
+  --shadow-h:0 8px 32px rgba(59,82,246,.15);
+  --r:18px;
+  --morning:#FFFBEB; --morning-b:#FCD34D;
+  --night:#EDE9FE;   --night-b:#8B5CF6;
 }
-
-* { box-sizing: border-box; margin: 0; padding: 0; }
-
-body {
-  font-family: 'DM Sans', sans-serif;
-  background: var(--bg);
-  min-height: 100vh;
-  padding: 24px 16px 48px;
-  color: var(--text);
+[data-theme="dark"]{
+  --bg:#0F172A; --card:#1E293B; --text:#F1F5F9; --muted:#94A3B8;
+  --border:#334155;
+  --arthur-l:#1E3A5F; --arthur-m:#1D4ED8;
+  --alice-l:#4A1232;  --alice-m:#BE185D;
+  --green-l:#064E3B; --red-l:#450A0A; --indigo-l:#1E1B4B;
+  --shadow:0 4px 20px rgba(0,0,0,.3); --shadow-h:0 8px 32px rgba(0,0,0,.4);
+  --morning:#2D2410; --morning-b:#92400E;
+  --night:#1E1B4B;   --night-b:#4C1D95;
 }
-
-body::before {
-  content: '';
-  position: fixed;
-  top: -200px; right: -200px;
-  width: 600px; height: 600px;
-  background: radial-gradient(circle, rgba(59,130,246,0.08), transparent 70%);
-  pointer-events: none;
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'DM Sans',sans-serif;
+  background:var(--bg);min-height:100vh;
+  padding:24px 16px 60px;color:var(--text);
+  transition:background .3s,color .3s;
 }
-
-.container { max-width: 860px; margin: 0 auto; }
+body::before{
+  content:'';position:fixed;top:-200px;right:-200px;
+  width:600px;height:600px;pointer-events:none;
+  background:radial-gradient(circle,rgba(59,130,246,.07),transparent 70%);
+}
+.container{max-width:900px;margin:0 auto}
 
 /* HEADER */
-.header {
-  text-align: center;
-  margin-bottom: 32px;
-  animation: fadeDown 0.5s ease both;
+.header{
+  display:flex;align-items:flex-start;justify-content:space-between;
+  margin-bottom:28px;animation:fadeDown .5s ease both;flex-wrap:wrap;gap:12px;
 }
-
-.header h1 {
-  font-family: 'Nunito', sans-serif;
-  font-size: 2rem;
-  font-weight: 900;
-  background: linear-gradient(135deg, var(--arthur) 30%, var(--alice));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  letter-spacing: -0.5px;
+.header h1{
+  font-family:'Nunito',sans-serif;font-size:1.6rem;font-weight:900;
+  background:linear-gradient(135deg,var(--arthur) 30%,var(--alice));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;letter-spacing:-.5px;
 }
-
-.header p {
-  color: var(--text-muted);
-  font-size: 0.9rem;
-  margin-top: 4px;
+.header p{color:var(--muted);font-size:.83rem;margin-top:3px}
+.header-actions{display:flex;gap:8px}
+.icon-btn{
+  width:40px;height:40px;border-radius:12px;border:1.5px solid var(--border);
+  background:var(--card);cursor:pointer;display:flex;align-items:center;
+  justify-content:center;font-size:1.1rem;transition:all .2s;color:var(--text);
 }
+.icon-btn:hover{background:var(--indigo-l);border-color:var(--indigo)}
 
 /* ALERTA */
-#alerta {
-  margin-bottom: 20px;
-  padding: 14px 18px;
-  border-radius: 14px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  line-height: 1.6;
-  animation: fadeDown 0.5s 0.1s ease both;
+#alerta{
+  margin-bottom:20px;padding:13px 18px;border-radius:14px;
+  font-size:.875rem;font-weight:600;line-height:1.6;
+  animation:fadeDown .5s .1s ease both;
 }
-.alerta-ok { background: var(--green-light); color: #065F46; border: 1.5px solid #6EE7B7; }
-.alerta-warn { background: var(--red-light); color: #991B1B; border: 1.5px solid #FCA5A5; }
+.alerta-ok  {background:var(--green-l);color:#065F46;border:1.5px solid #6EE7B7}
+.alerta-warn{background:var(--red-l);  color:#991B1B;border:1.5px solid #FCA5A5}
 
-/* CARDS CRIANÇAS */
-.criancas-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  margin-bottom: 20px;
-  animation: fadeUp 0.5s 0.15s ease both;
+/* STATS */
+.stats-row{
+  display:grid;grid-template-columns:1fr 1fr;gap:16px;
+  margin-bottom:20px;animation:fadeUp .5s .1s ease both;
 }
-
-@media(max-width:600px){ .criancas-grid { grid-template-columns: 1fr; } }
-
-.crianca-card {
-  background: var(--card);
-  border-radius: var(--radius);
-  padding: 22px;
-  box-shadow: var(--shadow);
-  border: 2px solid transparent;
-  transition: box-shadow 0.2s, border-color 0.2s;
+@media(max-width:500px){.stats-row{grid-template-columns:1fr}}
+.stat-card{
+  background:var(--card);border-radius:var(--r);padding:18px 20px;
+  box-shadow:var(--shadow);display:flex;align-items:center;gap:14px;
 }
+.stat-icon{font-size:2rem;line-height:1}
+.stat-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+.stat-value{font-family:'Nunito',sans-serif;font-size:1.6rem;font-weight:900;color:var(--text);line-height:1.1;margin-top:2px}
+.stat-sub{font-size:.73rem;color:var(--muted);margin-top:2px}
 
-.crianca-card:hover { box-shadow: var(--shadow-hover); }
-.crianca-card.arthur { border-color: var(--arthur-mid); }
-.crianca-card.alice  { border-color: var(--alice-mid); }
-
-.crianca-nome {
-  font-family: 'Nunito', sans-serif;
-  font-size: 1.25rem;
-  font-weight: 900;
-  margin-bottom: 16px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+/* CARDS */
+.criancas-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:20px;
+  margin-bottom:20px;animation:fadeUp .5s .15s ease both;
 }
-
-.crianca-card.arthur .crianca-nome { color: var(--arthur); }
-.crianca-card.alice  .crianca-nome { color: var(--alice); }
-
-.avatar {
-  width: 36px; height: 36px;
-  border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1.1rem;
-  font-weight: 900;
-  color: white;
+@media(max-width:640px){.criancas-grid{grid-template-columns:1fr}}
+.crianca-card{
+  background:var(--card);border-radius:var(--r);padding:20px;
+  box-shadow:var(--shadow);border:2px solid transparent;transition:box-shadow .2s;
 }
-
-.crianca-card.arthur .avatar { background: var(--arthur); }
-.crianca-card.alice  .avatar { background: var(--alice); }
-
-.meds-list { display: flex; flex-direction: column; gap: 8px; }
-
-.med-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: var(--bg);
-  border: 1.5px solid var(--border);
-  transition: all 0.2s;
+.crianca-card:hover{box-shadow:var(--shadow-h)}
+.crianca-card.arthur{border-color:var(--arthur-m)}
+.crianca-card.alice {border-color:var(--alice-m)}
+.crianca-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px}
+.crianca-nome{
+  font-family:'Nunito',sans-serif;font-size:1.15rem;font-weight:900;
+  display:flex;align-items:center;gap:10px;
 }
-
-.med-item.done-arthur {
-  background: var(--arthur-light);
-  border-color: var(--arthur-mid);
+.crianca-card.arthur .crianca-nome{color:var(--arthur)}
+.crianca-card.alice  .crianca-nome{color:var(--alice)}
+.avatar{
+  width:42px;height:42px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;overflow:hidden;transition:transform .2s;position:relative;flex-shrink:0;
 }
-.med-item.done-alice {
-  background: var(--alice-light);
-  border-color: var(--alice-mid);
+.avatar:hover{transform:scale(1.08)}
+.avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.av-placeholder{
+  width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+  font-family:'Nunito',sans-serif;font-size:1.1rem;font-weight:900;color:white;border-radius:50%;
 }
-
-.med-nome {
-  font-size: 0.9rem;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--text);
+.crianca-card.arthur .av-placeholder{background:var(--arthur)}
+.crianca-card.alice  .av-placeholder{background:var(--alice)}
+.av-hover{
+  position:absolute;inset:0;background:rgba(0,0,0,.4);border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.65rem;color:white;opacity:0;transition:opacity .2s;
 }
+.avatar:hover .av-hover{opacity:1}
 
-.med-icon { font-size: 1rem; }
-
-.med-btn {
-  width: 36px; height: 36px;
-  border-radius: 50%;
-  border: 2px solid var(--border);
-  background: white;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1rem;
-  transition: all 0.2s;
-  flex-shrink: 0;
+/* PERIODO TABS */
+.periodo-tabs{display:flex;gap:5px}
+.ptab{
+  padding:4px 11px;border-radius:99px;font-size:.72rem;font-weight:700;
+  border:1.5px solid transparent;cursor:pointer;transition:all .2s;
+  background:var(--bg);color:var(--muted);
 }
+.ptab.manha.ativo{background:var(--morning);border-color:var(--morning-b);color:#92400E}
+.ptab.noite.ativo{background:var(--night);  border-color:var(--night-b); color:#4C1D95}
+[data-theme="dark"] .ptab.manha.ativo{color:#FCD34D}
+[data-theme="dark"] .ptab.noite.ativo{color:#C4B5FD}
 
-.med-btn:hover { transform: scale(1.1); }
-
-.med-btn.done-arthur {
-  background: var(--arthur);
-  border-color: var(--arthur);
-  color: white;
+/* MEDS */
+.meds-list{display:flex;flex-direction:column;gap:7px}
+.med-item{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:9px 12px;border-radius:11px;
+  background:var(--bg);border:1.5px solid var(--border);transition:all .2s;
 }
-.med-btn.done-alice {
-  background: var(--alice);
-  border-color: var(--alice);
-  color: white;
+.med-item.done-arthur{background:var(--arthur-l);border-color:var(--arthur-m)}
+.med-item.done-alice {background:var(--alice-l); border-color:var(--alice-m)}
+.med-left{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+.med-icon{font-size:.9rem;flex-shrink:0}
+.med-nome-txt{font-size:.85rem;font-weight:600;color:var(--text)}
+.med-meta{font-size:.68rem;color:var(--muted);margin-top:1px}
+.pbadge{
+  display:inline-block;font-size:.58rem;padding:1px 6px;border-radius:99px;
+  font-weight:700;color:white;margin-left:4px;vertical-align:middle;
 }
-
-.med-hora {
-  font-size: 0.72rem;
-  font-weight: 500;
-  color: var(--text-muted);
-  margin-left: 6px;
-  white-space: nowrap;
+.pbadge.arthur{background:var(--arthur)}
+.pbadge.alice {background:var(--alice)}
+.med-btn{
+  width:33px;height:33px;border-radius:50%;
+  border:2px solid var(--border);background:var(--card);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  font-size:.85rem;transition:all .2s;flex-shrink:0;color:var(--muted);
 }
+.med-btn:hover{transform:scale(1.12)}
+.med-btn.done-arthur{background:var(--arthur);border-color:var(--arthur);color:white}
+.med-btn.done-alice {background:var(--alice); border-color:var(--alice); color:white}
 
-/* PROGRESS */
-.progresso-wrap {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
-}
-
-.prog-label {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  margin-bottom: 6px;
-}
-
-.prog-bar-bg {
-  height: 8px;
-  border-radius: 99px;
-  background: var(--border);
-  overflow: hidden;
-}
-
-.prog-bar-fill {
-  height: 100%;
-  border-radius: 99px;
-  transition: width 0.4s ease;
-}
-
-.crianca-card.arthur .prog-bar-fill { background: var(--arthur); }
-.crianca-card.alice  .prog-bar-fill { background: var(--alice); }
+/* PROGRESSO */
+.progresso-wrap{margin-top:13px;padding-top:13px;border-top:1px solid var(--border)}
+.prog-top{display:flex;justify-content:space-between;margin-bottom:5px}
+.prog-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+.prog-pct{font-size:.75rem;font-weight:700;color:var(--muted)}
+.prog-bar-bg{height:7px;border-radius:99px;background:var(--border);overflow:hidden}
+.prog-bar-fill{height:100%;border-radius:99px;transition:width .4s ease}
+.crianca-card.arthur .prog-bar-fill{background:var(--arthur)}
+.crianca-card.alice  .prog-bar-fill{background:var(--alice)}
 
 /* SECTION */
-.section {
-  background: var(--card);
-  border-radius: var(--radius);
-  padding: 24px;
-  margin-bottom: 20px;
-  box-shadow: var(--shadow);
-  animation: fadeUp 0.5s 0.2s ease both;
+.section{
+  background:var(--card);border-radius:var(--r);padding:22px;
+  margin-bottom:20px;box-shadow:var(--shadow);animation:fadeUp .5s .2s ease both;
 }
+.sec-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.sec-title{font-family:'Nunito',sans-serif;font-size:1rem;font-weight:800;display:flex;align-items:center;gap:7px;color:var(--text)}
 
-.section-title {
-  font-family: 'Nunito', sans-serif;
-  font-size: 1.1rem;
-  font-weight: 800;
-  margin-bottom: 18px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text);
-}
+/* ADESÃO */
+.adesao-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:500px){.adesao-grid{grid-template-columns:1fr}}
+.adesao-item{border-radius:14px;padding:15px;border:1.5px solid var(--border)}
+.adesao-nome{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:6px}
+.adesao-pct{font-family:'Nunito',sans-serif;font-size:2rem;font-weight:900;line-height:1}
+.adesao-item.arthur .adesao-pct{color:var(--arthur)}
+.adesao-item.alice  .adesao-pct{color:var(--alice)}
+.adesao-sub{font-size:.72rem;color:var(--muted);margin-top:3px}
+.adesao-bar-bg{height:5px;border-radius:99px;background:var(--border);overflow:hidden;margin-top:9px}
+.adesao-bar-fill{height:100%;border-radius:99px;transition:width .6s ease}
+.adesao-item.arthur .adesao-bar-fill{background:var(--arthur)}
+.adesao-item.alice  .adesao-bar-fill{background:var(--alice)}
 
 /* CALENDÁRIO */
-.cal-header {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
-  margin-bottom: 6px;
+.cal-nav-btn{
+  width:30px;height:30px;border-radius:8px;border:1.5px solid var(--border);
+  background:var(--card);cursor:pointer;display:flex;align-items:center;justify-content:center;
+  font-size:.85rem;color:var(--text);transition:all .2s;
 }
-
-.cal-dow {
-  text-align: center;
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-  padding: 4px 0;
+.cal-nav-btn:hover{background:var(--indigo-l);border-color:var(--indigo)}
+.cal-nav-label{font-family:'Nunito',sans-serif;font-weight:800;font-size:.9rem;color:var(--text)}
+.cal-dows,.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.cal-dows{margin-bottom:5px}
+.cal-dow{text-align:center;font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:3px 0}
+.cal-day{
+  aspect-ratio:1;border-radius:9px;cursor:pointer;position:relative;overflow:hidden;
+  border:1.5px solid var(--border);background:var(--card);
+  transition:transform .15s,box-shadow .15s;
+  display:flex;align-items:center;justify-content:center;min-height:36px;
 }
-
-.cal-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
-}
-
-.cal-day {
-  aspect-ratio: 1;
-  border-radius: 12px;
-  cursor: pointer;
-  position: relative;
-  overflow: hidden;
-  border: 2px solid var(--border);
-  background: white;
-  transition: transform 0.15s, box-shadow 0.15s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  min-height: 46px;
-}
-
-.cal-day:hover { transform: scale(1.05); box-shadow: var(--shadow); }
-
-.cal-day.hoje {
-  border-color: #818CF8;
-  box-shadow: 0 0 0 3px rgba(129,140,248,0.2);
-}
-
-.cal-day .num {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--text);
-  z-index: 2;
-  line-height: 1;
-}
-
-/* STATUS SPLIT */
-.cal-day .split-bg {
-  position: absolute; inset: 0;
-  display: flex;
-}
-.cal-day .split-bg .lado { flex: 1; opacity: 0.7; }
-.cal-day .split-bg .azul { background: var(--arthur); }
-.cal-day .split-bg .rosa { background: var(--alice); }
-.cal-day .full-bg {
-  position: absolute; inset: 0;
-  opacity: 0.65;
-}
-.cal-day.full-arthur .full-bg { background: var(--arthur); }
-.cal-day.full-alice  .full-bg { background: var(--alice); }
-
-.cal-day .obs-dot {
-  position: absolute;
-  bottom: 3px; right: 4px;
-  font-size: 9px;
-  z-index: 3;
-}
-
-/* LEGENDA */
-.legenda {
-  display: flex;
-  gap: 16px;
-  margin-top: 14px;
-  flex-wrap: wrap;
-}
-.leg-item {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 0.78rem; color: var(--text-muted);
-}
-.leg-cor {
-  width: 14px; height: 14px; border-radius: 4px;
-}
+.cal-day:hover{transform:scale(1.06);box-shadow:var(--shadow)}
+.cal-day.hoje{border-color:#818CF8;box-shadow:0 0 0 3px rgba(129,140,248,.2)}
+.cal-day .num{font-size:.72rem;font-weight:700;color:var(--text);z-index:2}
+.cal-day .split-bg{position:absolute;inset:0;display:flex}
+.cal-day .split-bg .lado{flex:1;opacity:.55}
+.cal-day .split-bg .azul{background:var(--arthur)}
+.cal-day .split-bg .rosa{background:var(--alice)}
+.cal-day .full-bg{position:absolute;inset:0;opacity:.5}
+.cal-day.fa .full-bg{background:var(--arthur)}
+.cal-day.fl .full-bg{background:var(--alice)}
+.cal-day .obs-dot{position:absolute;bottom:2px;right:3px;font-size:7px;z-index:3}
+.legenda{display:flex;gap:14px;margin-top:11px;flex-wrap:wrap}
+.leg-item{display:flex;align-items:center;gap:5px;font-size:.7rem;color:var(--muted)}
+.leg-cor{width:11px;height:11px;border-radius:3px}
 
 /* HISTÓRICO */
-.hist-dia {
-  margin-bottom: 14px;
+.hist-controls{display:flex;gap:7px;margin-bottom:14px;flex-wrap:wrap}
+.btn-sm{
+  padding:7px 13px;border-radius:10px;border:1.5px solid var(--border);
+  background:var(--card);color:var(--muted);font-size:.76rem;font-weight:600;
+  cursor:pointer;transition:all .2s;white-space:nowrap;
 }
-.hist-data {
-  font-size: 0.8rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-  margin-bottom: 6px;
-}
-.hist-items {
-  display: flex; flex-wrap: wrap; gap: 6px;
-}
-.hist-pill {
-  padding: 5px 12px;
-  border-radius: 99px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  display: flex; align-items: center; gap: 5px;
-}
-.hist-pill.arthur { background: var(--arthur-light); color: var(--arthur); }
-.hist-pill.alice  { background: var(--alice-light);  color: var(--alice); }
+.btn-sm:hover{background:var(--indigo-l);color:var(--indigo);border-color:var(--indigo)}
+.btn-sm.danger:hover{background:var(--red-l);color:var(--red);border-color:#FCA5A5}
+.hist-dia{margin-bottom:11px}
+.hist-data{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:5px}
+.hist-items{display:flex;flex-wrap:wrap;gap:5px}
+.hist-pill{padding:4px 10px;border-radius:99px;font-size:.73rem;font-weight:600;display:flex;align-items:center;gap:4px}
+.hist-pill.arthur{background:var(--arthur-l);color:var(--arthur)}
+.hist-pill.alice {background:var(--alice-l); color:var(--alice)}
 
-.btn-limpar {
-  padding: 8px 16px;
-  border-radius: 10px;
-  border: 1.5px solid var(--border);
-  background: white;
-  color: var(--text-muted);
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  margin-bottom: 16px;
-}
-.btn-limpar:hover { background: var(--red-light); color: var(--red); border-color: #FCA5A5; }
+/* GRÁFICO */
+.grafico-wrap{position:relative;height:185px}
 
-/* GRAFICO */
-.grafico-wrap { position: relative; height: 180px; }
+/* MODAL */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(15,23,42,.4);
+  backdrop-filter:blur(5px);display:none;align-items:center;
+  justify-content:center;z-index:100;padding:16px;
+}
+.modal-overlay.open{display:flex;animation:fadeIn .2s ease}
+.modal-box{
+  background:var(--card);border-radius:22px;padding:24px;
+  width:100%;max-width:360px;box-shadow:0 20px 60px rgba(0,0,0,.2);
+  animation:scaleIn .2s ease;
+}
+.modal-title{font-family:'Nunito',sans-serif;font-weight:800;font-size:.98rem;margin-bottom:13px;color:var(--text)}
+.modal-box textarea{
+  width:100%;border:1.5px solid var(--border);border-radius:11px;
+  padding:10px;font-family:'DM Sans',sans-serif;font-size:.85rem;
+  resize:vertical;min-height:80px;outline:none;color:var(--text);background:var(--bg);
+}
+.modal-box textarea:focus{border-color:#818CF8}
+.modal-btns{display:flex;gap:8px;margin-top:13px;justify-content:flex-end}
+.modal-btn{padding:8px 16px;border-radius:10px;border:none;cursor:pointer;font-weight:700;font-size:.8rem;transition:all .15s}
+.modal-btn.cancel{background:var(--bg);color:var(--muted)}
+.modal-btn.save{background:#818CF8;color:white}
+.modal-btn.save:hover{background:#6366F1}
+.modal-btn.del{background:var(--red-l);color:var(--red)}
 
-/* MODAL OBS */
-.modal-overlay {
-  position: fixed; inset: 0;
-  background: rgba(30,27,75,0.35);
-  backdrop-filter: blur(4px);
-  display: none; align-items: center; justify-content: center;
-  z-index: 100;
-  animation: fadeIn 0.2s ease;
+/* AVATAR MODAL */
+.av-upload{
+  border:2px dashed var(--border);border-radius:13px;padding:18px;
+  text-align:center;cursor:pointer;transition:border-color .2s;margin-bottom:11px;
 }
-.modal-overlay.open { display: flex; }
-.modal-box {
-  background: white;
-  border-radius: 20px;
-  padding: 28px;
-  width: 340px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
-  animation: scaleIn 0.2s ease;
+.av-upload:hover{border-color:var(--indigo)}
+.av-preview{
+  width:64px;height:64px;border-radius:50%;margin:0 auto 8px;
+  overflow:hidden;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:1.8rem;
 }
-.modal-title {
-  font-family: 'Nunito', sans-serif;
-  font-weight: 800; font-size: 1.05rem;
-  margin-bottom: 14px;
-}
-.modal-box textarea {
-  width: 100%;
-  border: 1.5px solid var(--border);
-  border-radius: 12px;
-  padding: 12px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 0.88rem;
-  resize: vertical;
-  min-height: 90px;
-  outline: none;
-  color: var(--text);
-}
-.modal-box textarea:focus { border-color: #818CF8; }
-.modal-btns {
-  display: flex; gap: 10px; margin-top: 14px; justify-content: flex-end;
-}
-.modal-btn {
-  padding: 9px 20px;
-  border-radius: 10px;
-  border: none; cursor: pointer;
-  font-weight: 700; font-size: 0.85rem;
-  transition: all 0.15s;
-}
-.modal-btn.cancel { background: var(--bg); color: var(--text-muted); }
-.modal-btn.save { background: #818CF8; color: white; }
-.modal-btn.save:hover { background: #6366F1; }
-.modal-btn.del { background: var(--red-light); color: var(--red); }
+.av-preview img{width:100%;height:100%;object-fit:cover}
 
-/* ANIMATIONS */
-@keyframes fadeDown {
-  from { opacity:0; transform: translateY(-16px); }
-  to   { opacity:1; transform: translateY(0); }
-}
-@keyframes fadeUp {
-  from { opacity:0; transform: translateY(16px); }
-  to   { opacity:1; transform: translateY(0); }
-}
-@keyframes fadeIn {
-  from { opacity:0; } to { opacity:1; }
-}
-@keyframes scaleIn {
-  from { transform: scale(0.92); opacity:0; }
-  to   { transform: scale(1); opacity:1; }
-}
+/* CONFETTI */
+#confetti-canvas{position:fixed;inset:0;pointer-events:none;z-index:200}
+
+/* ANIMS */
+@keyframes fadeDown{from{opacity:0;transform:translateY(-14px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeUp  {from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn  {from{opacity:0}to{opacity:1}}
+@keyframes scaleIn {from{transform:scale(.92);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes pop{0%{transform:scale(1)}50%{transform:scale(1.35)}100%{transform:scale(1)}}
+.pop{animation:pop .28s ease}
 </style>
 </head>
 <body>
 
+<canvas id="confetti-canvas"></canvas>
+
 <div class="container">
 
   <div class="header">
-    <h1>💊 Controle de Remédios das Crianças</h1>
-    <p id="data-hoje"></p>
+    <div>
+      <h1>💊 Controle de Remédios das Crianças</h1>
+      <p id="data-hoje"></p>
+    </div>
+    <div class="header-actions">
+      <button class="icon-btn" id="btn-dark" onclick="toggleDark()" title="Modo escuro">🌙</button>
+    </div>
   </div>
 
   <div id="alerta"></div>
 
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-icon">🔥</div>
+      <div>
+        <div class="stat-label">Sequência atual</div>
+        <div class="stat-value" id="streak-val">0</div>
+        <div class="stat-sub" id="streak-sub">dias seguidos</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">📈</div>
+      <div>
+        <div class="stat-label">Média este mês</div>
+        <div class="stat-value" id="media-val">—</div>
+        <div class="stat-sub" id="media-sub"></div>
+      </div>
+    </div>
+  </div>
+
   <div class="criancas-grid">
     <!-- Arthur -->
     <div class="crianca-card arthur">
-      <div class="crianca-nome">
-        <div class="avatar">A</div> Arthur
+      <div class="crianca-header">
+        <div class="crianca-nome">
+          <div class="avatar" onclick="abrirAvatar('Arthur')">
+            <div class="av-placeholder" id="av-Arthur">A</div>
+            <div class="av-hover">✏️</div>
+          </div>
+          Arthur
+        </div>
+        <div class="periodo-tabs">
+          <button class="ptab manha ativo" id="tab-Arthur-manha" onclick="setPeriodo('Arthur','manha')">☀️ Manhã</button>
+          <button class="ptab noite"        id="tab-Arthur-noite" onclick="setPeriodo('Arthur','noite')">🌙 Noite</button>
+        </div>
       </div>
       <div class="meds-list" id="meds-Arthur"></div>
       <div class="progresso-wrap">
-        <div class="prog-label">Progresso hoje</div>
-        <div class="prog-bar-bg">
-          <div class="prog-bar-fill" id="prog-Arthur" style="width:0%"></div>
+        <div class="prog-top">
+          <div class="prog-label">Progresso hoje</div>
+          <div class="prog-pct" id="pct-Arthur">0%</div>
         </div>
+        <div class="prog-bar-bg"><div class="prog-bar-fill" id="prog-Arthur" style="width:0%"></div></div>
       </div>
     </div>
 
     <!-- Alice -->
     <div class="crianca-card alice">
-      <div class="crianca-nome">
-        <div class="avatar">A</div> Alice
+      <div class="crianca-header">
+        <div class="crianca-nome">
+          <div class="avatar" onclick="abrirAvatar('Alice')">
+            <div class="av-placeholder" id="av-Alice">A</div>
+            <div class="av-hover">✏️</div>
+          </div>
+          Alice
+        </div>
+        <div class="periodo-tabs">
+          <button class="ptab manha ativo" id="tab-Alice-manha" onclick="setPeriodo('Alice','manha')">☀️ Manhã</button>
+          <button class="ptab noite"        id="tab-Alice-noite" onclick="setPeriodo('Alice','noite')">🌙 Noite</button>
+        </div>
       </div>
       <div class="meds-list" id="meds-Alice"></div>
       <div class="progresso-wrap">
-        <div class="prog-label">Progresso hoje</div>
-        <div class="prog-bar-bg">
-          <div class="prog-bar-fill" id="prog-Alice" style="width:0%"></div>
+        <div class="prog-top">
+          <div class="prog-label">Progresso hoje</div>
+          <div class="prog-pct" id="pct-Alice">0%</div>
         </div>
+        <div class="prog-bar-bg"><div class="prog-bar-fill" id="prog-Alice" style="width:0%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADESÃO MENSAL -->
+  <div class="section">
+    <div class="sec-title" style="margin-bottom:16px">📊 Taxa de adesão — <span id="mes-adesao"></span></div>
+    <div class="adesao-grid">
+      <div class="adesao-item arthur">
+        <div class="adesao-nome">Arthur</div>
+        <div class="adesao-pct" id="adesao-Arthur">—</div>
+        <div class="adesao-sub" id="adesao-sub-Arthur"></div>
+        <div class="adesao-bar-bg"><div class="adesao-bar-fill" id="adesao-bar-Arthur" style="width:0%"></div></div>
+      </div>
+      <div class="adesao-item alice">
+        <div class="adesao-nome">Alice</div>
+        <div class="adesao-pct" id="adesao-Alice">—</div>
+        <div class="adesao-sub" id="adesao-sub-Alice"></div>
+        <div class="adesao-bar-bg"><div class="adesao-bar-fill" id="adesao-bar-Alice" style="width:0%"></div></div>
       </div>
     </div>
   </div>
 
   <!-- CALENDÁRIO -->
   <div class="section">
-    <div class="section-title">📅 <span id="titulo-mes"></span></div>
-    <div class="cal-header">
+    <div class="sec-hd">
+      <div class="sec-title">📅 <span id="titulo-mes"></span></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="cal-nav-btn" onclick="mudarMes(-1)">‹</button>
+        <button class="cal-nav-btn" onclick="mudarMes(1)">›</button>
+      </div>
+    </div>
+    <div class="cal-dows">
       <div class="cal-dow">Dom</div><div class="cal-dow">Seg</div>
       <div class="cal-dow">Ter</div><div class="cal-dow">Qua</div>
       <div class="cal-dow">Qui</div><div class="cal-dow">Sex</div>
@@ -512,341 +428,432 @@ body::before {
     </div>
     <div class="cal-grid" id="calendario"></div>
     <div class="legenda">
-      <div class="leg-item"><div class="leg-cor" style="background:var(--arthur);opacity:.65"></div> Arthur completo</div>
-      <div class="leg-item"><div class="leg-cor" style="background:var(--alice);opacity:.65"></div> Alice completo</div>
-      <div class="leg-item"><span>📝</span> Com observação</div>
+      <div class="leg-item"><div class="leg-cor" style="background:var(--arthur);opacity:.55"></div>Arthur completo</div>
+      <div class="leg-item"><div class="leg-cor" style="background:var(--alice);opacity:.55"></div>Alice completo</div>
+      <div class="leg-item">📝 Observação</div>
     </div>
   </div>
 
   <!-- GRÁFICO -->
   <div class="section">
-    <div class="section-title">📊 Adesão por dia</div>
-    <div class="grafico-wrap">
-      <canvas id="grafico"></canvas>
-    </div>
+    <div class="sec-title" style="margin-bottom:16px">📉 Adesão diária (últimas 2 semanas)</div>
+    <div class="grafico-wrap"><canvas id="grafico"></canvas></div>
   </div>
 
   <!-- HISTÓRICO -->
   <div class="section">
-    <div class="section-title">🗂️ Histórico</div>
-    <button class="btn-limpar" onclick="limparHistorico()">🗑️ Limpar histórico</button>
+    <div class="sec-title" style="margin-bottom:14px">🗂️ Histórico</div>
+    <div class="hist-controls">
+      <button class="btn-sm" onclick="exportarCSV()">⬇️ CSV</button>
+      <button class="btn-sm" onclick="exportarPDF()">📄 PDF</button>
+      <button class="btn-sm danger" onclick="limparHistorico()">🗑️ Limpar</button>
+    </div>
     <div id="historico"></div>
   </div>
-
 </div>
 
-<!-- MODAL -->
-<div class="modal-overlay" id="modal">
+<!-- MODAL OBS -->
+<div class="modal-overlay" id="modal-obs">
   <div class="modal-box">
-    <div class="modal-title" id="modal-titulo"></div>
-    <textarea id="modal-txt" placeholder="Escreva uma observação…"></textarea>
+    <div class="modal-title" id="obs-titulo"></div>
+    <textarea id="obs-txt" placeholder="Escreva uma observação…"></textarea>
     <div class="modal-btns">
-      <button class="modal-btn del" id="modal-del" onclick="salvarObs(true)">🗑️</button>
-      <button class="modal-btn cancel" onclick="fecharModal()">Cancelar</button>
+      <button class="modal-btn del" onclick="salvarObs(true)">🗑️</button>
+      <button class="modal-btn cancel" onclick="fecharModal('modal-obs')">Cancelar</button>
       <button class="modal-btn save" onclick="salvarObs(false)">Salvar</button>
     </div>
   </div>
 </div>
 
+<!-- MODAL AVATAR -->
+<div class="modal-overlay" id="modal-avatar">
+  <div class="modal-box">
+    <div class="modal-title" id="av-titulo">Foto de perfil</div>
+    <div class="av-upload" onclick="document.getElementById('av-file').click()">
+      <div class="av-preview" id="av-preview-modal">📷</div>
+      <p style="font-size:.8rem;color:var(--muted)">Toque para escolher uma foto</p>
+    </div>
+    <input type="file" id="av-file" accept="image/*" style="display:none" onchange="onAvatarFile(event)">
+    <div class="modal-btns">
+      <button class="modal-btn del" onclick="removerAvatar()">🗑️</button>
+      <button class="modal-btn cancel" onclick="fecharModal('modal-avatar')">Cancelar</button>
+      <button class="modal-btn save" onclick="salvarAvatar()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <script>
-
+// ── DADOS ─────────────────────────────────────────────────────────
 const MEDS = [
-  { nome: 'Ferro',      icon: '🫀' },
-  { nome: 'Flixotide',  icon: '🫁' },
-  { nome: 'Vitamina D', icon: '☀️' },
-  { nome: 'Zinco',      icon: '⚡' },
-  { nome: 'Ômega 3',    icon: '🐟' },
+  { nome:'Ferro',      icon:'🫀', periodos:['manha'] },
+  { nome:'Flixotide',  icon:'🫁', periodos:['manha','noite'] },
+  { nome:'Vitamina D', icon:'☀️', periodos:['manha'] },
+  { nome:'Zinco',      icon:'⚡', periodos:['manha'] },
+  { nome:'Ômega 3',    icon:'🐟', periodos:['manha'] },
 ];
+const CRIANCAS = ['Arthur','Alice'];
+const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+               'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
-const CRIANCAS = ['Arthur', 'Alice'];
+function totalDoses() { return MEDS.reduce((s,m)=>s+m.periodos.length,0); }
 
-// ─── Utils ────────────────────────────────────────────────
-function hoje() { return new Date().toLocaleDateString('pt-BR'); }
+// ── UTILS ─────────────────────────────────────────────────────────
+function hoje()    { return new Date().toLocaleDateString('pt-BR'); }
 function hojeISO() { return new Date().toISOString().split('T')[0]; }
-function nomeMes(m) {
-  return ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
-          'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][m];
-}
-function getHistorico() { return JSON.parse(localStorage.getItem('historico') || '[]'); }
-function setHistorico(d) { localStorage.setItem('historico', JSON.stringify(d)); }
+function parseDate(s){ const p=s.split('/'); return new Date(+p[2],+p[1]-1,+p[0]); }
+function fmtDate(d)  { return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear(); }
+function getHistorico(){ return JSON.parse(localStorage.getItem('historico')||'[]'); }
+function setHistorico(d){ localStorage.setItem('historico',JSON.stringify(d)); }
 
-// ─── Render cartões ───────────────────────────────────────
+// ── PERÍODO ───────────────────────────────────────────────────────
+const _per = { Arthur:'manha', Alice:'manha' };
+function setPeriodo(nome, p) {
+  _per[nome]=p;
+  ['manha','noite'].forEach(t=>document.getElementById(`tab-${nome}-${t}`).classList.toggle('ativo',t===p));
+  renderCards();
+}
+
+// ── RENDER CARDS ──────────────────────────────────────────────────
 function renderCards() {
   const dados = getHistorico();
-  const dataHoje = hoje();
-
+  const dHj   = hoje();
   CRIANCAS.forEach(nome => {
-    const cls = nome.toLowerCase();
-    const container = document.getElementById('meds-' + nome);
-    container.innerHTML = '';
+    const cls  = nome.toLowerCase();
+    const per  = _per[nome];
+    const lista= MEDS.filter(m=>m.periodos.includes(per));
+    const total= totalDoses();
+    const feitasHj = dados.filter(r=>r.data===dHj&&r.nome===nome).length;
 
-    let feitos = 0;
+    const cont = document.getElementById('meds-'+nome);
+    cont.innerHTML = '';
 
-    MEDS.forEach(med => {
-      const reg = dados.find(r => r.data === dataHoje && r.nome === nome && r.remedio === med.nome);
+    lista.forEach(med => {
+      const reg  = dados.find(r=>r.data===dHj&&r.nome===nome&&r.remedio===med.nome&&r.periodo===per);
       const done = !!reg;
-      if (done) feitos++;
-
       const item = document.createElement('div');
-      item.className = 'med-item' + (done ? ` done-${cls}` : '');
-
+      item.className = 'med-item'+(done?` done-${cls}`:'');
+      const badge = med.periodos.length>1
+        ? `<span class="pbadge ${cls}">${per==='manha'?'manhã':'noite'}</span>` : '';
       item.innerHTML = `
-        <div class="med-nome">
+        <div class="med-left">
           <span class="med-icon">${med.icon}</span>
-          ${med.nome}
-          ${done ? `<span class="med-hora">${reg.hora}</span>` : ''}
+          <div>
+            <div class="med-nome-txt">${med.nome}${badge}</div>
+            <div class="med-meta">${med.periodos.length>1?'2× ao dia · ':''}${done?'✓ '+reg.hora:'pendente'}</div>
+          </div>
         </div>
-        <button class="med-btn ${done ? `done-${cls}` : ''}" 
-                onclick="marcar('${nome}','${med.nome}',this)">
-          ${done ? '✓' : ''}
-        </button>`;
-
-      container.appendChild(item);
+        <button class="med-btn ${done?`done-${cls}`:''}"
+                onclick="marcar('${nome}','${med.nome}','${per}',this)">${done?'✓':''}</button>`;
+      cont.appendChild(item);
     });
 
-    // barra de progresso
-    document.getElementById('prog-' + nome).style.width = (feitos / MEDS.length * 100) + '%';
+    const pct = total>0 ? Math.round(feitasHj/total*100) : 0;
+    document.getElementById('prog-'+nome).style.width = pct+'%';
+    document.getElementById('pct-'+nome).textContent  = pct+'%';
   });
 }
 
-// ─── Marcar ───────────────────────────────────────────────
-function marcar(nome, remedio, btn) {
+// ── MARCAR ────────────────────────────────────────────────────────
+function marcar(nome, remedio, periodo, btn) {
   let dados = getHistorico();
-  const data = hoje();
-  const key = `${data}_${nome}_${remedio}`;
+  const data= hoje();
+  const key = `${data}_${nome}_${remedio}_${periodo}`;
 
   if (localStorage.getItem(key)) {
     localStorage.removeItem(key);
-    dados = dados.filter(r => !(r.data === data && r.nome === nome && r.remedio === remedio));
-    setHistorico(dados);
-    atualizarTudo();
-    return;
+    dados = dados.filter(r=>!(r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo));
+    setHistorico(dados); atualizarTudo(); return;
   }
 
-  const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const hora = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   localStorage.setItem(key, hora);
-
-  if (!dados.some(r => r.data === data && r.nome === nome && r.remedio === remedio)) {
-    dados.push({ data, dataISO: hojeISO(), nome, remedio, hora });
-    setHistorico(dados);
-  }
+  dados.push({data, dataISO:hojeISO(), nome, remedio, periodo, hora});
+  setHistorico(dados);
+  btn.classList.add('pop');
+  setTimeout(()=>btn.classList.remove('pop'),300);
   atualizarTudo();
+  verificarCelebracao();
 }
 
-// ─── Alerta ───────────────────────────────────────────────
-function verificarPendencias() {
+// ── CELEBRAÇÃO ────────────────────────────────────────────────────
+function verificarCelebracao() {
   const dados = getHistorico();
-  const faltando = [];
-  CRIANCAS.forEach(n => {
-    MEDS.forEach(m => {
-      if (!dados.some(r => r.data === hoje() && r.nome === n && r.remedio === m.nome)) {
-        faltando.push(`${n}: ${m.nome}`);
-      }
+  const dHj   = hoje();
+  const total = totalDoses()*2;
+  if (dados.filter(r=>r.data===dHj).length === total) confetti();
+}
+function confetti() {
+  const canvas = document.getElementById('confetti-canvas');
+  canvas.width=innerWidth; canvas.height=innerHeight;
+  const ctx=canvas.getContext('2d');
+  const colors=['#3B82F6','#EC4899','#10B981','#F59E0B','#8B5CF6','#EF4444'];
+  const ps=Array.from({length:140},()=>({
+    x:Math.random()*canvas.width, y:Math.random()*canvas.height-canvas.height,
+    r:Math.random()*7+3, d:Math.random()*3+1,
+    c:colors[Math.floor(Math.random()*colors.length)],
+    t:Math.random()*10-10, a:0
+  }));
+  let f=0;
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ps.forEach(p=>{
+      ctx.beginPath(); ctx.lineWidth=p.r/2; ctx.strokeStyle=p.c;
+      ctx.moveTo(p.x+p.t+p.r/4,p.y); ctx.lineTo(p.x+p.t,p.y+p.t+p.r/4); ctx.stroke();
+      p.y+=p.d; p.t=Math.sin(p.a)*15; p.a+=.1;
+      if(p.y>canvas.height){p.y=-10;p.x=Math.random()*canvas.width;}
+    });
+    if(++f<220) requestAnimationFrame(draw);
+    else ctx.clearRect(0,0,canvas.width,canvas.height);
+  }
+  draw();
+}
+
+// ── ALERTA ────────────────────────────────────────────────────────
+function verificarPendencias() {
+  const dados=getHistorico(); const dHj=hoje(); const falta=[];
+  CRIANCAS.forEach(n=>{
+    MEDS.forEach(m=>{
+      m.periodos.forEach(p=>{
+        if(!dados.some(r=>r.data===dHj&&r.nome===n&&r.remedio===m.nome&&r.periodo===p)){
+          const lbl=m.periodos.length>1?` (${p==='manha'?'manhã':'noite'})`:'';
+          falta.push(`${n}: ${m.nome}${lbl}`);
+        }
+      });
     });
   });
-
-  const div = document.getElementById('alerta');
-  if (faltando.length === 0) {
-    div.className = 'alerta-ok';
-    div.innerHTML = '✅ Tudo administrado hoje! Ótimo trabalho.';
-  } else {
-    div.className = 'alerta-warn';
-    div.innerHTML = '⚠️ Faltando hoje: ' + faltando.join(' · ');
-  }
+  const div=document.getElementById('alerta');
+  if(!falta.length){div.className='alerta-ok';div.innerHTML='✅ Tudo administrado hoje! Incrível! 🎉';}
+  else{div.className='alerta-warn';div.innerHTML='⚠️ Faltando: '+falta.join(' · ');}
 }
 
-// ─── Calendário ──────────────────────────────────────────
-function gerarCalendario() {
-  const dados = getHistorico();
-  const mapa = {};
-  dados.forEach(r => {
-    if (!mapa[r.data]) mapa[r.data] = { Arthur: 0, Alice: 0 };
-    mapa[r.data][r.nome]++;
+// ── STREAK ────────────────────────────────────────────────────────
+function calcStreak() {
+  const dados=getHistorico(); const total=totalDoses()*2;
+  if(!dados.length) return 0;
+  const porDia={};
+  dados.forEach(r=>{ porDia[r.data]=(porDia[r.data]||0)+1; });
+  let streak=0; const d=new Date();
+  if((porDia[fmtDate(d)]||0)<total) d.setDate(d.getDate()-1);
+  while(true){
+    const s=fmtDate(d);
+    if((porDia[s]||0)>=total){streak++;d.setDate(d.getDate()-1);}
+    else break;
+  }
+  return streak;
+}
+function atualizarStreak(){
+  const s=calcStreak();
+  document.getElementById('streak-val').textContent=s;
+  document.getElementById('streak-sub').textContent=s===0?'comece hoje!':s===1?'dia seguido':'dias seguidos';
+}
+
+// ── ADESÃO MENSAL ─────────────────────────────────────────────────
+function atualizarAdesao(){
+  const dados=getHistorico(); const now=new Date();
+  const ano=now.getFullYear(); const mes=now.getMonth(); const diasP=now.getDate();
+  document.getElementById('mes-adesao').textContent=MESES[mes]+' '+ano;
+
+  CRIANCAS.forEach(nome=>{
+    const esp=totalDoses()*diasP;
+    const feitos=dados.filter(r=>{
+      if(r.nome!==nome)return false;
+      const d=parseDate(r.data);
+      return d.getFullYear()===ano&&d.getMonth()===mes;
+    }).length;
+    const pct=esp>0?Math.round(feitos/esp*100):0;
+    document.getElementById(`adesao-${nome}`).textContent=pct+'%';
+    document.getElementById(`adesao-sub-${nome}`).textContent=`${feitos} de ${esp} doses`;
+    document.getElementById(`adesao-bar-${nome}`).style.width=pct+'%';
   });
 
-  const now = new Date();
-  const ano = now.getFullYear();
-  const mes = now.getMonth();
+  const espG=totalDoses()*diasP*2;
+  const fG=dados.filter(r=>{ const d=parseDate(r.data); return d.getFullYear()===ano&&d.getMonth()===mes; }).length;
+  const pG=espG>0?Math.round(fG/espG*100):0;
+  document.getElementById('media-val').textContent=pG+'%';
+  document.getElementById('media-sub').textContent=MESES[mes]+' '+ano;
+}
 
-  document.getElementById('titulo-mes').textContent = nomeMes(mes) + ' ' + ano;
+// ── CALENDÁRIO ────────────────────────────────────────────────────
+let _calAno=new Date().getFullYear(), _calMes=new Date().getMonth();
+function mudarMes(d){ _calMes+=d; if(_calMes<0){_calMes=11;_calAno--;}if(_calMes>11){_calMes=0;_calAno++;} gerarCalendario(); }
 
-  const primeiroDia = new Date(ano, mes, 1).getDay();
-  const diasNoMes = new Date(ano, mes + 1, 0).getDate();
-  const hojeNum = now.getDate();
-
-  const grid = document.getElementById('calendario');
-  grid.innerHTML = '';
-
-  for (let i = 0; i < primeiroDia; i++) {
-    const vazio = document.createElement('div');
-    grid.appendChild(vazio);
-  }
-
-  for (let d = 1; d <= diasNoMes; d++) {
-    const df = String(d).padStart(2,'0') + '/' + String(mes+1).padStart(2,'0') + '/' + ano;
-    const info = mapa[df] || { Arthur: 0, Alice: 0 };
-    const aOk = info.Arthur === MEDS.length;
-    const lOk = info.Alice  === MEDS.length;
-
-    const cell = document.createElement('div');
-    cell.className = 'cal-day' + (d === hojeNum ? ' hoje' : '');
-    cell.onclick = () => abrirObs(df);
-
-    if (aOk && lOk) {
-      cell.innerHTML = `<div class="split-bg"><div class="lado azul"></div><div class="lado rosa"></div></div>`;
-    } else if (aOk) {
-      cell.classList.add('full-arthur');
-      cell.innerHTML = `<div class="full-bg"></div>`;
-    } else if (lOk) {
-      cell.classList.add('full-alice');
-      cell.innerHTML = `<div class="full-bg"></div>`;
-    }
-
-    const obs = localStorage.getItem('obs_' + df);
-    cell.innerHTML += `<span class="num">${d}</span>${obs ? '<div class="obs-dot">📝</div>' : ''}`;
+function gerarCalendario(){
+  const dados=getHistorico(); const mapa={};
+  dados.forEach(r=>{ if(!mapa[r.data])mapa[r.data]={Arthur:0,Alice:0}; mapa[r.data][r.nome]++; });
+  const totalD=totalDoses();
+  document.getElementById('titulo-mes').textContent=MESES[_calMes]+' '+_calAno;
+  const prim=new Date(_calAno,_calMes,1).getDay();
+  const diasM=new Date(_calAno,_calMes+1,0).getDate();
+  const now=new Date();
+  const grid=document.getElementById('calendario'); grid.innerHTML='';
+  for(let i=0;i<prim;i++) grid.appendChild(document.createElement('div'));
+  for(let d=1;d<=diasM;d++){
+    const df=String(d).padStart(2,'0')+'/'+String(_calMes+1).padStart(2,'0')+'/'+_calAno;
+    const info=mapa[df]||{Arthur:0,Alice:0};
+    const aOk=info.Arthur>=totalD, lOk=info.Alice>=totalD;
+    const cell=document.createElement('div');
+    const isHj=d===now.getDate()&&_calMes===now.getMonth()&&_calAno===now.getFullYear();
+    cell.className='cal-day'+(isHj?' hoje':'');
+    cell.onclick=()=>abrirObs(df);
+    if(aOk&&lOk){cell.innerHTML=`<div class="split-bg"><div class="lado azul"></div><div class="lado rosa"></div></div>`;}
+    else if(aOk){cell.classList.add('fa');cell.innerHTML=`<div class="full-bg"></div>`;}
+    else if(lOk){cell.classList.add('fl');cell.innerHTML=`<div class="full-bg"></div>`;}
+    const obs=localStorage.getItem('obs_'+df);
+    cell.innerHTML+=`<span class="num">${d}</span>${obs?'<div class="obs-dot">📝</div>':''}`;
     grid.appendChild(cell);
   }
 }
 
-// ─── Obs Modal ────────────────────────────────────────────
-let _obsData = null;
-function abrirObs(data) {
-  _obsData = data;
-  document.getElementById('modal-titulo').textContent = '📝 Observação — ' + data;
-  document.getElementById('modal-txt').value = localStorage.getItem('obs_' + data) || '';
-  document.getElementById('modal').classList.add('open');
+// ── OBS MODAL ─────────────────────────────────────────────────────
+let _obsData=null;
+function abrirObs(data){ _obsData=data; document.getElementById('obs-titulo').textContent='📝 Observação — '+data; document.getElementById('obs-txt').value=localStorage.getItem('obs_'+data)||''; document.getElementById('modal-obs').classList.add('open'); }
+function salvarObs(del){
+  if(!_obsData)return;
+  if(del)localStorage.removeItem('obs_'+_obsData);
+  else{ const v=document.getElementById('obs-txt').value.trim(); if(v)localStorage.setItem('obs_'+_obsData,v); else localStorage.removeItem('obs_'+_obsData); }
+  fecharModal('modal-obs'); gerarCalendario();
 }
-function fecharModal() {
-  document.getElementById('modal').classList.remove('open');
-  _obsData = null;
-}
-function salvarObs(apagar) {
-  if (!_obsData) return;
-  if (apagar) {
-    localStorage.removeItem('obs_' + _obsData);
-  } else {
-    const v = document.getElementById('modal-txt').value.trim();
-    if (v) localStorage.setItem('obs_' + _obsData, v);
-    else localStorage.removeItem('obs_' + _obsData);
-  }
-  fecharModal();
-  gerarCalendario();
-}
-document.getElementById('modal').addEventListener('click', e => {
-  if (e.target === e.currentTarget) fecharModal();
-});
 
-// ─── Histórico ────────────────────────────────────────────
-function mostrarHistorico() {
-  const dados = getHistorico();
-  const agrupado = {};
-  dados.forEach(r => {
-    if (!agrupado[r.data]) agrupado[r.data] = [];
-    agrupado[r.data].push(r);
+// ── AVATAR ────────────────────────────────────────────────────────
+let _avNome=null, _avData=null;
+function abrirAvatar(nome){
+  _avNome=nome; _avData=null;
+  document.getElementById('av-titulo').textContent='Foto de '+nome;
+  const saved=localStorage.getItem('avatar_'+nome);
+  const pre=document.getElementById('av-preview-modal');
+  pre.innerHTML=saved?`<img src="${saved}">`:'📷';
+  document.getElementById('modal-avatar').classList.add('open');
+}
+function onAvatarFile(e){
+  const f=e.target.files[0]; if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>{ _avData=ev.target.result; document.getElementById('av-preview-modal').innerHTML=`<img src="${_avData}">`; };
+  r.readAsDataURL(f);
+}
+function salvarAvatar(){
+  if(!_avNome)return;
+  if(_avData)localStorage.setItem('avatar_'+_avNome,_avData);
+  fecharModal('modal-avatar'); aplicarAvatares();
+}
+function removerAvatar(){
+  if(!_avNome)return;
+  localStorage.removeItem('avatar_'+_avNome);
+  fecharModal('modal-avatar'); aplicarAvatares();
+}
+function aplicarAvatares(){
+  CRIANCAS.forEach(nome=>{
+    const el=document.getElementById('av-'+nome);
+    if(!el)return;
+    const src=localStorage.getItem('avatar_'+nome);
+    if(src) el.innerHTML=`<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
   });
+}
 
-  const div = document.getElementById('historico');
-  const datas = Object.keys(agrupado).sort((a,b) => {
-    const parse = s => { const p = s.split('/'); return new Date(p[2],p[1]-1,p[0]); };
-    return parse(b) - parse(a);
-  });
+// ── MODAL helper ──────────────────────────────────────────────────
+function fecharModal(id){ document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{ if(e.target===m) m.classList.remove('open'); }));
 
-  if (datas.length === 0) {
-    div.innerHTML = '<p style="color:var(--text-muted);font-size:.85rem;">Nenhum registro ainda.</p>';
-    return;
-  }
-
-  div.innerHTML = datas.map(d => {
-    const items = agrupado[d];
-    const pills = items.map(r => {
-      const icon = MEDS.find(m => m.nome === r.remedio)?.icon || '💊';
-      return `<span class="hist-pill ${r.nome.toLowerCase()}">${icon} ${r.remedio}</span>`;
+// ── HISTÓRICO ─────────────────────────────────────────────────────
+function mostrarHistorico(){
+  const dados=getHistorico(); const ag={};
+  dados.forEach(r=>{ if(!ag[r.data])ag[r.data]=[]; ag[r.data].push(r); });
+  const div=document.getElementById('historico');
+  const datas=Object.keys(ag).sort((a,b)=>parseDate(b)-parseDate(a));
+  if(!datas.length){div.innerHTML='<p style="color:var(--muted);font-size:.82rem">Nenhum registro ainda.</p>';return;}
+  div.innerHTML=datas.map(d=>{
+    const pills=ag[d].map(r=>{
+      const icon=MEDS.find(m=>m.nome===r.remedio)?.icon||'💊';
+      const per=r.periodo==='noite'?'🌙':'☀️';
+      return `<span class="hist-pill ${r.nome.toLowerCase()}">${icon} ${r.remedio} ${per}</span>`;
     }).join('');
-    return `<div class="hist-dia">
-      <div class="hist-data">📅 ${d}</div>
-      <div class="hist-items">${pills}</div>
-    </div>`;
+    return `<div class="hist-dia"><div class="hist-data">📅 ${d}</div><div class="hist-items">${pills}</div></div>`;
   }).join('');
 }
 
-function limparHistorico() {
-  if (!confirm('Limpar todo o histórico?')) return;
+function limparHistorico(){
+  if(!confirm('Limpar todo o histórico?'))return;
   localStorage.removeItem('historico');
-  Object.keys(localStorage).forEach(k => {
-    if (k.startsWith('obs_') || k.match(/^\d{2}\/\d{2}\/\d{4}_/)) localStorage.removeItem(k);
-  });
+  Object.keys(localStorage).forEach(k=>{ if(k.startsWith('obs_')||k.match(/^\d{2}\/\d{2}\/\d{4}_/))localStorage.removeItem(k); });
   atualizarTudo();
 }
 
-// ─── Gráfico ─────────────────────────────────────────────
-let chartInstance = null;
-function atualizarGrafico() {
-  const dados = getHistorico();
-  if (!dados.length) return;
-
-  const diasA = {}, diasL = {};
-  dados.forEach(r => {
-    if (r.nome === 'Arthur') { diasA[r.data] = (diasA[r.data] || 0) + 1; }
-    else                     { diasL[r.data] = (diasL[r.data] || 0) + 1; }
-  });
-
-  const todasDatas = [...new Set([...Object.keys(diasA), ...Object.keys(diasL)])].sort((a,b) => {
-    const p = s => { const x = s.split('/'); return new Date(x[2],x[1]-1,x[0]); };
-    return p(a) - p(b);
-  }).slice(-14);
-
-  const labels = todasDatas.map(d => d.substring(0,5));
-  const pctA = todasDatas.map(d => Math.round(((diasA[d] || 0) / MEDS.length) * 100));
-  const pctL = todasDatas.map(d => Math.round(((diasL[d] || 0) / MEDS.length) * 100));
-
-  const ctx = document.getElementById('grafico').getContext('2d');
-  if (chartInstance) chartInstance.destroy();
-
-  chartInstance = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Arthur', data: pctA, backgroundColor: 'rgba(59,130,246,0.7)', borderRadius: 6, borderSkipped: false },
-        { label: 'Alice',  data: pctL, backgroundColor: 'rgba(236,72,153,0.7)', borderRadius: 6, borderSkipped: false },
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { labels: { font: { family: 'DM Sans', size: 12 }, color: '#1E1B4B' } }
-      },
-      scales: {
-        y: { beginAtZero: true, max: 100,
-          ticks: { callback: v => v + '%', font: { family: 'DM Sans' }, color: '#6B7280' },
-          grid: { color: '#F3F4F6' }
-        },
-        x: { ticks: { font: { family: 'DM Sans', size: 11 }, color: '#6B7280' }, grid: { display: false } }
-      }
-    }
-  });
+// ── EXPORTAR CSV ──────────────────────────────────────────────────
+function exportarCSV(){
+  const dados=getHistorico();
+  if(!dados.length){alert('Nenhum dado para exportar.');return;}
+  const header='Data,Criança,Remédio,Período,Hora\n';
+  const rows=dados.map(r=>`"${r.data}","${r.nome}","${r.remedio}","${r.periodo||'manha'}","${r.hora}"`).join('\n');
+  const blob=new Blob(['\uFEFF'+header+rows],{type:'text/csv;charset=utf-8'});
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:'remedios_'+hojeISO()+'.csv'});
+  a.click(); URL.revokeObjectURL(a.href);
 }
 
-// ─── Data header ─────────────────────────────────────────
-function atualizarDataHoje() {
-  const opts = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-  document.getElementById('data-hoje').textContent =
-    new Date().toLocaleDateString('pt-BR', opts);
+// ── EXPORTAR PDF ──────────────────────────────────────────────────
+function exportarPDF(){
+  const dados=getHistorico();
+  if(!dados.length){alert('Nenhum dado para exportar.');return;}
+  const ag={}; dados.forEach(r=>{ if(!ag[r.data])ag[r.data]=[]; ag[r.data].push(r); });
+  const datas=Object.keys(ag).sort((a,b)=>parseDate(a)-parseDate(b));
+  const linhas=datas.map(d=>{
+    const items=ag[d].map(r=>`<li>${r.nome} — ${r.remedio} (${r.periodo==='noite'?'noite':'manhã'}) às ${r.hora}</li>`).join('');
+    return `<div style="margin-bottom:16px"><b>📅 ${d}</b><ul style="margin-top:6px;padding-left:18px;line-height:1.9">${items}</ul></div>`;
+  }).join('');
+  const w=window.open('','_blank');
+  w.document.write(`<html><head><meta charset="UTF-8"><title>Histórico de Remédios</title>
+    <style>body{font-family:Arial,sans-serif;padding:32px;color:#111;max-width:680px;margin:auto}h2{color:#3B82F6;margin-bottom:18px}</style>
+    </head><body><h2>💊 Controle de Remédios das Crianças</h2>
+    <p style="color:#666;margin-bottom:22px">Exportado em ${new Date().toLocaleDateString('pt-BR')}</p>
+    ${linhas}</body></html>`);
+  w.document.close(); setTimeout(()=>w.print(),400);
 }
 
-// ─── Tudo ─────────────────────────────────────────────────
-function atualizarTudo() {
-  renderCards();
-  verificarPendencias();
-  mostrarHistorico();
+// ── GRÁFICO ───────────────────────────────────────────────────────
+let chartInst=null;
+function atualizarGrafico(){
+  const dados=getHistorico(); if(!dados.length)return;
+  const dA={},dL={};
+  dados.forEach(r=>{ if(r.nome==='Arthur')dA[r.data]=(dA[r.data]||0)+1; else dL[r.data]=(dL[r.data]||0)+1; });
+  const all=[...new Set([...Object.keys(dA),...Object.keys(dL)])].sort((a,b)=>parseDate(a)-parseDate(b)).slice(-14);
+  const tot=totalDoses();
+  const dark=document.documentElement.getAttribute('data-theme')==='dark';
+  const gc=dark?'#334155':'#F3F4F6'; const tc=dark?'#94A3B8':'#6B7280';
+  const ctx=document.getElementById('grafico').getContext('2d');
+  if(chartInst)chartInst.destroy();
+  chartInst=new Chart(ctx,{type:'bar',data:{labels:all.map(d=>d.substring(0,5)),
+    datasets:[
+      {label:'Arthur',data:all.map(d=>Math.min(100,Math.round(((dA[d]||0)/tot)*100))),backgroundColor:'rgba(59,130,246,.72)',borderRadius:6,borderSkipped:false},
+      {label:'Alice', data:all.map(d=>Math.min(100,Math.round(((dL[d]||0)/tot)*100))),backgroundColor:'rgba(236,72,153,.72)',borderRadius:6,borderSkipped:false},
+    ]},options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{font:{family:'DM Sans',size:12},color:tc}}},
+      scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%',font:{family:'DM Sans'},color:tc},grid:{color:gc}},
+              x:{ticks:{font:{family:'DM Sans',size:11},color:tc},grid:{display:false}}}}});
+}
+
+// ── DARK MODE ─────────────────────────────────────────────────────
+function toggleDark(){
+  const isDark=document.documentElement.getAttribute('data-theme')==='dark';
+  document.documentElement.setAttribute('data-theme',isDark?'light':'dark');
+  document.getElementById('btn-dark').textContent=isDark?'🌙':'☀️';
+  localStorage.setItem('darkMode',isDark?'0':'1');
   atualizarGrafico();
-  gerarCalendario();
+}
+function initDark(){
+  if(localStorage.getItem('darkMode')==='1'){
+    document.documentElement.setAttribute('data-theme','dark');
+    document.getElementById('btn-dark').textContent='☀️';
+  }
 }
 
-atualizarDataHoje();
-atualizarTudo();
+// ── INIT ──────────────────────────────────────────────────────────
+function atualizarTudo(){
+  renderCards(); verificarPendencias(); atualizarStreak();
+  atualizarAdesao(); mostrarHistorico(); atualizarGrafico(); gerarCalendario();
+}
 
+initDark();
+document.getElementById('data-hoje').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+aplicarAvatares();
+atualizarTudo();
 </script>
 </body>
 </html>
