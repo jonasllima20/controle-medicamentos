@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Controle de Medicamentos das Crianças</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body { font-family: Arial; background: #f5f5f5; padding: 20px; }
+h1 { text-align: center; }
+
+.container { max-width: 900px; margin: auto; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+}
+
+th, td {
+  border: 1px solid #ccc;
+  padding: 12px;
+  text-align: center;
+}
+
+th { background: #4CAF50; color: white; }
+
+button {
+  padding: 10px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  margin: 2px;
+  width: 100%;
+  font-size: 14px;
+  background: #e0e0e0;
+}
+
+.done { background: #4CAF50 !important; }
+
+.arthur { background: #BBDEFB; }
+.alice { background: #F8BBD0; }
+
+.arthur-text { color: #1976D2; font-weight: bold; }
+.alice-text { color: #C2185B; font-weight: bold; }
+
+.hist {
+  margin-top: 20px;
+  background: white;
+  padding: 10px;
+  border-radius: 8px;
+}
+
+.hist-header {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+.hist-header button {
+  background: #f44336;
+  color: white;
+  width: auto;
+}
+
+.dia-header {
+  background: #ddd;
+  padding: 8px;
+  cursor: pointer;
+  margin-top:5px;
+}
+
+.dia-conteudo {
+  display: none;
+  padding: 5px;
+}
+
+#alerta { font-weight: bold; margin-bottom:10px; }
+
+.controls { margin-top: 10px; }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>💊 Controle de Medicamentos das Crianças</h1>
+
+<p id="dataHoje"></p>
+
+<div id="alerta"></div>
+
+<div class="controls">
+<button onclick="mostrarHoje()">📅 Mostrar só hoje</button>
+<button onclick="mostrarHistorico()">📖 Mostrar tudo</button>
+</div>
+
+<div class="controls">
+💾 Backup:
+<button onclick="exportar()">Exportar</button>
+<input type="file" onchange="importar(event)">
+</div>
+
+<table>
+<tr>
+<th>Nome</th>
+<th>Ferro</th>
+<th>Flixotide</th>
+<th>Vitamina D</th>
+<th>Zinco</th>
+<th>Ômega 3</th>
+</tr>
+
+<tr class="arthur">
+<td>Arthur</td>
+<td><button onclick="marcar('Arthur','Ferro',this)">⬜</button></td>
+<td><button onclick="marcar('Arthur','Flixotide',this)">⬜</button></td>
+<td><button onclick="marcar('Arthur','Vitamina D',this)">⬜</button></td>
+<td><button onclick="marcar('Arthur','Zinco',this)">⬜</button></td>
+<td><button onclick="marcar('Arthur','Ômega 3',this)">⬜</button></td>
+</tr>
+
+<tr class="alice">
+<td>Alice</td>
+<td><button onclick="marcar('Alice','Ferro',this)">⬜</button></td>
+<td><button onclick="marcar('Alice','Flixotide',this)">⬜</button></td>
+<td><button onclick="marcar('Alice','Vitamina D',this)">⬜</button></td>
+<td><button onclick="marcar('Alice','Zinco',this)">⬜</button></td>
+<td><button onclick="marcar('Alice','Ômega 3',this)">⬜</button></td>
+</tr>
+
+</table>
+
+<div class="hist">
+<h3>📊 Controle</h3>
+<canvas id="grafico"></canvas>
+</div>
+
+<div class="hist">
+
+<div class="hist-header">
+<h3>📅 Histórico</h3>
+<button onclick="limparHistorico()">🗑️ Limpar</button>
+</div>
+
+<div id="historico"></div>
+
+</div>
+
+</div>
+
+<script>
+document.getElementById("dataHoje").innerText =
+"Hoje: " + new Date().toLocaleDateString('pt-BR');
+
+function hoje(){ return new Date().toLocaleDateString('pt-BR'); }
+function hojeISO(){ return new Date().toISOString().split("T")[0]; }
+
+function marcar(nome, remedio, btn){
+
+  let dados = JSON.parse(localStorage.getItem("historico") || "[]");
+  let data = hoje();
+
+  if(btn.classList.contains("done")){
+    btn.classList.remove("done");
+    btn.innerText = "⬜";
+
+    dados = dados.filter(r =>
+      !(r.data === data && r.nome === nome && r.remedio === remedio)
+    );
+
+    localStorage.setItem("historico", JSON.stringify(dados));
+    atualizarTudo();
+    return;
+  }
+
+  let hora = new Date().toLocaleTimeString();
+
+  btn.innerText = "✔️ " + hora;
+  btn.classList.add("done");
+
+  let existe = dados.some(r =>
+    r.data === data && r.nome === nome && r.remedio === remedio
+  );
+
+  if(!existe){
+    dados.push({ data, dataISO: hojeISO(), nome, remedio, hora });
+    localStorage.setItem("historico", JSON.stringify(dados));
+  }
+
+  atualizarTudo();
+}
+
+function atualizarTudo(){
+  mostrarHistorico();
+  verificarPendencias();
+  atualizarGrafico();
+}
+
+function mostrarHistorico(lista=null){
+  let dados = lista || JSON.parse(localStorage.getItem("historico") || "[]");
+  let div = document.getElementById("historico");
+
+  if(dados.length === 0){
+    div.innerHTML = "Sem registros";
+    return;
+  }
+
+  let agrupado = {};
+
+  dados.forEach(r => {
+    if(!agrupado[r.data]) agrupado[r.data] = [];
+    agrupado[r.data].push(r);
+  });
+
+  let html = "";
+
+  Object.keys(agrupado).forEach((data,i) => {
+
+    let id = "dia_"+i;
+
+    html += `<div>
+      <div class="dia-header" onclick="toggleDia('${id}')">📅 ${data}</div>
+      <div class="dia-conteudo" id="${id}">`;
+
+    agrupado[data].sort((a,b)=>a.hora.localeCompare(b.hora));
+
+    agrupado[data].forEach(r=>{
+      let cor = r.nome==="Arthur"?"arthur-text":"alice-text";
+      html += `<div>- <span class="${cor}">${r.nome}</span>: ${r.remedio} (${r.hora})</div>`;
+    });
+
+    html += `</div></div>`;
+  });
+
+  div.innerHTML = html;
+}
+
+function toggleDia(id){
+  let el = document.getElementById(id);
+  el.style.display = (el.style.display==="block")?"none":"block";
+}
+
+function mostrarHoje(){
+  let hojeI = hojeISO();
+  let dados = JSON.parse(localStorage.getItem("historico") || "[]");
+  mostrarHistorico(dados.filter(r=>r.dataISO===hojeI));
+}
+
+function limparHistorico(){
+  if(confirm("Apagar histórico?")){
+    localStorage.removeItem("historico");
+    atualizarTudo();
+  }
+}
+
+function exportar(){
+  let dados = localStorage.getItem("historico") || "[]";
+  let blob = new Blob([dados], {type:"application/json"});
+  let a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "backup.json";
+  a.click();
+}
+
+function importar(e){
+  let file = e.target.files[0];
+  let reader = new FileReader();
+  reader.onload = function(ev){
+    localStorage.setItem("historico", ev.target.result);
+    atualizarTudo();
+  };
+  reader.readAsText(file);
+}
+
+function verificarPendencias(){
+  let dados = JSON.parse(localStorage.getItem("historico") || "[]");
+  let nomes=["Arthur","Alice"];
+  let meds=["Ferro","Flixotide","Vitamina D","Zinco","Ômega 3"];
+  let hojeD = hoje();
+
+  let faltando=[];
+
+  nomes.forEach(n=>{
+    meds.forEach(m=>{
+      let tomou = dados.some(r=>r.data===hojeD && r.nome===n && r.remedio===m);
+      if(!tomou) faltando.push(n+" - "+m);
+    });
+  });
+
+  let div=document.getElementById("alerta");
+
+  if(faltando.length===0){
+    div.innerHTML="✅ Tudo tomado hoje";
+    div.style.color="green";
+  }else{
+    div.innerHTML="⚠️ Faltando:<br>"+faltando.join("<br>");
+    div.style.color="red";
+  }
+}
+
+function atualizarGrafico(){
+  let dados = JSON.parse(localStorage.getItem("historico") || "[]");
+
+  let a = dados.filter(r=>r.nome==="Arthur").length;
+  let b = dados.filter(r=>r.nome==="Alice").length;
+
+  let ctx=document.getElementById("grafico");
+
+  if(window.grafico) window.grafico.destroy();
+
+  window.grafico=new Chart(ctx,{
+    type:'bar',
+    data:{
+      labels:['Arthur','Alice'],
+      datasets:[{label:'Medicamentos',data:[a,b]}]
+    }
+  });
+}
+
+atualizarTudo();
+</script>
+
+</body>
+</html>
