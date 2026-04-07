@@ -14,7 +14,7 @@
 // ═══════════════════════════════════════════════════════════
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore, doc, collection, setDoc, getDoc, getDocs,
-         deleteDoc, onSnapshot, writeBatch, serverTimestamp
+         deleteDoc, onSnapshot, writeBatch, serverTimestamp, query, where
        } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -26,6 +26,10 @@ const firebaseConfig = {
   appId:             "1:880633884799:web:77affc795107ddb066cf4a",
   measurementId:     "G-MC28WKCEG0"
 };
+
+// Token secreto — só documentos com este campo são aceitos pela regra do Firestore
+// TROQUE por uma string aleatória sua e coloque a mesma nas Regras do Firestore
+const APP_TOKEN = "rem-fam-2026-xK9mQzP4";
 
 const fbApp = initializeApp(firebaseConfig);
 const db    = getFirestore(fbApp);
@@ -99,7 +103,7 @@ window.fbAddDose = async function(reg){
   setSyncStatus('sync');
   try{
     const id = `${reg.dataISO}_${reg.nome}_${reg.remedio}_${reg.periodo}`;
-    await setDoc(doc(db,'historico',id), {...reg, ts: serverTimestamp()});
+    await setDoc(doc(db,'historico',id), {...reg, _t: APP_TOKEN, ts: serverTimestamp()});
     setSyncStatus('ok');
   }catch(e){ console.error(e); setSyncStatus('err'); }
 };
@@ -118,7 +122,7 @@ window.fbRemoveDose = async function(data,nome,remedio,periodo){
 window.fbAddLog = async function(entry){
   try{
     const id = 'log_'+Date.now()+'_'+Math.random().toString(36).substr(2,5);
-    await setDoc(doc(db,'log',id), {...entry, ts: serverTimestamp()});
+    await setDoc(doc(db,'log',id), {...entry, _t: APP_TOKEN, ts: serverTimestamp()});
   }catch(e){ console.error(e); }
 };
 
@@ -131,13 +135,13 @@ window.setMeds = async function(arr){
   cacheSet('meds', arr);
   localStorage.setItem('rm_meds', JSON.stringify(arr));
   try{
-    await setDoc(doc(db,'config','meds'), {lista: arr, ts: serverTimestamp()});
+    await setDoc(doc(db,'config','meds'), {lista: arr, _t: APP_TOKEN, ts: serverTimestamp()});
   }catch(e){ console.error(e); }
 };
 window.fbLoadMeds = async function(){
   try{
     const snap = await getDoc(doc(db,'config','meds'));
-    if(snap.exists()){
+    if(snap.exists() && snap.data()._t === APP_TOKEN){
       const arr = snap.data().lista;
       cacheSet('meds', arr);
       localStorage.setItem('rm_meds', JSON.stringify(arr));
@@ -157,11 +161,10 @@ window.fbLoadObs = async function(){
 };
 window.fbSaveObs = async function(data, val){
   try{
-    // carregar obs existentes e mesclar
     const snap = await getDoc(doc(db,'config','obs'));
     const existing = snap.exists() ? (snap.data().obs||{}) : {};
     if(val) existing[data]=val; else delete existing[data];
-    await setDoc(doc(db,'config','obs'), {obs: existing, ts: serverTimestamp()});
+    await setDoc(doc(db,'config','obs'), {obs: existing, _t: APP_TOKEN, ts: serverTimestamp()});
   }catch(e){ console.error(e); }
 };
 
