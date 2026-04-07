@@ -122,13 +122,13 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
 /* ═══════════════════════════════════════════════════
    APP LAYOUT
 ═══════════════════════════════════════════════════ */
-#tela-app{display:none;padding:16px 12px 80px;position:relative;z-index:1}
+#tela-app{display:none;padding:16px 12px 80px}
 .container{max-width:860px;margin:0 auto}
 
 /* HEADER */
 .topbar{
   display:flex;align-items:center;justify-content:space-between;
-  margin-bottom:18px;animation:fadeDown .4s ease both;gap:10px;
+  margin-bottom:18px;gap:10px;
 }
 .tb-left h1{
   font-family:'Nunito',sans-serif;font-size:1.3rem;font-weight:900;
@@ -317,7 +317,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
 .perf-av img{width:100%;height:100%;object-fit:cover}
 .perf-nome{font-size:.78rem;font-weight:700;color:var(--text)}
 .perf-arr{font-size:.58rem;color:var(--muted)}
-.perf-menu{position:absolute;top:calc(100% + 7px);right:0;background:var(--card);border-radius:14px;border:1.5px solid var(--border);box-shadow:var(--shh);min-width:190px;padding:6px;z-index:50;display:none;animation:fadeIn .15s ease}
+.perf-menu{position:fixed;top:60px;right:12px;background:var(--card);border-radius:14px;border:1.5px solid var(--border);box-shadow:var(--shh);min-width:200px;padding:6px;z-index:9999;display:none;animation:fadeIn .15s ease}
 .perf-menu.open{display:block}
 .pm-head{padding:9px 11px 8px;border-bottom:1px solid var(--border);margin-bottom:4px}
 .pm-n{font-family:'Nunito',sans-serif;font-weight:800;font-size:.88rem;color:var(--text)}
@@ -471,7 +471,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
       <div class="ucard" id="uc-mae" onclick="selUser('mae')">
         <span class="uc-em" id="uc-em-mae">👩</span>
         <div class="uc-n">Mãe</div>
-        <div class="uc-r" id="uc-r-mae">Daiana</div>
+        <div class="uc-r" id="uc-r-mae">Parceira</div>
       </div>
     </div>
     <div class="lfield">
@@ -519,18 +519,6 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
           <div class="perf-av" id="perf-av"></div>
           <span class="perf-nome" id="perf-nome"></span>
           <span class="perf-arr">▾</span>
-        </div>
-        <div class="perf-menu" id="perf-menu">
-          <div class="pm-head">
-            <div class="pm-n" id="pm-n"></div>
-            <div class="pm-r" id="pm-r"></div>
-          </div>
-          <div class="pmi" onclick="abrirMo('mo-perfil')">👤 Perfil</div>
-          <div class="pmi" onclick="abrirLog()">📋 Log de atividades</div>
-          <div class="pmi" onclick="abrirHistorico()">🗂️ Histórico completo</div>
-          <div class="pmi" onclick="abrirMo('mo-meds-admin')">💊 Gerenciar remédios</div>
-          <div class="pm-sep"></div>
-          <div class="pmi danger" onclick="fazerLogout()">🚪 Sair</div>
         </div>
       </div>
     </div>
@@ -871,6 +859,20 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
       <button class="mbtn save" onclick="salvarAvatarUser()">Salvar</button>
     </div>
   </div>
+</div>
+
+<!-- MENU PERFIL — direto no body para evitar stacking context -->
+<div class="perf-menu" id="perf-menu">
+  <div class="pm-head">
+    <div class="pm-n" id="pm-n"></div>
+    <div class="pm-r" id="pm-r"></div>
+  </div>
+  <div class="pmi" onclick="abrirMo('mo-perfil')">👤 Perfil</div>
+  <div class="pmi" onclick="abrirLog()">📋 Log de atividades</div>
+  <div class="pmi" onclick="abrirHistorico()">🗂️ Histórico completo</div>
+  <div class="pmi" onclick="abrirMo('mo-meds-admin')">💊 Gerenciar remédios</div>
+  <div class="pm-sep"></div>
+  <div class="pmi danger" onclick="fazerLogout()">🚪 Sair</div>
 </div>
 
 <script>
@@ -1702,7 +1704,14 @@ function initDark(){
 // ═══════════════════════════════════════════════════════════
 // MENU
 // ═══════════════════════════════════════════════════════════
-function togglePerfMenu(){document.getElementById('perf-menu').classList.toggle('open');}
+function togglePerfMenu(){
+  const menu = document.getElementById('perf-menu');
+  const trig = document.getElementById('perf-trig');
+  const rect = trig.getBoundingClientRect();
+  menu.style.top  = (rect.bottom + 8) + 'px';
+  menu.style.right = (window.innerWidth - rect.right) + 'px';
+  menu.classList.toggle('open');
+}
 function fecharMenus(){document.getElementById('perf-menu')?.classList.remove('open');}
 document.addEventListener('click',e=>{const w=document.getElementById('perf-wrap');if(w&&!w.contains(e.target))fecharMenus();});
 
