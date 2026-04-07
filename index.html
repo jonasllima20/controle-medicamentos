@@ -8,6 +8,190 @@
 <title>Remédios das Crianças 💊</title>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script type="module">
+// ═══════════════════════════════════════════════════════════
+// FIREBASE — inicialização e listeners em tempo real
+// ═══════════════════════════════════════════════════════════
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, doc, collection, setDoc, getDoc, getDocs,
+         deleteDoc, onSnapshot, writeBatch, serverTimestamp
+       } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey:            "AIzaSyCyVsra1JxICGmvJsc-8sFb49KsFfhQPWA",
+  authDomain:        "remedios-criancas.firebaseapp.com",
+  projectId:         "remedios-criancas",
+  storageBucket:     "remedios-criancas.firebasestorage.app",
+  messagingSenderId: "880633884799",
+  appId:             "1:880633884799:web:77affc795107ddb066cf4a",
+  measurementId:     "G-MC28WKCEG0"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const db    = getFirestore(fbApp);
+
+// ── Indicador de sync ──────────────────────────────────────
+function setSyncStatus(s){
+  const el = document.getElementById('sync-status');
+  if(!el) return;
+  if(s==='ok')   { el.textContent='☁️ Sincronizado'; el.style.color='var(--green)'; }
+  if(s==='sync') { el.textContent='⏳ Sincronizando…'; el.style.color='var(--warn)'; }
+  if(s==='err')  { el.textContent='⚠️ Sem conexão'; el.style.color='var(--red)'; }
+}
+
+// ── Cache local (fallback offline) ────────────────────────
+function cacheSet(k,v){ try{ localStorage.setItem('fb_cache_'+k, JSON.stringify(v)); }catch(e){} }
+function cacheGet(k)  { try{ const v=localStorage.getItem('fb_cache_'+k); return v?JSON.parse(v):null; }catch(e){return null;} }
+
+// ── HISTÓRICO ─────────────────────────────────────────────
+window._fbUnsubHist = null;
+
+window.fbStartListeners = function(){
+  // Listener em tempo real para histórico
+  if(window._fbUnsubHist) window._fbUnsubHist();
+  window._fbUnsubHist = onSnapshot(
+    collection(db,'historico'),
+    snap => {
+      const arr = snap.docs.map(d=>({id:d.id,...d.data()}));
+      cacheSet('hist', arr);
+      // injeta no estado global e redesenha
+      window._fbHist = arr;
+      if(typeof atualizarTudo === 'function') atualizarTudo();
+      setSyncStatus('ok');
+    },
+    err => { console.warn('Firestore hist error',err); setSyncStatus('err'); }
+  );
+
+  // Listener em tempo real para log
+  if(window._fbUnsubLog) window._fbUnsubLog();
+  window._fbUnsubLog = onSnapshot(
+    collection(db,'log'),
+    snap => {
+      const arr = snap.docs.map(d=>({id:d.id,...d.data()}));
+      cacheSet('log', arr);
+      window._fbLog = arr;
+    },
+    err => { console.warn('Firestore log error',err); }
+  );
+
+  // Remédios (sem listener — muda raramente, só quando salvo)
+  window.fbLoadMeds();
+
+  // Observações do calendário
+  window.fbLoadObs();
+};
+
+window._fbHist = cacheGet('hist') || [];
+window._fbLog  = cacheGet('log')  || [];
+
+// Substituir getHist/setHist globais
+window.getHist = function(){ return window._fbHist || []; };
+window.setHist = async function(arr){
+  // usado só para DELEÇÃO em massa (limparTudo)
+  // para adição individual use fbAddDose
+};
+
+window.getLog = function(){ return window._fbLog || []; };
+window.setLog = async function(arr){};
+
+// Adicionar dose individual
+window.fbAddDose = async function(reg){
+  setSyncStatus('sync');
+  try{
+    const id = `${reg.dataISO}_${reg.nome}_${reg.remedio}_${reg.periodo}`;
+    await setDoc(doc(db,'historico',id), {...reg, ts: serverTimestamp()});
+    setSyncStatus('ok');
+  }catch(e){ console.error(e); setSyncStatus('err'); }
+};
+
+window.fbRemoveDose = async function(data,nome,remedio,periodo){
+  setSyncStatus('sync');
+  try{
+    const d = parseDate(data);
+    const iso = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    const id = `${iso}_${nome}_${remedio}_${periodo}`;
+    await deleteDoc(doc(db,'historico',id));
+    setSyncStatus('ok');
+  }catch(e){ console.error(e); setSyncStatus('err'); }
+};
+
+window.fbAddLog = async function(entry){
+  try{
+    const id = 'log_'+Date.now()+'_'+Math.random().toString(36).substr(2,5);
+    await setDoc(doc(db,'log',id), {...entry, ts: serverTimestamp()});
+  }catch(e){ console.error(e); }
+};
+
+// Remédios
+window.getMeds = function(){
+  const cached = cacheGet('meds');
+  return cached && cached.length ? cached : (JSON.parse(localStorage.getItem('rm_meds')||'null') || window._DEFAULT_MEDS);
+};
+window.setMeds = async function(arr){
+  cacheSet('meds', arr);
+  localStorage.setItem('rm_meds', JSON.stringify(arr));
+  try{
+    await setDoc(doc(db,'config','meds'), {lista: arr, ts: serverTimestamp()});
+  }catch(e){ console.error(e); }
+};
+window.fbLoadMeds = async function(){
+  try{
+    const snap = await getDoc(doc(db,'config','meds'));
+    if(snap.exists()){
+      const arr = snap.data().lista;
+      cacheSet('meds', arr);
+      localStorage.setItem('rm_meds', JSON.stringify(arr));
+    }
+  }catch(e){ console.error(e); }
+};
+
+// Observações
+window.fbLoadObs = async function(){
+  try{
+    const snap = await getDoc(doc(db,'config','obs'));
+    if(snap.exists()){
+      const obs = snap.data().obs || {};
+      Object.keys(obs).forEach(k => localStorage.setItem('obs_'+k, obs[k]));
+    }
+  }catch(e){ console.error(e); }
+};
+window.fbSaveObs = async function(data, val){
+  try{
+    // carregar obs existentes e mesclar
+    const snap = await getDoc(doc(db,'config','obs'));
+    const existing = snap.exists() ? (snap.data().obs||{}) : {};
+    if(val) existing[data]=val; else delete existing[data];
+    await setDoc(doc(db,'config','obs'), {obs: existing, ts: serverTimestamp()});
+  }catch(e){ console.error(e); }
+};
+
+// Limpar tudo
+window.fbLimparTudo = async function(){
+  setSyncStatus('sync');
+  try{
+    const [hSnap, lSnap] = await Promise.all([
+      getDocs(collection(db,'historico')),
+      getDocs(collection(db,'log'))
+    ]);
+    const batch = writeBatch(db);
+    hSnap.docs.forEach(d=>batch.delete(d.ref));
+    lSnap.docs.forEach(d=>batch.delete(d.ref));
+    await batch.commit();
+    window._fbHist=[];
+    window._fbLog=[];
+    setSyncStatus('ok');
+  }catch(e){ console.error(e); setSyncStatus('err'); }
+};
+
+// Expor db para uso fora do module
+window._fbDb = db;
+window._fbServerTimestamp = serverTimestamp;
+window._fbDoc = doc;
+window._fbCollection = collection;
+
+// Iniciar após login
+window.fbReady = true;
+</script>
 <style>
 /* ═══════════════════════════════════════════════════
    TOKENS
@@ -510,6 +694,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     <div class="tb-left">
       <h1>💊 Remédios das Crianças</h1>
       <p id="data-hoje"></p>
+      <p id="sync-status" style="font-size:.68rem;font-weight:700;margin-top:2px;color:var(--green)">☁️ Conectando…</p>
     </div>
     <div class="tb-right">
       <button class="ibtn" id="btn-dark" onclick="toggleDark()" title="Modo escuro">🌙</button>
@@ -1041,9 +1226,12 @@ const DEFAULT_MEDS = [
   { nome:'Zinco',      icon:'⚡', periodos:['manha'], horaManha:'08:00', horaNoite:'' },
   { nome:'Ômega 3',    icon:'🐟', periodos:['manha'], horaManha:'08:00', horaNoite:'' },
 ];
-
-function getMeds(){ return JSON.parse(localStorage.getItem('rm_meds')||'null') || DEFAULT_MEDS; }
-function setMeds(m){ localStorage.setItem('rm_meds',JSON.stringify(m)); }
+window._DEFAULT_MEDS = DEFAULT_MEDS;
+// getMeds/setMeds são sobrescritos pelo módulo Firebase acima; fallback caso não carregue
+if(!window.getMeds) window.getMeds = function(){ return JSON.parse(localStorage.getItem('rm_meds')||'null') || DEFAULT_MEDS; };
+if(!window.setMeds) window.setMeds = function(m){ localStorage.setItem('rm_meds',JSON.stringify(m)); };
+function getMeds(){ return window.getMeds(); }
+function setMeds(m){ window.setMeds(m); }
 function totalDoses(){ return getMeds().reduce((s,m)=>s+m.periodos.length,0); }
 
 const CRIANCAS = ['Arthur','Alice'];
@@ -1056,10 +1244,10 @@ function hoje()    { return new Date().toLocaleDateString('pt-BR'); }
 function hojeISO() { return new Date().toISOString().split('T')[0]; }
 function parseDate(s){ const p=s.split('/'); return new Date(+p[2],+p[1]-1,+p[0]); }
 function fmtDate(d)  { return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear(); }
-function getHist()   { return JSON.parse(localStorage.getItem('rm_hist')||'[]'); }
-function setHist(d)  { localStorage.setItem('rm_hist',JSON.stringify(d)); }
-function getLog()    { return JSON.parse(localStorage.getItem('rm_log')||'[]'); }
-function setLog(d)   { localStorage.setItem('rm_log',JSON.stringify(d)); }
+function getHist()   { return window._fbHist || []; }
+function setHist(d)  { window._fbHist = d; }
+function getLog()    { return window._fbLog  || []; }
+function setLog(d)   { window._fbLog  = d; }
 
 function horaToMin(s){ if(!s)return null; const[h,m]=s.split(':').map(Number); return h*60+m; }
 function nowMin(){ const n=new Date(); return n.getHours()*60+n.getMinutes(); }
@@ -1146,13 +1334,14 @@ function renderCards(){
 // ═══════════════════════════════════════════════════════════
 let _notaCb=null;
 function clicarMed(nome, remedio, periodo, btn){
-  const dados=getHist(); const data=hoje();
+  const data=hoje();
   const key=`${data}_${nome}_${remedio}_${periodo}`;
-  if(localStorage.getItem(key)){
-    // desmarcar
+  const jaFeito = (window._fbHist||[]).some(r=>r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo);
+  if(jaFeito||localStorage.getItem(key)){
     localStorage.removeItem(key);
-    const nd=dados.filter(r=>!(r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo));
-    setHist(nd); atualizarTudo(); return;
+    window._fbHist=(window._fbHist||[]).filter(r=>!(r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo));
+    if(window.fbRemoveDose) window.fbRemoveDose(data,nome,remedio,periodo);
+    atualizarTudo(); return;
   }
   // abrir nota antes de marcar
   document.getElementById('nota-context').textContent=`${nome} · ${remedio} · ${periodo==='noite'?'noite':'manhã'}`;
@@ -1170,15 +1359,22 @@ function confirmarNota(){
 }
 
 function marcarDose(nome, remedio, periodo, btn, nota){
-  let dados=getHist(); let log=getLog();
   const data=hoje();
-  const key=`${data}_${nome}_${remedio}_${periodo}`;
   const hora=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-  localStorage.setItem(key,hora);
   const reg={data,dataISO:hojeISO(),nome,remedio,periodo,hora,usuario:activeUser,nota:nota||null};
-  dados.push(reg); setHist(dados);
-  log.push({ts:Date.now(),data,hora,usuario:activeUser,acao:`Marcou ${remedio} (${periodo==='noite'?'noite':'manhã'}) para ${nome}${nota?' — "'+nota+'"':''}`});
-  setLog(log);
+
+  // Otimistic update local imediato
+  window._fbHist = [...(window._fbHist||[]), reg];
+
+  // Persiste no Firebase (listeners atualizam automaticamente)
+  if(window.fbAddDose) window.fbAddDose(reg);
+
+  // Log
+  const logEntry={ts:Date.now(),data,hora,usuario:activeUser,
+    acao:`Marcou ${remedio} (${periodo==='noite'?'noite':'manhã'}) para ${nome}${nota?' — "'+nota+'"':''}`};
+  window._fbLog = [...(window._fbLog||[]), logEntry];
+  if(window.fbAddLog) window.fbAddLog(logEntry);
+
   btn.classList.add('pop'); setTimeout(()=>btn.classList.remove('pop'),300);
   atualizarTudo(); verificarCelebracao();
 }
@@ -1503,6 +1699,7 @@ function limparTudo(){
   localStorage.removeItem('rm_hist');
   localStorage.removeItem('rm_log');
   Object.keys(localStorage).forEach(k=>{if(k.startsWith('obs_')||k.match(/^\d{2}\/\d{2}\/\d{4}_/))localStorage.removeItem(k);});
+  if(window.fbLimparTudo) window.fbLimparTudo();
   renderHistorico(); renderLog(); atualizarTudo();
 }
 
@@ -1613,7 +1810,16 @@ function adicionarMed(){
 // ═══════════════════════════════════════════════════════════
 let _obsData=null;
 function abrirObs(data){_obsData=data;document.getElementById('obs-titulo').textContent='📝 Obs — '+data;document.getElementById('obs-txt').value=localStorage.getItem('obs_'+data)||'';abrirMo('mo-obs');}
-function salvarObs(del){if(!_obsData)return;if(del)localStorage.removeItem('obs_'+_obsData);else{const v=document.getElementById('obs-txt').value.trim();if(v)localStorage.setItem('obs_'+_obsData,v);else localStorage.removeItem('obs_'+_obsData);}fecharMo('mo-obs');gerarCal();}
+function salvarObs(del){
+  if(!_obsData)return;
+  if(del){ localStorage.removeItem('obs_'+_obsData); if(window.fbSaveObs) window.fbSaveObs(_obsData,null); }
+  else{
+    const v=document.getElementById('obs-txt').value.trim();
+    if(v){ localStorage.setItem('obs_'+_obsData,v); if(window.fbSaveObs) window.fbSaveObs(_obsData,v); }
+    else { localStorage.removeItem('obs_'+_obsData); if(window.fbSaveObs) window.fbSaveObs(_obsData,null); }
+  }
+  fecharMo('mo-obs'); gerarCal();
+}
 
 // ═══════════════════════════════════════════════════════════
 // AVATARES — CRIANÇAS
@@ -1738,6 +1944,8 @@ function entrar(){
   document.getElementById('tela-app').style.display='block';
   initDark(); aplicarAvatares(); atualizarHeaderUser();
   document.getElementById('data-hoje').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  // Inicia listeners Firebase em tempo real
+  if(window.fbStartListeners) window.fbStartListeners();
   atualizarTudo(); resetTimeout();
 }
 
