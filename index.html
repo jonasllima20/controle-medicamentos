@@ -38,9 +38,9 @@ const db    = getFirestore(fbApp);
 function setSyncStatus(s){
   const el = document.getElementById('sync-status');
   if(!el) return;
-  if(s==='ok')   { el.textContent='☁️ Sincronizado'; el.style.color='var(--green)'; }
-  if(s==='sync') { el.textContent='⏳ Sincronizando…'; el.style.color='var(--warn)'; }
-  if(s==='err')  { el.textContent='⚠️ Sem conexão'; el.style.color='var(--red)'; }
+  if(s==='ok')   { el.innerHTML='☁️ Sincronizado'; el.style.color='var(--green)'; }
+  if(s==='sync') { el.innerHTML='⏳ Sincronizando…'; el.style.color='var(--warn)'; }
+  if(s==='err')  { el.innerHTML='⚠️ Sem conexão — <span onclick="window.fbStartListeners&&window.fbStartListeners()" style="text-decoration:underline;cursor:pointer">reconectar</span>'; el.style.color='var(--red)'; }
 }
 
 // ── Cache local (fallback offline) ────────────────────────
@@ -58,12 +58,16 @@ window.fbStartListeners = function(){
     snap => {
       const arr = snap.docs.map(d=>({id:d.id,...d.data()}));
       cacheSet('hist', arr);
-      // injeta no estado global e redesenha
       window._fbHist = arr;
       if(typeof atualizarTudo === 'function') atualizarTudo();
       setSyncStatus('ok');
     },
-    err => { console.warn('Firestore hist error',err); setSyncStatus('err'); }
+    err => {
+      console.warn('Firestore hist error', err);
+      setSyncStatus('err');
+      // Tenta reconectar após 5s
+      setTimeout(()=>{ if(window.fbStartListeners) window.fbStartListeners(); }, 5000);
+    }
   );
 
   // Listener em tempo real para log
@@ -75,13 +79,11 @@ window.fbStartListeners = function(){
       cacheSet('log', arr);
       window._fbLog = arr;
     },
-    err => { console.warn('Firestore log error',err); }
+    err => { console.warn('Firestore log error', err); }
   );
 
-  // Remédios (sem listener — muda raramente, só quando salvo)
+  // Remédios e observações
   window.fbLoadMeds();
-
-  // Observações do calendário
   window.fbLoadObs();
 };
 
