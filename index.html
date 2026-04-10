@@ -7,6 +7,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Remédios das Crianças 💊</title>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<!-- EmailJS -->
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script type="module">
 // ═══════════════════════════════════════════════════════════
@@ -680,7 +682,66 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
 .proximos-wrap{margin-top:10px}
 .px-titulo{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:7px;margin-top:12px}
 
-/* TIMEOUT BANNER */
+/* NOTIFICAÇÕES */
+.notif-banner{
+  display:none;position:fixed;top:0;left:0;right:0;z-index:250;
+  background:linear-gradient(135deg,var(--ind),#8B5CF6);
+  padding:12px 18px;display:flex;align-items:center;gap:12px;
+  box-shadow:0 4px 20px rgba(99,102,241,.3);
+}
+.notif-banner.show{display:flex;animation:slideDown .3s ease}
+@keyframes slideDown{from{transform:translateY(-100%)}to{transform:translateY(0)}}
+.notif-banner-txt{flex:1;font-size:.82rem;font-weight:600;color:white;line-height:1.4}
+.notif-banner-btn{padding:6px 14px;border-radius:99px;border:none;cursor:pointer;font-weight:700;font-size:.76rem;white-space:nowrap;transition:all .2s}
+.nb-allow{background:white;color:var(--ind)}
+.nb-dismiss{background:rgba(255,255,255,.2);color:white}
+
+.notif-status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px;flex-shrink:0}
+.dot-on{background:#6EE7B7} .dot-off{background:#FCA5A5} .dot-pend{background:#FCD34D}
+
+.notif-config-row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--border)}
+.notif-config-row:last-child{border-bottom:none}
+.ncr-left{flex:1;min-width:0}
+.ncr-title{font-size:.85rem;font-weight:700;color:var(--text)}
+.ncr-desc{font-size:.72rem;color:var(--muted);margin-top:2px}
+
+/* Toggle switch */
+.toggle{position:relative;width:42px;height:24px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;inset:0;background:var(--border);border-radius:99px;cursor:pointer;transition:.3s}
+.toggle-slider:before{content:'';position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.3s;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.toggle input:checked + .toggle-slider{background:var(--ind)}
+.toggle input:checked + .toggle-slider:before{transform:translateX(18px)}
+
+.notif-test-btn{
+  width:100%;padding:10px;border-radius:11px;border:1.5px dashed var(--border);
+  background:var(--bg);color:var(--muted);font-size:.8rem;font-weight:600;
+  cursor:pointer;transition:all .2s;margin-top:10px;
+}
+.notif-test-btn:hover{border-color:var(--ind);color:var(--ind);background:var(--indl)}
+
+.notif-schedule-info{
+  background:var(--indl);border:1.5px solid var(--ind);border-radius:12px;
+  padding:12px 14px;margin-bottom:14px;
+}
+.nsi-title{font-size:.78rem;font-weight:700;color:var(--ind);margin-bottom:8px}
+.nsi-row{display:flex;align-items:center;gap:8px;font-size:.75rem;color:var(--text);margin-bottom:5px}
+.nsi-row:last-child{margin-bottom:0}
+.nsi-badge{
+  min-width:28px;text-align:center;padding:2px 8px;border-radius:99px;
+  font-size:.65rem;font-weight:800;background:var(--ind);color:white;
+}
+
+.upcoming-notif-item{
+  display:flex;align-items:flex-start;gap:10px;padding:9px 0;
+  border-bottom:1px solid var(--border);
+}
+.upcoming-notif-item:last-child{border-bottom:none}
+.uni-time{font-size:.7rem;font-weight:700;color:var(--ind);white-space:nowrap;min-width:55px}
+.uni-body{flex:1}
+.uni-title{font-size:.8rem;font-weight:700;color:var(--text)}
+.uni-sub{font-size:.7rem;color:var(--muted);margin-top:1px}
+
 #timeout-banner{
   display:none;position:fixed;bottom:0;left:0;right:0;z-index:200;
   background:var(--warnl);border-top:2px solid var(--mnb);
@@ -721,6 +782,17 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
 
 <canvas id="confetti-canvas"></canvas>
 <div id="timeout-banner">⏱️ Sessão expira em <span id="timeout-count">60</span>s por inatividade — <button onclick="resetTimeout()" style="background:none;border:none;font-weight:800;color:#92400E;cursor:pointer;text-decoration:underline">Continuar</button></div>
+
+<!-- BANNER PERMISSÃO NOTIFICAÇÃO -->
+<div class="notif-banner" id="notif-banner">
+  <span style="font-size:1.5rem">🔔</span>
+  <div class="notif-banner-txt">
+    <strong>Ativar notificações?</strong><br>
+    Receba lembretes automáticos de consultas, exames e vacinas — mesmo com o app fechado.
+  </div>
+  <button class="notif-banner-btn nb-allow" onclick="solicitarPermissaoPush()">Ativar</button>
+  <button class="notif-banner-btn nb-dismiss" onclick="dispensarBannerNotif()">Agora não</button>
+</div>
 
 <!-- ════════════════ LOGIN ════════════════ -->
 <div id="tela-login">
@@ -783,6 +855,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     <div class="tb-right">
       <button class="ibtn" id="btn-dark" onclick="toggleDark()" title="Modo escuro">🌙</button>
       <button class="ibtn" onclick="bloquear()" title="Bloquear tela">🔒</button>
+      <button class="ibtn" id="btn-notif" onclick="abrirConfigNotif()" title="Notificações" style="position:relative">🔔<span id="notif-badge" style="display:none;position:absolute;top:4px;right:4px;width:8px;height:8px;background:var(--red);border-radius:50%;border:2px solid var(--card)"></span></button>
       <div class="perf-wrap" id="perf-wrap">
         <div class="perf-trig" onclick="togglePerfMenu()" id="perf-trig">
           <div class="perf-av" id="perf-av"></div>
@@ -1317,10 +1390,84 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
   <div class="pmi" onclick="abrirHistorico()">🗂️ Histórico completo</div>
   <div class="pmi" onclick="abrirMo('mo-meds-admin')">💊 Gerenciar remédios</div>
   <div class="pmi" onclick="abrirTodosEventos()">🏥 Agenda médica</div>
+  <div class="pmi" onclick="abrirConfigNotif()">🔔 Notificações</div>
   <div class="pm-sep"></div>
   <div class="pmi danger" onclick="fazerLogout()">🚪 Sair</div>
 </div>
 
+
+<!-- MODAL NOTIFICAÇÕES CONFIG -->
+<div class="mo" id="mo-notif">
+  <div class="mbox wide">
+    <div class="mt">🔔 Configurar notificações</div>
+
+    <!-- Status atual -->
+    <div id="notif-status-wrap" style="margin-bottom:16px;padding:12px 14px;background:var(--bg);border-radius:12px;border:1.5px solid var(--border)">
+      <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">STATUS ATUAL</div>
+      <div id="notif-push-status" style="font-size:.83rem;font-weight:600;color:var(--text);display:flex;align-items:center;gap:6px;margin-bottom:5px"></div>
+      <div id="notif-email-status" style="font-size:.83rem;font-weight:600;color:var(--text);display:flex;align-items:center;gap:6px"></div>
+    </div>
+
+    <!-- Cronograma -->
+    <div class="notif-schedule-info">
+      <div class="nsi-title">📅 Cronograma de lembretes</div>
+      <div class="nsi-row"><span class="nsi-badge">3 dias</span> 1 notificação no dia</div>
+      <div class="nsi-row"><span class="nsi-badge">2 dias</span> 2 notificações com 6h de intervalo</div>
+      <div class="nsi-row"><span class="nsi-badge">1 dia</span> 1 notificação no dia</div>
+      <div class="nsi-row"><span class="nsi-badge">No dia</span> Confirmação: "Está pronto para ir?"</div>
+    </div>
+
+    <!-- Config push -->
+    <div class="notif-config-row">
+      <div class="ncr-left">
+        <div class="ncr-title">📱 Push notification</div>
+        <div class="ncr-desc">Popup no celular, iPad e notebook — funciona com app fechado</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="toggle-push" onchange="togglePushConfig(this.checked)">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+
+    <!-- Config email -->
+    <div class="notif-config-row">
+      <div class="ncr-left">
+        <div class="ncr-title">📧 E-mail (via EmailJS)</div>
+        <div class="ncr-desc">Notificação por e-mail nos horários agendados</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="toggle-email" onchange="toggleEmailConfig(this.checked)">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+
+    <!-- Config EmailJS (aparece só quando email ligado) -->
+    <div id="emailjs-config" style="display:none;margin-top:12px;padding:14px;background:var(--bg);border-radius:12px;border:1.5px solid var(--border)">
+      <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">
+        CREDENCIAIS EMAILJS
+        <a href="https://www.emailjs.com" target="_blank" style="color:var(--ind);font-weight:600;margin-left:8px;text-decoration:none">→ criar conta grátis</a>
+      </div>
+      <div class="field"><label>Public Key</label><input type="text" id="ejs-public-key" placeholder="Ex: user_aBcDeFgHiJkLmNoPqRsT" oninput="salvarEmailJSConfig()"></div>
+      <div class="field"><label>Service ID</label><input type="text" id="ejs-service-id" placeholder="Ex: service_xxxx" oninput="salvarEmailJSConfig()"></div>
+      <div class="field"><label>Template ID</label><input type="text" id="ejs-template-id" placeholder="Ex: template_xxxx" oninput="salvarEmailJSConfig()"></div>
+      <div class="field"><label>E-mail do Pai (Jonas)</label><input type="email" id="ejs-email-pai" placeholder="seu@email.com" oninput="salvarEmailJSConfig()"></div>
+      <div class="field" style="margin-bottom:0"><label>E-mail da Mãe</label><input type="email" id="ejs-email-mae" placeholder="mae@email.com" oninput="salvarEmailJSConfig()"></div>
+    </div>
+
+    <!-- Próximas notificações agendadas -->
+    <div style="margin-top:14px">
+      <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">PRÓXIMAS NOTIFICAÇÕES</div>
+      <div id="upcoming-notifs" style="max-height:200px;overflow-y:auto"></div>
+    </div>
+
+    <button class="notif-test-btn" onclick="enviarNotifTeste()">🧪 Enviar notificação de teste</button>
+
+    <div class="mbtns">
+      <button class="mbtn cancel" onclick="fecharMo('mo-notif')">Fechar</button>
+      <button class="mbtn save" onclick="agendarTodasNotificacoes();fecharMo('mo-notif')">💾 Salvar e agendar</button>
+    </div>
+  </div>
+</div>
 
 <script>
 'use strict';
@@ -1984,18 +2131,21 @@ function deletarEvento(){
   fecharMo('mo-agenda');renderProximos();gerarCal();
 }
 function renderProximos(){
-  const evs=getEventos();const hoje2=new Date();hoje2.setHours(0,0,0,0);
-  const sorted=evs.sort((a,b)=>a.dataISO.localeCompare(b.dataISO));
+  const evs=getEventos();
+  const hoje2=new Date();hoje2.setHours(0,0,0,0);
+  // Dashboard mostra APENAS eventos de hoje em diante — passados ficam só no calendário/histórico
+  const futuros=evs.filter(e=>new Date(e.dataISO+'T00:00:00')>=hoje2)
+    .sort((a,b)=>a.dataISO.localeCompare(b.dataISO));
   const div=document.getElementById('proximos-lista');
-  if(!sorted.length){
+  if(!futuros.length){
     div.innerHTML='<p style="color:var(--muted);font-size:.8rem;text-align:center;padding:12px">Nenhum evento próximo.<br><span onclick="abrirNovoEvento()" style="color:var(--ind);cursor:pointer;font-weight:700">+ Adicionar evento</span></p>';
     return;
   }
-  div.innerHTML=sorted.map(e=>{
+  div.innerHTML=futuros.map(e=>{
     const[y,m,d]=e.dataISO.split('-');const evDate=new Date(+y,+m-1,+d);
-    const passado=evDate<hoje2;const diff=Math.round((evDate-hoje2)/(1000*60*60*24));
+    const diff=Math.round((evDate-hoje2)/(1000*60*60*24));
     const badge=diff===0?'<span class="ev-hoje-badge">HOJE</span>':diff===1?'<span class="ev-amanha-badge">AMANHÃ</span>':'';
-    return '<div class="ev-card'+(passado?' ev-vencido':'')+'"><div class="ev-card-top"><div class="ev-card-left">'
+    return '<div class="ev-card"><div class="ev-card-top"><div class="ev-card-left">'
       +'<div class="ev-titulo"><span class="ev-tipo-pill '+TIPO_CLS[e.tipo]+'">'+TIPO_LABELS[e.tipo]+'</span> <strong>'+e.titulo+'</strong>'+badge+'</div>'
       +'<div class="ev-detalhe">'
       +'<span>📅 '+d+'/'+m+'/'+y+(e.hora?' às '+e.hora:'')+'</span>'
@@ -2302,6 +2452,399 @@ function entrar(){
   if(window.fbStartListeners)window.fbStartListeners();
   if(typeof fbLoadEventos==='function')fbLoadEventos();
   atualizarTudo();resetTimeout();
+  // Iniciar sistema de notificações
+  initEmailJS();
+  verificarBannerNotif();
+  setTimeout(()=>{
+    reagendarNotificacoesPendentes();
+    verificarEmailsParaEnviar();
+    const notifs=calcularNotificacoesPendentes();
+    atualizarBadgeNotif(notifs);
+  },2000);
+}
+
+// ═══════════════════════════════════════════════════════════
+// SISTEMA DE NOTIFICAÇÕES
+// ═══════════════════════════════════════════════════════════
+
+// ── Config storage ────────────────────────────────────────
+function getNotifConfig(){
+  const defaults = {pushOn:false,emailOn:false,publicKey:'',serviceId:'',templateId:'',
+    emailPai:'jonasllima20@gmail.com',emailMae:'daiana.silva2596@gmail.com',dismissedBanner:false};
+  const saved = JSON.parse(localStorage.getItem('rm_notif_config')||'{}');
+  // Mescla: defaults primeiro, depois o que foi salvo — garante emails pré-preenchidos
+  return Object.assign({}, defaults, saved);
+}
+function setNotifConfig(c){ localStorage.setItem('rm_notif_config',JSON.stringify(c)); }
+
+// ── Service Worker ────────────────────────────────────────
+let _swReg = null;
+async function initServiceWorker(){
+  if(!('serviceWorker' in navigator)) return null;
+  // Não tenta registrar em ambientes de preview (claudeusercontent, localhost sem sw.js)
+  const hostname = location.hostname;
+  const isPreview = hostname.includes('claudeusercontent') || hostname.includes('claude.ai');
+  if(isPreview){ console.info('SW: pulado no preview — funcionará no GitHub Pages'); return null; }
+  try{
+    // GitHub Pages: o sw.js fica na raiz do repositório
+    // Ex: jonasllima20.github.io/controle-medicamentos/ → sw.js em /controle-medicamentos/sw.js
+    const base = location.pathname.endsWith('/')
+      ? location.pathname
+      : location.pathname.substring(0, location.pathname.lastIndexOf('/') + 1);
+    const swUrl = base + 'sw.js';
+    _swReg = await navigator.serviceWorker.register(swUrl, { scope: base });
+    await navigator.serviceWorker.ready;
+    console.info('SW registrado com sucesso:', swUrl);
+    return _swReg;
+  } catch(e){
+    console.warn('SW registro falhou:', e.message);
+    return null;
+  }
+}
+
+// ── Solicitar permissão push ──────────────────────────────
+async function solicitarPermissaoPush(){
+  dispensarBannerNotif();
+  if(!('Notification' in window)){
+    alert('Seu navegador não suporta notificações push. Tente Chrome ou Safari.');
+    return false;
+  }
+  const perm = await Notification.requestPermission();
+  const cfg = getNotifConfig();
+  cfg.pushOn = perm === 'granted';
+  setNotifConfig(cfg);
+  if(perm === 'granted'){
+    atualizarUINotif();
+    agendarTodasNotificacoes();
+    mostrarNotifInApp('✅ Notificações ativadas!','Você receberá lembretes sobre consultas e exames.','ok');
+  } else {
+    mostrarNotifInApp('❌ Permissão negada','Ative as notificações nas configurações do navegador.','err');
+  }
+  return perm === 'granted';
+}
+
+function dispensarBannerNotif(){
+  const banner = document.getElementById('notif-banner');
+  if(banner) banner.classList.remove('show');
+  const cfg = getNotifConfig(); cfg.dismissedBanner = true; setNotifConfig(cfg);
+}
+
+// ── Toast in-app ──────────────────────────────────────────
+function mostrarNotifInApp(title, body, type='ok'){
+  const id = 'toast_'+Date.now();
+  const color = type==='ok'?'var(--green)':type==='err'?'var(--red)':'var(--ind)';
+  const d = Object.assign(document.createElement('div'),{id});
+  d.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--card);border:1.5px solid '+color+';border-radius:14px;padding:12px 18px;box-shadow:var(--shh);z-index:300;max-width:320px;width:90%;animation:fadeIn .3s ease;font-size:.83rem';
+  d.innerHTML='<strong style="color:'+color+'">'+title+'</strong><br><span style="color:var(--muted)">'+body+'</span>';
+  document.body.appendChild(d);
+  setTimeout(()=>d.remove(), 4000);
+}
+
+// ── Calcular notificações a agendar ───────────────────────
+function calcularNotificacoesPendentes(){
+  const evs = getEventos();
+  const agora = new Date();
+  const notifs = [];
+
+  evs.forEach(ev => {
+    const[y,m,d] = ev.dataISO.split('-');
+    const evDate = new Date(+y,+m-1,+d,9,0,0); // 9h no dia do evento
+
+    const TIPO_ICONS = {consulta:'🩺',retorno:'🔄',exame:'🔬',vacina:'💉'};
+    const tipoIcon = TIPO_ICONS[ev.tipo]||'🏥';
+    const quemTxt = ev.quem==='Ambos'?'Arthur e Alice':ev.quem;
+    const localTxt = ev.local ? ' em '+ev.local : '';
+
+    // 3 dias antes — 9h
+    const d3 = new Date(evDate); d3.setDate(d3.getDate()-3); d3.setHours(9,0,0,0);
+    if(d3 > agora) notifs.push({
+      ts: d3.getTime(), evId: ev.id,
+      title: tipoIcon+' Lembrete — '+ev.titulo+' em 3 dias',
+      body: quemTxt+localTxt+' · '+String(d).padStart(2,'0')+'/'+String(m).padStart(2,'0')+'/'+y+(ev.hora?' às '+ev.hora:''),
+      tag: 'ev_3d_'+ev.id
+    });
+
+    // 2 dias antes — 9h e 15h
+    [9,15].forEach((hora,i) => {
+      const d2 = new Date(evDate); d2.setDate(d2.getDate()-2); d2.setHours(hora,0,0,0);
+      if(d2 > agora) notifs.push({
+        ts: d2.getTime(), evId: ev.id,
+        title: tipoIcon+' Lembrete — '+ev.titulo+' amanhã'+(i===1?' (2º aviso)':''),
+        body: quemTxt+localTxt+' · '+String(d).padStart(2,'0')+'/'+String(m).padStart(2,'0')+'/'+y+(ev.hora?' às '+ev.hora:''),
+        tag: 'ev_2d_'+hora+'_'+ev.id
+      });
+    });
+
+    // 1 dia antes — 9h
+    const d1 = new Date(evDate); d1.setDate(d1.getDate()-1); d1.setHours(9,0,0,0);
+    if(d1 > agora) notifs.push({
+      ts: d1.getTime(), evId: ev.id,
+      title: tipoIcon+' Amanhã: '+ev.titulo,
+      body: quemTxt+localTxt+' · Prepare-se!',
+      tag: 'ev_1d_'+ev.id
+    });
+
+    // No dia — 8h confirmação
+    const dDia = new Date(evDate); dDia.setHours(8,0,0,0);
+    if(dDia > agora) notifs.push({
+      ts: dDia.getTime(), evId: ev.id,
+      title: tipoIcon+' HOJE: '+ev.titulo,
+      body: '✅ Está pronto para ir? '+quemTxt+localTxt+(ev.hora?' · '+ev.hora:''),
+      tag: 'ev_dia_'+ev.id
+    });
+  });
+
+  return notifs.sort((a,b)=>a.ts-b.ts);
+}
+
+// ── Agendar notificações push via SW ──────────────────────
+async function agendarTodasNotificacoes(){
+  const cfg = getNotifConfig();
+  if(!cfg.pushOn || Notification.permission !== 'granted') return;
+
+  const reg = _swReg || await initServiceWorker();
+  if(!reg || !reg.active) { console.warn('SW não disponível'); return; }
+
+  const notifs = calcularNotificacoesPendentes();
+  const agora = Date.now();
+
+  // Armazenar no localStorage para reprocessar ao abrir
+  localStorage.setItem('rm_notifs_agendadas', JSON.stringify(notifs));
+
+  notifs.forEach(n => {
+    const delayMs = n.ts - agora;
+    if(delayMs > 0 && delayMs < 7*24*60*60*1000){ // máx 7 dias
+      reg.active.postMessage({
+        type: 'SCHEDULE_NOTIF',
+        delayMs,
+        title: n.title,
+        body:  n.body,
+        tag:   n.tag
+      });
+    }
+  });
+
+  // Atualizar lista na UI
+  renderUpcomingNotifs(notifs);
+  atualizarBadgeNotif(notifs);
+}
+
+// ── Re-agendar ao abrir o app (SW pode ter sido morto) ────
+async function reagendarNotificacoesPendentes(){
+  const cfg = getNotifConfig();
+  if(!cfg.pushOn) return;
+  await agendarTodasNotificacoes();
+}
+
+// ── EmailJS ───────────────────────────────────────────────
+function initEmailJS(){
+  const cfg = getNotifConfig();
+  if(cfg.publicKey && window.emailjs) {
+    emailjs.init(cfg.publicKey);
+  }
+}
+
+async function enviarEmailNotificacao(notif, destinatarios){
+  const cfg = getNotifConfig();
+  if(!cfg.emailOn || !cfg.publicKey || !cfg.serviceId || !cfg.templateId) return;
+  initEmailJS();
+
+  for(const email of destinatarios){
+    if(!email) continue;
+    try{
+      await emailjs.send(cfg.serviceId, cfg.templateId, {
+        to_email:    email,
+        subject:     notif.title,
+        message:     notif.body,
+        app_name:    'Controle de Remédios das Crianças',
+        evento_tipo: notif.title,
+        evento_desc: notif.body,
+      });
+    } catch(e){ console.error('EmailJS erro:',e); }
+  }
+}
+
+// ── Verificar e disparar emails (chamado ao abrir o app) ──
+async function verificarEmailsParaEnviar(){
+  const cfg = getNotifConfig();
+  if(!cfg.emailOn || !cfg.publicKey) return;
+
+  const notifs = calcularNotificacoesPendentes();
+  const agora = Date.now();
+  const JANELA_MS = 30*60*1000; // janela de 30min para enviar
+  const enviadas = JSON.parse(localStorage.getItem('rm_emails_enviados')||'[]');
+
+  for(const n of notifs){
+    const diff = n.ts - agora;
+    const jaEnviou = enviadas.includes(n.tag);
+    // Se estiver na janela de ±30min e ainda não enviou
+    if(!jaEnviou && diff > -JANELA_MS && diff < JANELA_MS){
+      const emails = [cfg.emailPai, cfg.emailMae].filter(Boolean);
+      await enviarEmailNotificacao(n, emails);
+      enviadas.push(n.tag);
+      localStorage.setItem('rm_emails_enviados', JSON.stringify(enviadas.slice(-100)));
+    }
+  }
+}
+
+// ── Notificação de teste ──────────────────────────────────
+async function enviarNotifTeste(){
+  const cfg = getNotifConfig();
+
+  // Teste push
+  if(cfg.pushOn && Notification.permission === 'granted'){
+    const n = new Notification('🧪 Teste — Remédios das Crianças',{
+      body: 'Notificações push estão funcionando! ✅',
+      icon: '/favicon.ico',
+      tag:  'teste'
+    });
+    setTimeout(()=>n.close(), 5000);
+    mostrarNotifInApp('✅ Push enviado!','Verifique a notificação.','ok');
+  }
+
+  // Teste email
+  if(cfg.emailOn && cfg.publicKey && cfg.serviceId && cfg.templateId){
+    const emails = [cfg.emailPai, cfg.emailMae].filter(Boolean);
+    if(emails.length){
+      await enviarEmailNotificacao({
+        title: '🧪 Teste — Controle de Remédios',
+        body:  'Este é um e-mail de teste do app Controle de Remédios das Crianças. Notificações por e-mail estão funcionando! ✅'
+      }, emails);
+      mostrarNotifInApp('📧 E-mail enviado!','Verifique sua caixa de entrada.','ok');
+    } else {
+      mostrarNotifInApp('⚠️ Sem e-mails configurados','Adicione os e-mails do pai e da mãe.','err');
+    }
+  }
+
+  if(!cfg.pushOn && !cfg.emailOn){
+    mostrarNotifInApp('⚠️ Nenhum canal ativo','Ative push ou e-mail primeiro.','err');
+  }
+}
+
+// ── Abrir config ──────────────────────────────────────────
+function abrirConfigNotif(){
+  fecharMenus();
+  atualizarUINotif();
+  const notifs = calcularNotificacoesPendentes();
+  renderUpcomingNotifs(notifs);
+  atualizarBadgeNotif(notifs);
+  abrirMo('mo-notif');
+}
+
+function atualizarUINotif(){
+  const cfg = getNotifConfig();
+
+  // Toggle states
+  const tp = document.getElementById('toggle-push');
+  const te = document.getElementById('toggle-email');
+  if(tp) tp.checked = cfg.pushOn && Notification.permission === 'granted';
+  if(te) te.checked = cfg.emailOn;
+
+  // EmailJS config visibility
+  const ejsDiv = document.getElementById('emailjs-config');
+  if(ejsDiv) ejsDiv.style.display = cfg.emailOn ? 'block' : 'none';
+
+  // Preencher campos salvos
+  ['public-key','service-id','template-id','email-pai','email-mae'].forEach(k=>{
+    const el = document.getElementById('ejs-'+k);
+    if(el) el.value = cfg[k.replace(/-([a-z])/g,(_,c)=>c.toUpperCase())] || '';
+  });
+
+  // Status
+  const pushStatus = document.getElementById('notif-push-status');
+  const emailStatus = document.getElementById('notif-email-status');
+  if(pushStatus){
+    const perm = 'Notification' in window ? Notification.permission : 'unsupported';
+    const dotClass = perm==='granted' && cfg.pushOn ? 'dot-on' : perm==='denied' ? 'dot-off' : 'dot-pend';
+    const txt = perm==='granted' && cfg.pushOn ? 'Push ativo' : perm==='denied' ? 'Push bloqueado (permitir no navegador)' : perm==='default' ? 'Push — aguardando permissão' : 'Push não suportado';
+    pushStatus.innerHTML='<span class="notif-status-dot '+dotClass+'"></span>📱 '+txt;
+  }
+  if(emailStatus){
+    const dotClass = cfg.emailOn && cfg.publicKey ? 'dot-on' : cfg.emailOn ? 'dot-pend' : 'dot-off';
+    const txt = cfg.emailOn && cfg.publicKey ? 'E-mail ativo (EmailJS configurado)' : cfg.emailOn ? 'E-mail ativo (aguardando credenciais)' : 'E-mail desativado';
+    emailStatus.innerHTML='<span class="notif-status-dot '+dotClass+'"></span>📧 '+txt;
+  }
+}
+
+function togglePushConfig(on){
+  const cfg = getNotifConfig();
+  if(on){
+    if(Notification.permission === 'default') solicitarPermissaoPush();
+    else if(Notification.permission === 'granted'){ cfg.pushOn=true; setNotifConfig(cfg); agendarTodasNotificacoes(); }
+    else{ mostrarNotifInApp('🚫 Bloqueado','Permita notificações nas configurações do navegador.','err'); document.getElementById('toggle-push').checked=false; }
+  } else {
+    cfg.pushOn=false; setNotifConfig(cfg);
+  }
+  atualizarUINotif();
+}
+
+function toggleEmailConfig(on){
+  const cfg = getNotifConfig(); cfg.emailOn=on; setNotifConfig(cfg);
+  const ejsDiv = document.getElementById('emailjs-config');
+  if(ejsDiv) ejsDiv.style.display = on ? 'block' : 'none';
+  atualizarUINotif();
+}
+
+function salvarEmailJSConfig(){
+  const cfg = getNotifConfig();
+  const publicKey  = document.getElementById('ejs-public-key')?.value.trim();
+  const serviceId  = document.getElementById('ejs-service-id')?.value.trim();
+  const templateId = document.getElementById('ejs-template-id')?.value.trim();
+  const emailPai   = document.getElementById('ejs-email-pai')?.value.trim();
+  const emailMae   = document.getElementById('ejs-email-mae')?.value.trim();
+  // Só sobrescreve se o campo não estiver vazio
+  if(publicKey)  cfg.publicKey  = publicKey;
+  if(serviceId)  cfg.serviceId  = serviceId;
+  if(templateId) cfg.templateId = templateId;
+  // E-mails: sempre salva (pode querer limpar)
+  cfg.emailPai = emailPai || 'jonasllima20@gmail.com';
+  cfg.emailMae = emailMae || 'daiana.silva2596@gmail.com';
+  setNotifConfig(cfg);
+  if(cfg.publicKey) initEmailJS();
+}
+
+// ── Render lista de próximas notificações ─────────────────
+function renderUpcomingNotifs(notifs){
+  const div = document.getElementById('upcoming-notifs'); if(!div) return;
+  if(!notifs||!notifs.length){
+    div.innerHTML='<p style="color:var(--muted);font-size:.78rem;text-align:center;padding:10px">Nenhum evento futuro agendado.</p>';
+    return;
+  }
+  const slice = notifs.slice(0,10);
+  div.innerHTML = slice.map(n=>{
+    const d = new Date(n.ts);
+    const dtxt = d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+    const htxt = d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    return '<div class="upcoming-notif-item">'
+      +'<div class="uni-time">'+dtxt+'<br>'+htxt+'</div>'
+      +'<div class="uni-body"><div class="uni-title">'+n.title+'</div>'
+      +'<div class="uni-sub">'+n.body+'</div></div></div>';
+  }).join('');
+}
+
+// ── Badge no sino ─────────────────────────────────────────
+function atualizarBadgeNotif(notifs){
+  const badge = document.getElementById('notif-badge');
+  if(!badge) return;
+  const agora = Date.now();
+  const proximas48h = (notifs||[]).filter(n => n.ts - agora < 48*60*60*1000 && n.ts > agora);
+  badge.style.display = proximas48h.length ? 'block' : 'none';
+}
+
+// ── Banner ao entrar ──────────────────────────────────────
+function verificarBannerNotif(){
+  // Não mostrar no ambiente de preview
+  const isPreview = location.hostname.includes('claudeusercontent') || location.hostname.includes('claude.ai');
+  if(isPreview) return;
+  const cfg = getNotifConfig();
+  if(cfg.dismissedBanner || cfg.pushOn) return;
+  if(!('Notification' in window)) return;
+  if(Notification.permission === 'granted'){ cfg.pushOn=true; setNotifConfig(cfg); return; }
+  if(Notification.permission === 'denied') return;
+  setTimeout(()=>{
+    const b = document.getElementById('notif-banner');
+    if(b) b.classList.add('show');
+  }, 3000);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2310,6 +2853,8 @@ function entrar(){
 document.querySelector('.agenda-fab').style.display='none';
 initAuth();
 initDark();
+// Registrar Service Worker o mais cedo possível
+if('serviceWorker' in navigator) initServiceWorker();
 
 </script>
 </body>
