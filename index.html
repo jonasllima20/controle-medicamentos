@@ -684,12 +684,13 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
 
 /* NOTIFICAÇÕES */
 .notif-banner{
-  display:none;position:fixed;top:0;left:0;right:0;z-index:250;
+  position:fixed;top:0;left:0;right:0;z-index:250;
   background:linear-gradient(135deg,var(--ind),#8B5CF6);
   padding:12px 18px;display:flex;align-items:center;gap:12px;
   box-shadow:0 4px 20px rgba(99,102,241,.3);
+  transform:translateY(-110%);transition:transform .35s cubic-bezier(.4,0,.2,1);
 }
-.notif-banner.show{display:flex;animation:slideDown .3s ease}
+.notif-banner.show{transform:translateY(0)}
 @keyframes slideDown{from{transform:translateY(-100%)}to{transform:translateY(0)}}
 .notif-banner-txt{flex:1;font-size:.82rem;font-weight:600;color:white;line-height:1.4}
 .notif-banner-btn{padding:6px 14px;border-radius:99px;border:none;cursor:pointer;font-weight:700;font-size:.76rem;white-space:nowrap;transition:all .2s}
@@ -741,6 +742,53 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
 .uni-body{flex:1}
 .uni-title{font-size:.8rem;font-weight:700;color:var(--text)}
 .uni-sub{font-size:.7rem;color:var(--muted);margin-top:1px}
+
+/* PRIMEIRO ACESSO */
+#tela-primeiro-acesso{
+  min-height:100vh;display:none;align-items:center;justify-content:center;
+  padding:20px;background:var(--bg);
+}
+#tela-primeiro-acesso.ativo{display:flex}
+.pa-card{background:var(--card);border-radius:24px;padding:32px 26px;width:100%;max-width:420px;box-shadow:var(--shh);border:1px solid var(--border);animation:scaleIn .35s ease}
+.pa-step{display:none}.pa-step.ativo{display:block;animation:fadeIn .3s ease}
+.pa-titulo{font-family:'Nunito',sans-serif;font-size:1.2rem;font-weight:900;color:var(--text);margin-bottom:5px}
+.pa-sub{font-size:.8rem;color:var(--muted);margin-bottom:18px;line-height:1.5}
+.pa-user-badge{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--bg);border-radius:12px;margin-bottom:16px;border:1.5px solid var(--border)}
+.pa-user-em{font-size:1.8rem}
+.pa-user-nome{font-family:'Nunito',sans-serif;font-weight:800;font-size:1rem;color:var(--text)}
+.pa-user-role{font-size:.72rem;color:var(--muted)}
+.pa-progress{display:flex;gap:6px;margin-bottom:20px;justify-content:center}
+.pa-dot{width:8px;height:8px;border-radius:50%;background:var(--border);transition:background .3s}
+.pa-dot.on{background:var(--ind)}
+.pa-strength{height:4px;border-radius:99px;background:var(--border);overflow:hidden;margin-top:5px;margin-bottom:3px}
+.pas-fill{height:100%;border-radius:99px;transition:width .3s,background .3s}
+
+/* DASHBOARD EXTRA */
+.dash-extra{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+@media(max-width:600px){.dash-extra{grid-template-columns:1fr}}
+.dash-card{background:var(--card);border-radius:var(--r);padding:16px;box-shadow:var(--sh);border:1px solid var(--border)}
+.dash-card-title{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.pizza-wrap{height:150px;position:relative}
+.streak-risk{background:var(--warnl);border:1.5px solid var(--mnb);border-radius:11px;padding:10px 12px;display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.sr-icon{font-size:1.3rem;flex-shrink:0}
+.sr-txt{font-size:.8rem;font-weight:700;color:#92400E}
+.sr-sub{font-size:.68rem;color:#B45309;margin-top:1px}
+.mes-resumo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.mr-item{background:var(--bg);border-radius:9px;padding:9px;text-align:center;border:1px solid var(--border)}
+.mr-val{font-family:'Nunito',sans-serif;font-size:1.25rem;font-weight:900;line-height:1}
+.mr-lbl{font-size:.6rem;color:var(--muted);margin-top:2px}
+
+/* HISTÓRICO NO DIA */
+.cal-dia-hist{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.cal-dia-hist-title{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:6px}
+.cal-dose-row{display:flex;align-items:flex-start;gap:7px;padding:5px 0;border-bottom:1px solid var(--border)}
+.cal-dose-row:last-child{border-bottom:none}
+.cal-dose-icon{font-size:.85rem;flex-shrink:0;margin-top:1px}
+.cal-dose-body{flex:1;min-width:0}
+.cal-dose-nome{font-size:.78rem;font-weight:600;color:var(--text)}
+.cal-dose-meta{font-size:.67rem;color:var(--muted);margin-top:1px}
+.cal-dose-nota{font-size:.67rem;color:var(--ind);margin-top:2px;font-style:italic}
+.cal-naotomou{background:var(--redl);border-radius:8px;padding:5px 9px;font-size:.73rem;font-weight:600;color:var(--red);margin-bottom:4px;display:flex;align-items:center;gap:5px}
 
 #timeout-banner{
   display:none;position:fixed;bottom:0;left:0;right:0;z-index:200;
@@ -820,6 +868,69 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     </div>
     <div class="lerr" id="l-err"></div>
     <button class="lbtn" onclick="doLogin()">Entrar →</button>
+  </div>
+</div>
+
+<!-- ════════════════ PRIMEIRO ACESSO ════════════════ -->
+<div id="tela-primeiro-acesso">
+  <div class="pa-card">
+    <div style="text-align:center;margin-bottom:20px">
+      <span style="font-size:2.5rem">🔐</span>
+      <h2 style="font-family:'Nunito',sans-serif;font-weight:900;font-size:1.3rem;color:var(--text);margin-top:8px">Configurar senhas</h2>
+      <p style="font-size:.8rem;color:var(--muted);margin-top:4px">Primeiro acesso — crie senhas seguras para Pai e Mãe</p>
+    </div>
+    <div class="pa-progress">
+      <div class="pa-dot on" id="pa-dot-0"></div>
+      <div class="pa-dot" id="pa-dot-1"></div>
+      <div class="pa-dot" id="pa-dot-2"></div>
+    </div>
+
+    <!-- PASSO 0 — Boas vindas -->
+    <div class="pa-step ativo" id="pa-step-0">
+      <div class="pa-titulo">👋 Bem-vindo!</div>
+      <div class="pa-sub">Para proteger o acesso ao app, você precisa criar uma senha pessoal para o <strong>Pai</strong> e outra para a <strong>Mãe</strong>.<br><br>Ninguém mais verá essas senhas — elas ficam salvas de forma segura no seu dispositivo.</div>
+      <button class="lbtn" onclick="paStep(1)">Começar →</button>
+    </div>
+
+    <!-- PASSO 1 — Senha do Pai -->
+    <div class="pa-step" id="pa-step-1">
+      <div class="pa-user-badge">
+        <span class="pa-user-em">👨</span>
+        <div><div class="pa-user-nome">Pai — Jonas</div><div class="pa-user-role">Crie sua senha pessoal</div></div>
+      </div>
+      <div class="lfield">
+        <label>Nova senha (mín. 8 caracteres)</label>
+        <input type="password" id="pa-pai-s1" placeholder="Crie uma senha forte…" oninput="paCheckStrength('pai')">
+        <div class="pa-strength"><div class="pas-fill" id="pa-str-pai" style="width:0%"></div></div>
+        <div style="font-size:.68rem;color:var(--muted);margin-top:2px" id="pa-str-txt-pai"></div>
+      </div>
+      <div class="lfield">
+        <label>Confirmar senha</label>
+        <input type="password" id="pa-pai-s2" placeholder="Repita a senha…" onkeydown="if(event.key==='Enter')paConfirmarSenha('pai')">
+      </div>
+      <div class="lerr" id="pa-err-pai"></div>
+      <button class="lbtn" onclick="paConfirmarSenha('pai')">Confirmar senha do Pai →</button>
+    </div>
+
+    <!-- PASSO 2 — Senha da Mãe -->
+    <div class="pa-step" id="pa-step-2">
+      <div class="pa-user-badge">
+        <span class="pa-user-em">👩</span>
+        <div><div class="pa-user-nome">Mãe — Daiana</div><div class="pa-user-role">Crie sua senha pessoal</div></div>
+      </div>
+      <div class="lfield">
+        <label>Nova senha (mín. 8 caracteres)</label>
+        <input type="password" id="pa-mae-s1" placeholder="Crie uma senha forte…" oninput="paCheckStrength('mae')">
+        <div class="pa-strength"><div class="pas-fill" id="pa-str-mae" style="width:0%"></div></div>
+        <div style="font-size:.68rem;color:var(--muted);margin-top:2px" id="pa-str-txt-mae"></div>
+      </div>
+      <div class="lfield">
+        <label>Confirmar senha</label>
+        <input type="password" id="pa-mae-s2" placeholder="Repita a senha…" onkeydown="if(event.key==='Enter')paConfirmarSenha('mae')">
+      </div>
+      <div class="lerr" id="pa-err-mae"></div>
+      <button class="lbtn" onclick="paConfirmarSenha('mae')">Confirmar senha da Mãe →</button>
+    </div>
   </div>
 </div>
 
@@ -1008,6 +1119,21 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
       <span class="sec-action" onclick="calcPatterns()">↻ Atualizar</span>
     </div>
     <div id="patterns-wrap"></div>
+  </div>
+
+  <!-- DASHBOARD EXTRA -->
+  <div class="dash-extra">
+    <!-- Pizza adesão por remédio -->
+    <div class="dash-card">
+      <div class="dash-card-title">🥧 Adesão por remédio — 7 dias</div>
+      <div class="pizza-wrap"><canvas id="grafico-pizza"></canvas></div>
+    </div>
+    <!-- Resumo do mês + streak risk -->
+    <div class="dash-card">
+      <div class="dash-card-title">📅 Resumo do mês</div>
+      <div id="streak-risk-wrap"></div>
+      <div class="mes-resumo-grid" id="mes-resumo-grid"></div>
+    </div>
   </div>
 
   <!-- PRÓXIMOS EVENTOS -->
@@ -1481,15 +1607,8 @@ async function hashPwd(pwd){
   const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt:enc.encode(SALT),iterations:100000,hash:'SHA-256'},km,256);
   return Array.from(new Uint8Array(bits)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
-const DEFAULT_PWDS={pai:'Jonas@2026!',mae:'Familia@2026!'};
 function getHashes(){return JSON.parse(localStorage.getItem('rm_hashes')||'null')||{pai:null,mae:null};}
 function setHashes(h){localStorage.setItem('rm_hashes',JSON.stringify(h));}
-async function initAuth(){
-  let h=getHashes();
-  if(!h.pai)h.pai=await hashPwd(DEFAULT_PWDS.pai);
-  if(!h.mae)h.mae=await hashPwd(DEFAULT_PWDS.mae);
-  setHashes(h); selUser('pai');
-}
 const USERS={
   pai:{nome:'Pai',emoji:'👨',cor:'#3B82F6',role:'Administrador pai'},
   mae:{nome:'Mãe',emoji:'👩',cor:'#EC4899',role:'Administrador mãe'}
@@ -1870,16 +1989,61 @@ function abrirDiaCal(df,isoKey){
   _obsData=df;
   document.getElementById('obs-titulo').textContent='📅 '+df;
   document.getElementById('obs-txt').value=localStorage.getItem('obs_'+df)||'';
+
+  // ── Eventos do dia ──────────────────────────────────────
   const evsDia=(getEventos()||[]).filter(e=>e.dataISO===isoKey);
   const wrap=document.getElementById('dia-eventos-wrap');
+  let evHtml='';
   if(evsDia.length){
-    wrap.innerHTML='<div style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:7px">EVENTOS DO DIA</div>'
+    evHtml='<div style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:7px">EVENTOS DO DIA</div>'
       +evsDia.map(e=>'<div class="ev-card" style="margin-bottom:6px"><div class="ev-card-top" style="padding:9px 11px"><div class="ev-card-left">'
         +'<div class="ev-titulo"><span class="ev-tipo-pill '+TIPO_CLS[e.tipo]+'">'+TIPO_LABELS[e.tipo]+'</span> <strong>'+e.titulo+'</strong></div>'
         +'<div class="ev-detalhe" style="margin-top:4px">'+(e.hora?'<span>🕐 '+e.hora+'</span>':'')+(e.local?'<span>📍 '+e.local+'</span>':'')
         +'<span>'+(e.quem==='Ambos'?'👫 Ambos':e.quem==='Arthur'?'🧒 Arthur':'👧 Alice')+'</span></div></div>'
         +'<button class="ev-btn" onclick="abrirEditEvento(\''+e.id+'\');fecharMo(\'mo-obs\')">✏️</button></div></div>').join('');
-  } else {wrap.innerHTML='';}
+  }
+
+  // ── Histórico de doses do dia ───────────────────────────
+  const dados=getHist();
+  const dosesHoje=dados.filter(r=>r.data===df);
+  let histHtml='';
+  if(dosesHoje.length){
+    const meds=getMeds();
+    histHtml='<div class="cal-dia-hist"><div class="cal-dia-hist-title">Remédios administrados</div>';
+    // Agrupar por criança
+    CRIANCAS.forEach(nome=>{
+      const dCri=dosesHoje.filter(r=>r.nome===nome);
+      if(!dCri.length) return;
+      histHtml+=`<div style="font-size:.72rem;font-weight:700;color:${nome==='Arthur'?'var(--a)':'var(--b)'};margin:8px 0 4px">${nome==='Arthur'?'🧒':'👧'} ${nome}</div>`;
+      dCri.forEach(r=>{
+        const icon=(meds.find(m=>m.nome===r.remedio)||{}).icon||'💊';
+        const per=r.periodo==='noite'?'🌙 noite':'☀️ manhã';
+        const who=(USERS[r.usuario]||{}).nome||'?';
+        const notaHtml=r.nota?'<div class="cal-dose-nota">'+r.nota+'</div>':'';
+        histHtml+=`<div class="cal-dose-row">
+          <span class="cal-dose-icon">${icon}</span>
+          <div class="cal-dose-body">
+            <div class="cal-dose-nome">${r.remedio} <span style="opacity:.6;font-size:.65rem">${per}</span></div>
+            <div class="cal-dose-meta">✓ ${r.hora} — por ${who}</div>
+            ${notaHtml}
+          </div>
+        </div>`;
+      });
+    });
+    histHtml+='</div>';
+  } else {
+    // Verificar se há registros de "não tomou" no log
+    const logDia=(getLog()||[]).filter(l=>l.data===df&&l.acao.includes('🚫 Não tomou'));
+    if(logDia.length){
+      histHtml='<div class="cal-dia-hist"><div class="cal-dia-hist-title">Registros do dia</div>';
+      logDia.forEach(l=>{
+        histHtml+=`<div class="cal-naotomou">🚫 ${l.acao.replace('🚫 Não tomou ','')}</div>`;
+      });
+      histHtml+='</div>';
+    }
+  }
+
+  wrap.innerHTML=evHtml+histHtml;
   abrirMo('mo-obs');
 }
 function salvarObs(del){
@@ -1976,7 +2140,196 @@ function calcPatterns(){
 }
 
 // ═══════════════════════════════════════════════════════════
-// AGENDA MÉDICA — abrir modal completo
+// PRIMEIRO ACESSO — configurar senhas sem expor no código
+// ═══════════════════════════════════════════════════════════
+const PRIMEIRO_ACESSO_KEY = 'rm_setup_done';
+
+function isPrimeiroAcesso(){
+  return !localStorage.getItem(PRIMEIRO_ACESSO_KEY);
+}
+
+async function initAuth(){
+  if(isPrimeiroAcesso()){
+    // Nunca foi configurado — mostrar tela de setup
+    document.getElementById('tela-login').style.display='none';
+    document.getElementById('tela-primeiro-acesso').classList.add('ativo');
+    return;
+  }
+  // Já configurado — iniciar normalmente
+  selUser('pai');
+}
+
+// Passos do primeiro acesso
+let _paSenhas = {};
+function paStep(n){
+  document.querySelectorAll('.pa-step').forEach((s,i)=>s.classList.toggle('ativo',i===n));
+  document.querySelectorAll('.pa-dot').forEach((d,i)=>d.classList.toggle('on',i<=n));
+  // Focar no campo correto
+  const fields = ['','pa-pai-s1','pa-mae-s1'];
+  if(fields[n]) setTimeout(()=>document.getElementById(fields[n])?.focus(),100);
+}
+
+function paCheckStrength(user){
+  const id = user==='pai' ? 'pa-pai-s1' : 'pa-mae-s1';
+  const v = document.getElementById(id)?.value || '';
+  let s=0;
+  if(v.length>=8)s++;if(v.length>=12)s++;
+  if(/[A-Z]/.test(v))s++;if(/[0-9]/.test(v))s++;if(/[^A-Za-z0-9]/.test(v))s++;
+  const pcts=['0%','20%','40%','60%','80%','100%'];
+  const cols=['#EF4444','#F59E0B','#F59E0B','#10B981','#10B981','#10B981'];
+  const txts=['','Muito fraca','Fraca','Razoável','Boa','Forte','Muito forte'];
+  const fill=document.getElementById('pa-str-'+user);
+  const txt=document.getElementById('pa-str-txt-'+user);
+  if(fill){fill.style.width=pcts[s];fill.style.background=cols[s];}
+  if(txt){txt.textContent=txts[s];txt.style.color=cols[s];}
+}
+
+async function paConfirmarSenha(user){
+  const s1id = user==='pai' ? 'pa-pai-s1' : 'pa-mae-s1';
+  const s2id = user==='pai' ? 'pa-pai-s2' : 'pa-mae-s2';
+  const errid= user==='pai' ? 'pa-err-pai' : 'pa-err-mae';
+  const err=document.getElementById(errid);
+  const s1=document.getElementById(s1id)?.value||'';
+  const s2=document.getElementById(s2id)?.value||'';
+  if(s1.length<8){err.style.display='block';err.textContent='❌ Mínimo 8 caracteres.';return;}
+  if(s1!==s2){err.style.display='block';err.textContent='❌ As senhas não coincidem.';return;}
+  err.style.display='none';
+  _paSenhas[user] = await hashPwd(s1);
+  if(user==='pai'){
+    paStep(2); // próximo: mãe
+  } else {
+    // Ambas configuradas — salvar e ir para o login
+    const h = getHashes();
+    h.pai = _paSenhas.pai;
+    h.mae = _paSenhas.mae;
+    setHashes(h);
+    localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');
+    _paSenhas = {};
+    document.getElementById('tela-primeiro-acesso').classList.remove('ativo');
+    document.getElementById('tela-login').style.display='flex';
+    selUser('pai');
+    // Mostrar mensagem de sucesso
+    setTimeout(()=>mostrarNotifInApp('✅ Senhas configuradas!','Agora faça login com sua nova senha.','ok'),300);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// PIZZA — adesão por remédio (últimos 7 dias)
+// ═══════════════════════════════════════════════════════════
+let pizzaInst = null;
+function atualizarPizza(){
+  const dados=getHist(); const meds=getMeds().filter(m=>!m.suspenso);
+  const ctx=document.getElementById('grafico-pizza')?.getContext('2d');
+  if(!ctx) return;
+  if(pizzaInst) pizzaInst.destroy();
+
+  const now=new Date();
+  const labels=[],values=[],colors=[];
+  const paleta=['#3B82F6','#EC4899','#10B981','#F59E0B','#8B5CF6','#EF4444','#06B6D4'];
+
+  meds.forEach((med,i)=>{
+    const totalEsperado = med.periodos.length * 7 * 2; // 7 dias × 2 crianças
+    let tomadas=0;
+    for(let d=0;d<7;d++){
+      const dia=new Date(now); dia.setDate(dia.getDate()-d);
+      const df=fmtDate(dia);
+      CRIANCAS.forEach(nome=>{
+        med.periodos.forEach(per=>{
+          if(dados.some(r=>r.data===df&&r.nome===nome&&r.remedio===med.nome&&r.periodo===per)) tomadas++;
+        });
+      });
+    }
+    const pct=totalEsperado>0?Math.round(tomadas/totalEsperado*100):0;
+    labels.push(med.icon+' '+med.nome);
+    values.push(pct);
+    colors.push(paleta[i%paleta.length]);
+  });
+
+  const dark=document.documentElement.getAttribute('data-theme')==='dark';
+  const tc=dark?'#94A3B8':'#6B7280';
+
+  pizzaInst=new Chart(ctx,{
+    type:'doughnut',
+    data:{labels,datasets:[{data:values,backgroundColor:colors,borderWidth:2,borderColor:dark?'#1E293B':'#fff'}]},
+    options:{
+      responsive:true,maintainAspectRatio:false,cutout:'60%',
+      plugins:{
+        legend:{position:'right',labels:{font:{family:'DM Sans',size:9},color:tc,boxWidth:10,padding:6}},
+        tooltip:{callbacks:{label:ctx=>' '+ctx.label+': '+ctx.raw+'%'}}
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// STREAK RISK + RESUMO DO MÊS
+// ═══════════════════════════════════════════════════════════
+function atualizarDashboardExtra(){
+  const dados=getHist();const now=new Date();
+  const ano=now.getFullYear(),mes=now.getMonth(),diasP=now.getDate();
+
+  // ── Streak risk ──────────────────────────────────────────
+  const riskWrap=document.getElementById('streak-risk-wrap');
+  if(riskWrap){
+    const streak=calcStreak();
+    const dHj=fmtDate(now);
+    const dHjFeitas=dados.filter(r=>r.data===dHj).length;
+    const totalHj=totalDoses()*2;
+    const risco=streak>0 && dHjFeitas<totalHj;
+    if(risco){
+      const faltam=totalHj-dHjFeitas;
+      riskWrap.innerHTML=`<div class="streak-risk">
+        <div class="sr-icon">⚡</div>
+        <div>
+          <div class="sr-txt">Sequência em risco! 🔥${streak} dias</div>
+          <div class="sr-sub">Falta${faltam>1?'m':''} ${faltam} dose${faltam>1?'s':''} para hoje</div>
+        </div>
+      </div>`;
+    } else { riskWrap.innerHTML=''; }
+  }
+
+  // ── Resumo do mês ────────────────────────────────────────
+  const grid=document.getElementById('mes-resumo-grid');
+  if(!grid) return;
+
+  // Dias com 100% de adesão no mês
+  const totalDiario=totalDoses()*2;
+  let diasCompletos=0;
+  for(let d=1;d<=diasP;d++){
+    const df=String(d).padStart(2,'0')+'/'+String(mes+1).padStart(2,'0')+'/'+ano;
+    const n=dados.filter(r=>r.data===df).length;
+    if(n>=totalDiario) diasCompletos++;
+  }
+  const pctCompletos=diasP>0?Math.round(diasCompletos/diasP*100):0;
+
+  // Doses totais do mês
+  const dosesMes=dados.filter(r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes;}).length;
+
+  // Quem mais aplicou
+  const contPai=dados.filter(r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes&&r.usuario==='pai';}).length;
+  const contMae=dados.filter(r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes&&r.usuario==='mae';}).length;
+  const maisTxt=contPai>contMae?'👨 Pai':contMae>contPai?'👩 Mãe':'👫 Igual';
+
+  grid.innerHTML=`
+    <div class="mr-item">
+      <div class="mr-val" style="color:var(--green)">${diasCompletos}</div>
+      <div class="mr-lbl">dias 100%</div>
+    </div>
+    <div class="mr-item">
+      <div class="mr-val" style="color:var(--ind)">${dosesMes}</div>
+      <div class="mr-lbl">doses dadas</div>
+    </div>
+    <div class="mr-item">
+      <div class="mr-val" style="font-size:.9rem;color:var(--a)">${maisTxt}</div>
+      <div class="mr-lbl">mais ativo</div>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// CALENDÁRIO — histórico detalhado do dia
+// ═══════════════════════════════════════════════════════════
+// Override abrirDiaCal to include dose history
+const _origAbrirDiaCal = typeof abrirDiaCal !== 'undefined' ? abrirDiaCal : null;
 // ═══════════════════════════════════════════════════════════
 function abrirTodosEventos(){
   fecharMenus();
@@ -2441,7 +2794,9 @@ function setSyncStatus(s){
 // ═══════════════════════════════════════════════════════════
 function atualizarTudo(){
   renderCards();verificarPendencias();atualizarStreak();
-  atualizarAdesao();atualizarGrafico();gerarCal();calcPatterns();renderProximos();atualizarStatEvento();
+  atualizarAdesao();atualizarGrafico();gerarCal();calcPatterns();
+  renderProximos();atualizarStatEvento();
+  atualizarPizza();atualizarDashboardExtra();
 }
 function entrar(){
   document.getElementById('tela-login').style.display='none';
@@ -2454,6 +2809,13 @@ function entrar(){
   atualizarTudo();resetTimeout();
   // Iniciar sistema de notificações
   initEmailJS();
+  // Ativar email automaticamente se ainda não foi configurado pelo usuário
+  const _cfgCheck = getNotifConfig();
+  if(!localStorage.getItem('rm_notif_config')){
+    const _cfgAuto = getNotifConfig();
+    _cfgAuto.emailOn = true;
+    setNotifConfig(_cfgAuto);
+  }
   verificarBannerNotif();
   setTimeout(()=>{
     reagendarNotificacoesPendentes();
@@ -2469,10 +2831,16 @@ function entrar(){
 
 // ── Config storage ────────────────────────────────────────
 function getNotifConfig(){
-  const defaults = {pushOn:false,emailOn:false,publicKey:'',serviceId:'',templateId:'',
-    emailPai:'jonasllima20@gmail.com',emailMae:'daiana.silva2596@gmail.com',dismissedBanner:false};
+  const defaults = {
+    pushOn:false, emailOn:false,
+    publicKey:'mf-6eWZhF5NarDI_V',
+    serviceId:'service_brndi3h',
+    templateId:'template_zej8xdg',
+    emailPai:'jonasllima20@gmail.com',
+    emailMae:'daiana.silva2596@gmail.com',
+    dismissedBanner:false
+  };
   const saved = JSON.parse(localStorage.getItem('rm_notif_config')||'{}');
-  // Mescla: defaults primeiro, depois o que foi salvo — garante emails pré-preenchidos
   return Object.assign({}, defaults, saved);
 }
 function setNotifConfig(c){ localStorage.setItem('rm_notif_config',JSON.stringify(c)); }
@@ -2525,7 +2893,7 @@ async function solicitarPermissaoPush(){
 
 function dispensarBannerNotif(){
   const banner = document.getElementById('notif-banner');
-  if(banner) banner.classList.remove('show');
+  if(banner){ banner.classList.remove('show'); }
   const cfg = getNotifConfig(); cfg.dismissedBanner = true; setNotifConfig(cfg);
 }
 
@@ -2638,9 +3006,10 @@ async function reagendarNotificacoesPendentes(){
 
 // ── EmailJS ───────────────────────────────────────────────
 function initEmailJS(){
-  const cfg = getNotifConfig();
-  if(cfg.publicKey && window.emailjs) {
-    emailjs.init(cfg.publicKey);
+  if(window.emailjs){
+    const cfg = getNotifConfig();
+    const key = cfg.publicKey || 'mf-6eWZhF5NarDI_V';
+    emailjs.init(key);
   }
 }
 
