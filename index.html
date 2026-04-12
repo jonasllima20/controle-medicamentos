@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Remédios">
+<meta name="theme-color" content="#6366F1">
+<meta name="description" content="Controle de remédios das crianças — Arthur e Alice">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>Remédios das Crianças 💊</title>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <!-- EmailJS -->
@@ -491,6 +496,38 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
 
 /* GRÁFICO */
 .grafico-wrap{position:relative;height:170px}
+.grafico-wrap.tall{height:240px}
+
+/* PERÍODO ALERTAS */
+.periodo-alerta{
+  display:flex;align-items:center;gap:12px;padding:13px 16px;
+  border-radius:14px;margin-bottom:10px;border:1.5px solid;
+  animation:fadeDown .4s ease;
+}
+.periodo-alerta.danger{background:var(--redl);border-color:#FCA5A5;color:#991B1B}
+.periodo-alerta.warn  {background:var(--warnl);border-color:var(--mnb);color:#92400E}
+.periodo-alerta.ok    {background:var(--greenl);border-color:#6EE7B7;color:#065F46}
+.pa-icon{font-size:1.5rem;flex-shrink:0}
+.pa-body{flex:1}
+.pa-title{font-size:.85rem;font-weight:700}
+.pa-sub{font-size:.75rem;margin-top:2px;opacity:.85}
+.pa-action{font-size:.75rem;font-weight:700;padding:5px 12px;border-radius:99px;border:1.5px solid currentColor;cursor:pointer;background:transparent;color:inherit;white-space:nowrap;flex-shrink:0}
+.pa-action:hover{opacity:.75}
+
+/* RELATÓRIO MÉDICO */
+.rel-med-select{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+@media(max-width:500px){.rel-med-select{grid-template-columns:1fr}}
+.rel-med-card{
+  border:2px solid var(--border);border-radius:12px;padding:12px 14px;
+  cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:10px;
+}
+.rel-med-card:hover{border-color:var(--ind);background:var(--indl)}
+.rel-med-card.sel{border-color:var(--ind);background:var(--indl)}
+.rel-med-card .rmc-icon{font-size:1.3rem}
+.rel-med-card .rmc-nome{font-size:.85rem;font-weight:700;color:var(--text)}
+.rel-med-card .rmc-per{font-size:.7rem;color:var(--muted)}
+.periodo-status-bar{height:6px;border-radius:99px;background:var(--border);overflow:hidden;margin-top:8px}
+.psb-fill{height:100%;border-radius:99px;transition:width .5s ease}
 .chart-tabs{display:flex;gap:5px;margin-bottom:12px}
 .ctab{padding:5px 12px;border-radius:99px;font-size:.72rem;font-weight:700;border:1.5px solid var(--border);background:var(--card);color:var(--muted);cursor:pointer;transition:all .2s}
 .ctab.on{background:var(--ind);color:white;border-color:var(--ind)}
@@ -1108,9 +1145,13 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     <div class="chart-tabs">
       <button class="ctab on" id="ct-14" onclick="setChartMode('14')">14 dias</button>
       <button class="ctab" id="ct-anual" onclick="setChartMode('anual')">Mensal</button>
+      <button class="ctab" id="ct-comp" onclick="setChartMode('comp')">Comparativo</button>
     </div>
     <div class="grafico-wrap"><canvas id="grafico"></canvas></div>
   </div>
+
+  <!-- ALERTAS DE PERÍODO -->
+  <div id="periodo-alertas-wrap"></div>
 
   <!-- PADRÕES -->
   <div class="sec">
@@ -1278,6 +1319,20 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
       <div class="field"><label>Horário manhã</label><input id="me-hora-m" type="time"></div>
     </div>
     <div class="field"><label>Horário noite</label><input id="me-hora-n" type="time"></div>
+    <!-- CONTROLE DE PERÍODO DO FRASCO/CARTUCHO -->
+    <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+      <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">
+        🗓️ Controle de período (frasco/cartucho)
+      </div>
+      <div style="font-size:.75rem;color:var(--muted);margin-bottom:10px">
+        Defina quando o frasco atual começa e termina. Você será avisado 3 dias antes do fim.
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Data de início</label><input type="date" id="me-periodo-inicio"></div>
+        <div class="field"><label>Data de término</label><input type="date" id="me-periodo-fim"></div>
+      </div>
+      <div id="me-periodo-status" style="font-size:.75rem;margin-top:4px"></div>
+    </div>
     <div class="mbtns">
       <button class="mbtn del" onclick="deletarMed()">🗑️ Excluir</button>
       <button class="mbtn cancel" onclick="fecharMo('mo-med-edit')">Cancelar</button>
@@ -1516,6 +1571,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
   <div class="pmi" onclick="abrirHistorico()">🗂️ Histórico completo</div>
   <div class="pmi" onclick="abrirMo('mo-meds-admin')">💊 Gerenciar remédios</div>
   <div class="pmi" onclick="abrirTodosEventos()">🏥 Agenda médica</div>
+  <div class="pmi" onclick="abrirRelatorio()">🩺 Relatório médico</div>
   <div class="pmi" onclick="abrirConfigNotif()">🔔 Notificações</div>
   <div class="pm-sep"></div>
   <div class="pmi danger" onclick="fazerLogout()">🚪 Sair</div>
@@ -1523,6 +1579,42 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
 
 
 <!-- MODAL NOTIFICAÇÕES CONFIG -->
+<!-- MODAL RELATÓRIO MÉDICO -->
+<div class="mo" id="mo-relatorio">
+  <div class="mbox xl">
+    <div class="mt">🩺 Relatório para o Médico</div>
+    <div style="font-size:.78rem;color:var(--muted);margin-bottom:14px">Gera um PDF detalhado de um remédio específico para levar na consulta.</div>
+
+    <!-- Selecionar remédio -->
+    <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">REMÉDIO</div>
+    <div class="rel-med-select" id="rel-med-lista"></div>
+
+    <!-- Período -->
+    <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;margin-top:14px">PERÍODO DO RELATÓRIO</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <button class="ctab on" id="rel-p-30" onclick="setRelPeriodo(30)">30 dias</button>
+      <button class="ctab" id="rel-p-60" onclick="setRelPeriodo(60)">60 dias</button>
+      <button class="ctab" id="rel-p-90" onclick="setRelPeriodo(90)">90 dias</button>
+    </div>
+
+    <!-- Criança -->
+    <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">CRIANÇA</div>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button class="ctab on" id="rel-c-ambos" onclick="setRelCrianca('Ambos')">👫 Ambos</button>
+      <button class="ctab" id="rel-c-Arthur" onclick="setRelCrianca('Arthur')">🧒 Arthur</button>
+      <button class="ctab" id="rel-c-Alice" onclick="setRelCrianca('Alice')">👧 Alice</button>
+    </div>
+
+    <!-- Preview resumo -->
+    <div id="rel-preview" style="background:var(--bg);border-radius:12px;padding:13px;border:1px solid var(--border);margin-bottom:14px;font-size:.8rem;color:var(--muted);min-height:60px"></div>
+
+    <div class="mbtns">
+      <button class="mbtn cancel" onclick="fecharMo('mo-relatorio')">Fechar</button>
+      <button class="mbtn save" onclick="gerarRelatorioMedico()">📄 Gerar PDF</button>
+    </div>
+  </div>
+</div>
+
 <div class="mo" id="mo-notif">
   <div class="mbox wide">
     <div class="mt">🔔 Configurar notificações</div>
@@ -2077,8 +2169,8 @@ function confetti(){
 let chartInst=null,chartMode='14';
 function setChartMode(m){
   chartMode=m;
-  document.getElementById('ct-14').classList.toggle('on',m==='14');
-  document.getElementById('ct-anual').classList.toggle('on',m==='anual');
+  ['14','anual','comp'].forEach(t=>{const el=document.getElementById('ct-'+t);if(el)el.classList.toggle('on',t===m);});
+  const wrap=document.querySelector('.grafico-wrap');if(wrap)wrap.classList.toggle('tall',m==='comp');
   atualizarGrafico();
 }
 function atualizarGrafico(){
@@ -2087,6 +2179,7 @@ function atualizarGrafico(){
   const gc=dark?'#334155':'#F3F4F6',tc=dark?'#94A3B8':'#6B7280';
   const ctx=document.getElementById('grafico').getContext('2d');
   if(chartInst)chartInst.destroy();
+
   if(chartMode==='14'){
     const dA={},dL={};
     dados.forEach(r=>{if(r.nome==='Arthur')dA[r.data]=(dA[r.data]||0)+1;else dL[r.data]=(dL[r.data]||0)+1;});
@@ -2098,7 +2191,8 @@ function atualizarGrafico(){
         {label:'Alice', data:all.map(d=>Math.min(100,Math.round(((dL[d]||0)/tot)*100))),backgroundColor:'rgba(236,72,153,.72)',borderRadius:5,borderSkipped:false},
       ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{font:{family:'DM Sans',size:11},color:tc}}},
         scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%',font:{family:'DM Sans',size:10},color:tc},grid:{color:gc}},x:{ticks:{font:{family:'DM Sans',size:9},color:tc},grid:{display:false}}}}});
-  } else {
+
+  } else if(chartMode==='anual'){
     const now=new Date();const labels=[],dA=[],dL=[];
     for(let i=11;i>=0;i--){
       const d=new Date(now.getFullYear(),now.getMonth()-i,1);const ano=d.getFullYear(),mes=d.getMonth();
@@ -2114,6 +2208,27 @@ function atualizarGrafico(){
       {label:'Alice', data:dL,borderColor:'rgba(236,72,153,.9)',backgroundColor:'rgba(236,72,153,.1)',tension:.4,fill:true,pointRadius:4,pointHoverRadius:6},
     ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{font:{family:'DM Sans',size:11},color:tc}}},
       scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%',font:{family:'DM Sans',size:10},color:tc},grid:{color:gc}},x:{ticks:{font:{family:'DM Sans',size:9},color:tc},grid:{display:false}}}}});
+
+  } else { // comp — comparativo 12 meses com média
+    const now=new Date();const labels=[],dA=[],dL=[],dGeral=[];
+    for(let i=11;i>=0;i--){
+      const d=new Date(now.getFullYear(),now.getMonth()-i,1);const ano=d.getFullYear(),mes=d.getMonth();
+      const diasM=i===0?now.getDate():new Date(ano,mes+1,0).getDate();
+      const espMes=totalDoses()*diasM;
+      const fA=dados.filter(r=>{if(r.nome!=='Arthur')return false;const dd=parseDate(r.data);return dd.getFullYear()===ano&&dd.getMonth()===mes;}).length;
+      const fL=dados.filter(r=>{if(r.nome!=='Alice')return false;const dd=parseDate(r.data);return dd.getFullYear()===ano&&dd.getMonth()===mes;}).length;
+      labels.push(MESES[mes].substring(0,3)+'\''+String(ano).substring(2));
+      const pa=espMes>0?Math.min(100,Math.round(fA/espMes*100)):0;
+      const pb=espMes>0?Math.min(100,Math.round(fL/espMes*100)):0;
+      dA.push(pa);dL.push(pb);dGeral.push(Math.round((pa+pb)/2));
+    }
+    chartInst=new Chart(ctx,{type:'line',data:{labels,datasets:[
+      {label:'Arthur',data:dA,borderColor:'rgba(59,130,246,.9)',backgroundColor:'transparent',tension:.4,fill:false,pointRadius:5,pointHoverRadius:7,pointBackgroundColor:'rgba(59,130,246,.9)'},
+      {label:'Alice', data:dL,borderColor:'rgba(236,72,153,.9)',backgroundColor:'transparent',tension:.4,fill:false,pointRadius:5,pointHoverRadius:7,pointBackgroundColor:'rgba(236,72,153,.9)'},
+      {label:'Média geral',data:dGeral,borderColor:'rgba(99,102,241,.6)',backgroundColor:'rgba(99,102,241,.08)',tension:.4,fill:true,pointRadius:3,borderDash:[5,3]},
+    ]},options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{font:{family:'DM Sans',size:11},color:tc}},tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.raw}%`}}},
+      scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%',font:{family:'DM Sans',size:10},color:tc},grid:{color:gc}},x:{ticks:{font:{family:'DM Sans',size:9},color:tc},grid:{color:gc}}}}});
   }
 }
 
@@ -2144,18 +2259,45 @@ function calcPatterns(){
 // ═══════════════════════════════════════════════════════════
 const PRIMEIRO_ACESSO_KEY = 'rm_setup_done';
 
-function isPrimeiroAcesso(){
-  return !localStorage.getItem(PRIMEIRO_ACESSO_KEY);
+// Verifica se primeiro acesso — checa Firebase E localStorage
+async function isPrimeiroAcesso(){
+  // 1. localStorage — já configurado neste navegador
+  if(localStorage.getItem(PRIMEIRO_ACESSO_KEY)) return false;
+  // 2. Firebase — já configurado em outro dispositivo/navegador
+  if(window._fbDb){
+    try{
+      const {getDoc,doc} = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+      const snap = await getDoc(doc(window._fbDb,'config','setup'));
+      if(snap.exists() && snap.data().done){
+        // Marcar localmente para não consultar Firebase toda vez
+        localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');
+        // Carregar hashes do Firebase
+        const snapH = await getDoc(doc(window._fbDb,'config','hashes'));
+        if(snapH.exists()){
+          const h = snapH.data();
+          setHashes({pai:h.pai||null, mae:h.mae||null});
+        }
+        return false;
+      }
+    } catch(e){ console.warn('Erro ao verificar setup no Firebase:',e); }
+  }
+  return true;
 }
 
 async function initAuth(){
-  if(isPrimeiroAcesso()){
-    // Nunca foi configurado — mostrar tela de setup
-    document.getElementById('tela-login').style.display='none';
-    document.getElementById('tela-primeiro-acesso').classList.add('ativo');
+  // Mostrar loading enquanto verifica Firebase
+  const pa = document.getElementById('tela-primeiro-acesso');
+  const tl = document.getElementById('tela-login');
+
+  // Checar se já configurado (Firebase ou localStorage)
+  const primeiro = await isPrimeiroAcesso();
+  if(primeiro){
+    tl.style.display='none';
+    pa.classList.add('ativo');
     return;
   }
-  // Já configurado — iniciar normalmente
+  // Já configurado
+  tl.style.display='flex';
   selUser('pai');
 }
 
@@ -2164,7 +2306,6 @@ let _paSenhas = {};
 function paStep(n){
   document.querySelectorAll('.pa-step').forEach((s,i)=>s.classList.toggle('ativo',i===n));
   document.querySelectorAll('.pa-dot').forEach((d,i)=>d.classList.toggle('on',i<=n));
-  // Focar no campo correto
   const fields = ['','pa-pai-s1','pa-mae-s1'];
   if(fields[n]) setTimeout(()=>document.getElementById(fields[n])?.focus(),100);
 }
@@ -2196,19 +2337,31 @@ async function paConfirmarSenha(user){
   err.style.display='none';
   _paSenhas[user] = await hashPwd(s1);
   if(user==='pai'){
-    paStep(2); // próximo: mãe
+    paStep(2);
   } else {
-    // Ambas configuradas — salvar e ir para o login
+    // Ambas configuradas — salvar localmente E no Firebase
     const h = getHashes();
     h.pai = _paSenhas.pai;
     h.mae = _paSenhas.mae;
     setHashes(h);
     localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');
+
+    // Salvar no Firebase para funcionar em todos os dispositivos
+    if(window._fbDb){
+      try{
+        const {setDoc,doc,serverTimestamp} = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const tok = window.APP_TOKEN||'rem-fam-2026-xK9mQzP4';
+        // Salvar flag de setup
+        await setDoc(doc(window._fbDb,'config','setup'),{done:true,_t:tok,ts:serverTimestamp()});
+        // Salvar hashes (criptografados — não são senhas em texto)
+        await setDoc(doc(window._fbDb,'config','hashes'),{pai:h.pai,mae:h.mae,_t:tok,ts:serverTimestamp()});
+      }catch(e){ console.error('Erro ao salvar setup no Firebase:',e); }
+    }
+
     _paSenhas = {};
     document.getElementById('tela-primeiro-acesso').classList.remove('ativo');
     document.getElementById('tela-login').style.display='flex';
     selUser('pai');
-    // Mostrar mensagem de sucesso
     setTimeout(()=>mostrarNotifInApp('✅ Senhas configuradas!','Agora faça login com sua nova senha.','ok'),300);
   }
 }
@@ -2525,25 +2678,6 @@ function renderMedsAdmin(){
     +'<button class="mai-btn '+(m.suspenso?'':'del')+'" onclick="abrirSuspender('+i+')" title="'+(m.suspenso?'Reativar':'Suspender')+'">'+(m.suspenso?'✅':'⛔')+'</button>'
     +'</div></div>').join('');
 }
-function abrirEditMed(i){
-  const m=getMeds()[i];
-  document.getElementById('me-idx').value=i;
-  document.getElementById('me-icon').value=m.icon;
-  document.getElementById('me-nome').value=m.nome;
-  const perVal=m.periodos.includes('manha')&&m.periodos.includes('noite')?'ambos':m.periodos[0];
-  document.getElementById('me-per').value=perVal;
-  document.getElementById('me-hora-m').value=m.horaManha||'';
-  document.getElementById('me-hora-n').value=m.horaNoite||'';
-  abrirMo('mo-med-edit');
-}
-function salvarMedEdit(){
-  const i=parseInt(document.getElementById('me-idx').value);
-  const meds=getMeds();const perVal=document.getElementById('me-per').value;
-  meds[i]={...meds[i],icon:document.getElementById('me-icon').value||'💊',nome:document.getElementById('me-nome').value,
-    periodos:perVal==='ambos'?['manha','noite']:[perVal],
-    horaManha:document.getElementById('me-hora-m').value,horaNoite:document.getElementById('me-hora-n').value};
-  setMeds(meds);fecharMo('mo-med-edit');renderMedsAdmin();atualizarTudo();
-}
 function deletarMed(){
   if(!confirm('Excluir este remédio?'))return;
   const i=parseInt(document.getElementById('me-idx').value);
@@ -2797,6 +2931,7 @@ function atualizarTudo(){
   atualizarAdesao();atualizarGrafico();gerarCal();calcPatterns();
   renderProximos();atualizarStatEvento();
   atualizarPizza();atualizarDashboardExtra();
+  verificarPeriodoAlertas();
 }
 function entrar(){
   document.getElementById('tela-login').style.display='none';
@@ -2847,22 +2982,53 @@ function setNotifConfig(c){ localStorage.setItem('rm_notif_config',JSON.stringif
 
 // ── Service Worker ────────────────────────────────────────
 let _swReg = null;
+// ── Detectar suporte a notificações por navegador ─────────
+function detectarSuportePush(){
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+  const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+  const isChrome = /Chrome/.test(ua) && /Google Inc/.test(navigator.vendor);
+  const isEdge = /Edg\//.test(ua);
+  const isFirefox = /Firefox/.test(ua);
+  const isPWA = window.matchMedia('(display-mode: standalone)').matches
+             || window.navigator.standalone === true;
+
+  return {
+    hasNotificationAPI: 'Notification' in window,
+    hasServiceWorker:   'serviceWorker' in navigator,
+    isIOS, isSafari, isChrome, isEdge, isFirefox, isPWA,
+    // iOS Safari só suporta push se instalado como PWA (iOS 16.4+)
+    pushSupported: ('Notification' in window) && !(isIOS && !isPWA),
+    // Mensagem de instrução por navegador
+    instrucao: isIOS && !isPWA
+      ? '📱 No iPhone/iPad: adicione à tela inicial primeiro (Compartilhar → "Adicionar à Tela de Início"), depois ative as notificações.'
+      : isIOS && isPWA
+      ? '🍎 Toque em "Ativar" e depois em "Permitir" quando o iOS perguntar.'
+      : isSafari
+      ? '🍎 No Safari: Preferências → Sites → Notificações → Permitir para este site.'
+      : isChrome
+      ? '🔔 No Chrome: clique no cadeado 🔒 na barra de endereço → Notificações → Permitir.'
+      : isEdge
+      ? '🔔 No Edge: clique no cadeado 🔒 → Permissões → Notificações → Permitir.'
+      : isFirefox
+      ? '🔔 No Firefox: clique no escudo 🛡️ → Permissões → Notificações → Permitir.'
+      : '🔔 Clique em "Ativar" e depois em "Permitir" quando o navegador perguntar.'
+  };
+}
+
 async function initServiceWorker(){
   if(!('serviceWorker' in navigator)) return null;
-  // Não tenta registrar em ambientes de preview (claudeusercontent, localhost sem sw.js)
   const hostname = location.hostname;
   const isPreview = hostname.includes('claudeusercontent') || hostname.includes('claude.ai');
-  if(isPreview){ console.info('SW: pulado no preview — funcionará no GitHub Pages'); return null; }
+  if(isPreview){ console.info('SW: pulado no preview'); return null; }
   try{
-    // GitHub Pages: o sw.js fica na raiz do repositório
-    // Ex: jonasllima20.github.io/controle-medicamentos/ → sw.js em /controle-medicamentos/sw.js
     const base = location.pathname.endsWith('/')
       ? location.pathname
       : location.pathname.substring(0, location.pathname.lastIndexOf('/') + 1);
     const swUrl = base + 'sw.js';
     _swReg = await navigator.serviceWorker.register(swUrl, { scope: base });
     await navigator.serviceWorker.ready;
-    console.info('SW registrado com sucesso:', swUrl);
+    console.info('SW registrado:', swUrl);
     return _swReg;
   } catch(e){
     console.warn('SW registro falhou:', e.message);
@@ -2873,22 +3039,42 @@ async function initServiceWorker(){
 // ── Solicitar permissão push ──────────────────────────────
 async function solicitarPermissaoPush(){
   dispensarBannerNotif();
-  if(!('Notification' in window)){
-    alert('Seu navegador não suporta notificações push. Tente Chrome ou Safari.');
+  const suporte = detectarSuportePush();
+
+  if(!suporte.hasNotificationAPI){
+    mostrarNotifInApp('❌ Sem suporte','Notificações não disponíveis neste navegador.','err');
     return false;
   }
+
+  // iOS não PWA — orientar o usuário
+  if(suporte.isIOS && !suporte.isPWA){
+    mostrarInstrucaoPush(suporte.instrucao);
+    return false;
+  }
+
   const perm = await Notification.requestPermission();
   const cfg = getNotifConfig();
   cfg.pushOn = perm === 'granted';
   setNotifConfig(cfg);
+
   if(perm === 'granted'){
     atualizarUINotif();
     agendarTodasNotificacoes();
-    mostrarNotifInApp('✅ Notificações ativadas!','Você receberá lembretes sobre consultas e exames.','ok');
+    mostrarNotifInApp('✅ Notificações ativadas!','Receberá lembretes de consultas e exames.','ok');
+  } else if(perm === 'denied'){
+    mostrarInstrucaoPush(suporte.instrucao);
   } else {
-    mostrarNotifInApp('❌ Permissão negada','Ative as notificações nas configurações do navegador.','err');
+    mostrarNotifInApp('⚠️ Permissão não concedida','Tente novamente nas configurações.','err');
   }
   return perm === 'granted';
+}
+
+// ── Modal de instrução por navegador ─────────────────────
+function mostrarInstrucaoPush(instrucao){
+  // Mostrar instrução dentro do modal de notificações se estiver aberto
+  const el = document.getElementById('notif-push-status');
+  if(el) el.innerHTML = '<span class="notif-status-dot dot-pend"></span>📱 '+instrucao;
+  mostrarNotifInApp('ℹ️ Como ativar notificações', instrucao.replace(/^[^ ]+ /,''), 'ind');
 }
 
 function dispensarBannerNotif(){
@@ -3019,17 +3205,16 @@ async function enviarEmailNotificacao(notif, destinatarios){
   initEmailJS();
 
   for(const email of destinatarios){
-    if(!email) continue;
+    if(!email || !email.includes('@')) continue;
     try{
       await emailjs.send(cfg.serviceId, cfg.templateId, {
-        to_email:    email,
+        to_email:    email,           // campo {{to_email}} no template
+        name:        'Família Lima',  // campo {{name}} — remetente
+        email:       email,           // campo {{email}} — reply-to
         subject:     notif.title,
         message:     notif.body,
-        app_name:    'Controle de Remédios das Crianças',
-        evento_tipo: notif.title,
-        evento_desc: notif.body,
       });
-    } catch(e){ console.error('EmailJS erro:',e); }
+    } catch(e){ console.error('EmailJS erro:',e.text||e); }
   }
 }
 
@@ -3123,14 +3308,25 @@ function atualizarUINotif(){
   const pushStatus = document.getElementById('notif-push-status');
   const emailStatus = document.getElementById('notif-email-status');
   if(pushStatus){
-    const perm = 'Notification' in window ? Notification.permission : 'unsupported';
-    const dotClass = perm==='granted' && cfg.pushOn ? 'dot-on' : perm==='denied' ? 'dot-off' : 'dot-pend';
-    const txt = perm==='granted' && cfg.pushOn ? 'Push ativo' : perm==='denied' ? 'Push bloqueado (permitir no navegador)' : perm==='default' ? 'Push — aguardando permissão' : 'Push não suportado';
+    const suporte = detectarSuportePush();
+    const perm = suporte.hasNotificationAPI ? Notification.permission : 'unsupported';
+    let dotClass, txt;
+    if(!suporte.hasNotificationAPI){
+      dotClass='dot-off'; txt='Push não suportado neste navegador';
+    } else if(suporte.isIOS && !suporte.isPWA){
+      dotClass='dot-pend'; txt='📱 iPhone/iPad: instale como app primeiro. '+suporte.instrucao;
+    } else if(perm==='granted' && cfg.pushOn){
+      dotClass='dot-on'; txt='Push ativo ✅';
+    } else if(perm==='denied'){
+      dotClass='dot-off'; txt='Bloqueado — '+suporte.instrucao;
+    } else {
+      dotClass='dot-pend'; txt='Aguardando permissão — '+suporte.instrucao;
+    }
     pushStatus.innerHTML='<span class="notif-status-dot '+dotClass+'"></span>📱 '+txt;
   }
   if(emailStatus){
     const dotClass = cfg.emailOn && cfg.publicKey ? 'dot-on' : cfg.emailOn ? 'dot-pend' : 'dot-off';
-    const txt = cfg.emailOn && cfg.publicKey ? 'E-mail ativo (EmailJS configurado)' : cfg.emailOn ? 'E-mail ativo (aguardando credenciais)' : 'E-mail desativado';
+    const txt = cfg.emailOn && cfg.publicKey ? 'E-mail ativo ✅' : cfg.emailOn ? 'E-mail ativo (aguardando credenciais)' : 'E-mail desativado';
     emailStatus.innerHTML='<span class="notif-status-dot '+dotClass+'"></span>📧 '+txt;
   }
 }
@@ -3138,9 +3334,22 @@ function atualizarUINotif(){
 function togglePushConfig(on){
   const cfg = getNotifConfig();
   if(on){
-    if(Notification.permission === 'default') solicitarPermissaoPush();
-    else if(Notification.permission === 'granted'){ cfg.pushOn=true; setNotifConfig(cfg); agendarTodasNotificacoes(); }
-    else{ mostrarNotifInApp('🚫 Bloqueado','Permita notificações nas configurações do navegador.','err'); document.getElementById('toggle-push').checked=false; }
+    const suporte = detectarSuportePush();
+    if(suporte.isIOS && !suporte.isPWA){
+      mostrarInstrucaoPush(suporte.instrucao);
+      document.getElementById('toggle-push').checked=false;
+    } else if(!suporte.hasNotificationAPI){
+      mostrarNotifInApp('❌ Sem suporte','Este navegador não suporta notificações.','err');
+      document.getElementById('toggle-push').checked=false;
+    } else if(Notification.permission === 'default'){
+      solicitarPermissaoPush();
+    } else if(Notification.permission === 'granted'){
+      cfg.pushOn=true; setNotifConfig(cfg); agendarTodasNotificacoes();
+    } else {
+      const s = detectarSuportePush();
+      mostrarNotifInApp('🚫 Bloqueado', s.instrucao, 'err');
+      document.getElementById('toggle-push').checked=false;
+    }
   } else {
     cfg.pushOn=false; setNotifConfig(cfg);
   }
@@ -3202,18 +3411,290 @@ function atualizarBadgeNotif(notifs){
 
 // ── Banner ao entrar ──────────────────────────────────────
 function verificarBannerNotif(){
-  // Não mostrar no ambiente de preview
   const isPreview = location.hostname.includes('claudeusercontent') || location.hostname.includes('claude.ai');
   if(isPreview) return;
   const cfg = getNotifConfig();
   if(cfg.dismissedBanner || cfg.pushOn) return;
-  if(!('Notification' in window)) return;
+
+  const suporte = detectarSuportePush();
+  if(!suporte.hasNotificationAPI) return;
   if(Notification.permission === 'granted'){ cfg.pushOn=true; setNotifConfig(cfg); return; }
   if(Notification.permission === 'denied') return;
+
+  // Adaptar texto do banner para iOS
+  if(suporte.isIOS && !suporte.isPWA){
+    setTimeout(()=>{
+      const b = document.getElementById('notif-banner');
+      if(!b) return;
+      const txt = b.querySelector('.notif-banner-txt');
+      if(txt) txt.innerHTML = '<strong>Instale o app para ativar notificações</strong><br>Toque em Compartilhar → "Adicionar à Tela de Início" → abra o app instalado.';
+      b.classList.add('show');
+    }, 3000);
+    return;
+  }
+
   setTimeout(()=>{
     const b = document.getElementById('notif-banner');
     if(b) b.classList.add('show');
   }, 3000);
+}
+
+// ═══════════════════════════════════════════════════════════
+// PERÍODO DO FRASCO/CARTUCHO
+// ═══════════════════════════════════════════════════════════
+function abrirEditMed(i){
+  const m=getMeds()[i];
+  document.getElementById('me-idx').value=i;
+  document.getElementById('me-icon').value=m.icon;
+  document.getElementById('me-nome').value=m.nome;
+  const perVal=m.periodos.includes('manha')&&m.periodos.includes('noite')?'ambos':m.periodos[0];
+  document.getElementById('me-per').value=perVal;
+  document.getElementById('me-hora-m').value=m.horaManha||'';
+  document.getElementById('me-hora-n').value=m.horaNoite||'';
+  // Período do frasco
+  document.getElementById('me-periodo-inicio').value=m.periodoInicio||'';
+  document.getElementById('me-periodo-fim').value=m.periodoFim||'';
+  atualizarPeriodoStatus(m);
+  abrirMo('mo-med-edit');
+}
+
+function atualizarPeriodoStatus(m){
+  const el=document.getElementById('me-periodo-status'); if(!el)return;
+  const fim=document.getElementById('me-periodo-fim')?.value||m?.periodoFim;
+  if(!fim){el.innerHTML='';return;}
+  const hoje2=new Date(); hoje2.setHours(0,0,0,0);
+  const fimDate=new Date(fim+'T00:00:00');
+  const diff=Math.round((fimDate-hoje2)/(1000*60*60*24));
+  if(diff<0) el.innerHTML='<span style="color:var(--red);font-weight:700">⛔ Período encerrado há '+Math.abs(diff)+' dias</span>';
+  else if(diff===0) el.innerHTML='<span style="color:var(--red);font-weight:700">🚨 Último dia do frasco!</span>';
+  else if(diff<=3) el.innerHTML='<span style="color:var(--warn);font-weight:700">⚠️ Faltam '+diff+' dia'+(diff>1?'s':'')+' para trocar</span>';
+  else el.innerHTML='<span style="color:var(--green);font-weight:700">✅ '+diff+' dias restantes</span>';
+}
+
+function salvarMedEdit(){
+  const i=parseInt(document.getElementById('me-idx').value);
+  const meds=getMeds();const perVal=document.getElementById('me-per').value;
+  meds[i]={...meds[i],
+    icon:document.getElementById('me-icon').value||'💊',
+    nome:document.getElementById('me-nome').value,
+    periodos:perVal==='ambos'?['manha','noite']:[perVal],
+    horaManha:document.getElementById('me-hora-m').value,
+    horaNoite:document.getElementById('me-hora-n').value,
+    periodoInicio:document.getElementById('me-periodo-inicio').value||'',
+    periodoFim:document.getElementById('me-periodo-fim').value||'',
+  };
+  setMeds(meds);fecharMo('mo-med-edit');renderMedsAdmin();atualizarTudo();
+}
+
+function verificarPeriodoAlertas(){
+  const meds=getMeds();const wrap=document.getElementById('periodo-alertas-wrap');
+  if(!wrap)return;
+  const hoje2=new Date();hoje2.setHours(0,0,0,0);
+  const alertas=[];
+
+  meds.filter(m=>m.periodoFim&&!m.suspenso).forEach(m=>{
+    const fimDate=new Date(m.periodoFim+'T00:00:00');
+    const diff=Math.round((fimDate-hoje2)/(1000*60*60*24));
+    if(diff<0){
+      alertas.push({type:'danger',icon:'⛔',title:'Frasco/cartucho vencido — '+m.icon+' '+m.nome,sub:'O período encerrou há '+Math.abs(diff)+' dia'+(Math.abs(diff)>1?'s':'')+'. Renove o mais rápido possível.',med:m});
+    } else if(diff===0){
+      alertas.push({type:'danger',icon:'🚨',title:'Último dia — '+m.icon+' '+m.nome,sub:'Hoje é o último dia do frasco/cartucho atual. Providencie a troca!',med:m});
+    } else if(diff<=3){
+      alertas.push({type:'warn',icon:'⚠️',title:'Troca em breve — '+m.icon+' '+m.nome,sub:'Falt'+(diff===1?'a':'am')+' '+diff+' dia'+(diff>1?'s':'')+' para trocar. Providencie com antecedência.',med:m});
+    }
+  });
+
+  if(!alertas.length){wrap.innerHTML='';return;}
+
+  wrap.innerHTML=alertas.map(a=>{
+    const idx=meds.indexOf(a.med);
+    // Barra de progresso do período
+    let barHtml='';
+    if(a.med.periodoInicio&&a.med.periodoFim){
+      const inicio=new Date(a.med.periodoInicio+'T00:00:00');
+      const fim=new Date(a.med.periodoFim+'T00:00:00');
+      const total=Math.round((fim-inicio)/(1000*60*60*24));
+      const usado=Math.round((hoje2-inicio)/(1000*60*60*24));
+      const pct=total>0?Math.min(100,Math.round(usado/total*100)):0;
+      const corBarra=a.type==='danger'?'#EF4444':a.type==='warn'?'#F59E0B':'#10B981';
+      barHtml=`<div class="periodo-status-bar" style="margin-top:6px"><div class="psb-fill" style="width:${pct}%;background:${corBarra}"></div></div>
+        <div style="font-size:.65rem;margin-top:2px;opacity:.7">${Math.max(0,Math.round((fim-hoje2)/(1000*60*60*24)))} dias restantes de ${total} total</div>`;
+    }
+    return `<div class="periodo-alerta ${a.type}">
+      <div class="pa-icon">${a.icon}</div>
+      <div class="pa-body">
+        <div class="pa-title">${a.title}</div>
+        <div class="pa-sub">${a.sub}${barHtml}</div>
+      </div>
+      <button class="pa-action" onclick="abrirEditMed(${idx});fecharMenus()">Renovar</button>
+    </div>`;
+  }).join('');
+
+  // Também notificar por push se configurado
+  alertas.forEach(a=>{
+    const cfg=getNotifConfig();
+    if(cfg.pushOn&&Notification.permission==='granted'){
+      const key='rm_notif_periodo_'+a.med.nome+'_'+a.med.periodoFim;
+      if(!localStorage.getItem(key)){
+        new Notification('⚠️ '+a.med.icon+' '+a.med.nome+' — troca próxima',{body:a.sub,icon:'/favicon.ico',tag:key});
+        localStorage.setItem(key,'1');
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// RELATÓRIO MÉDICO
+// ═══════════════════════════════════════════════════════════
+let _relMed=null, _relPeriodo=30, _relCrianca='Ambos';
+
+function abrirRelatorio(){
+  fecharMenus();
+  const meds=getMeds().filter(m=>!m.suspenso);
+  const lista=document.getElementById('rel-med-lista');
+  if(lista){
+    lista.innerHTML=meds.map((m,i)=>`
+      <div class="rel-med-card${i===0?' sel':''}" onclick="selRelMed(this,'${m.nome}')">
+        <span class="rmc-icon">${m.icon}</span>
+        <div>
+          <div class="rmc-nome">${m.nome}</div>
+          <div class="rmc-per">${m.periodos.map(p=>p==='manha'?'☀️ manhã':'🌙 noite').join(' + ')}</div>
+        </div>
+      </div>`).join('');
+    _relMed = meds[0]?.nome||null;
+  }
+  _relPeriodo=30; _relCrianca='Ambos';
+  ['30','60','90'].forEach(p=>document.getElementById('rel-p-'+p)?.classList.toggle('on',p==='30'));
+  ['Ambos','Arthur','Alice'].forEach(c=>document.getElementById('rel-c-'+c)?.classList.toggle('on',c==='Ambos'));
+  atualizarRelPreview();
+  abrirMo('mo-relatorio');
+}
+
+function selRelMed(el,nome){
+  document.querySelectorAll('.rel-med-card').forEach(c=>c.classList.remove('sel'));
+  el.classList.add('sel'); _relMed=nome; atualizarRelPreview();
+}
+
+function setRelPeriodo(p){
+  _relPeriodo=p;
+  ['30','60','90'].forEach(n=>document.getElementById('rel-p-'+n)?.classList.toggle('on',n===String(p)));
+  atualizarRelPreview();
+}
+
+function setRelCrianca(c){
+  _relCrianca=c;
+  ['Ambos','Arthur','Alice'].forEach(n=>document.getElementById('rel-c-'+n)?.classList.toggle('on',n===c));
+  atualizarRelPreview();
+}
+
+function atualizarRelPreview(){
+  const prev=document.getElementById('rel-preview'); if(!prev) return;
+  if(!_relMed){prev.textContent='Selecione um remédio.';return;}
+  const dados=getHist();const now=new Date();
+  const inicio=new Date(now);inicio.setDate(inicio.getDate()-_relPeriodo);
+  const filtrado=dados.filter(r=>{
+    const d=parseDate(r.data);
+    return r.remedio===_relMed&&d>=inicio&&d<=now&&(_relCrianca==='Ambos'||r.nome===_relCrianca);
+  });
+  const naotomou=(getLog()||[]).filter(l=>{
+    const d=l.data?parseDate(l.data):null;
+    return d&&d>=inicio&&d<=now&&l.acao.includes('Não tomou')&&l.acao.includes(_relMed);
+  });
+  const med=getMeds().find(m=>m.nome===_relMed);
+  const criancas=_relCrianca==='Ambos'?2:1;
+  const totalEsp=med?(med.periodos.length*_relPeriodo*criancas):0;
+  const pct=totalEsp>0?Math.round(filtrado.length/totalEsp*100):0;
+  prev.innerHTML=`<div style="display:flex;gap:16px;flex-wrap:wrap">
+    <div><span style="font-family:'Nunito',sans-serif;font-size:1.4rem;font-weight:900;color:var(--ind)">${pct}%</span><br><span style="font-size:.7rem;color:var(--muted)">adesão</span></div>
+    <div><span style="font-family:'Nunito',sans-serif;font-size:1.4rem;font-weight:900;color:var(--green)">${filtrado.length}</span><br><span style="font-size:.7rem;color:var(--muted)">doses tomadas</span></div>
+    <div><span style="font-family:'Nunito',sans-serif;font-size:1.4rem;font-weight:900;color:var(--red)">${naotomou.length}</span><br><span style="font-size:.7rem;color:var(--muted)">não tomou</span></div>
+    <div><span style="font-family:'Nunito',sans-serif;font-size:1.4rem;font-weight:900;color:var(--warn)">${Math.max(0,totalEsp-filtrado.length)}</span><br><span style="font-size:.7rem;color:var(--muted)">faltantes</span></div>
+  </div>`;
+}
+
+function gerarRelatorioMedico(){
+  if(!_relMed){alert('Selecione um remédio.');return;}
+  const dados=getHist();const log=getLog()||[];const now=new Date();
+  const inicio=new Date(now);inicio.setDate(inicio.getDate()-_relPeriodo);
+  const med=getMeds().find(m=>m.nome===_relMed)||{icon:'💊',nome:_relMed,periodos:['manha']};
+
+  const filtrado=dados.filter(r=>{
+    const d=parseDate(r.data);
+    return r.remedio===_relMed&&d>=inicio&&d<=now&&(_relCrianca==='Ambos'||r.nome===_relCrianca);
+  }).sort((a,b)=>parseDate(a.data)-parseDate(b.data));
+
+  const naotomou=log.filter(l=>{
+    const d=l.data?parseDate(l.data):null;
+    return d&&d>=inicio&&d<=now&&l.acao.includes('Não tomou')&&l.acao.includes(_relMed);
+  });
+
+  const criancas=_relCrianca==='Ambos'?2:1;
+  const totalEsp=med.periodos.length*_relPeriodo*criancas;
+  const pct=totalEsp>0?Math.round(filtrado.length/totalEsp*100):0;
+
+  // Agrupar por data
+  const ag={};filtrado.forEach(r=>{if(!ag[r.data])ag[r.data]=[];ag[r.data].push(r);});
+  naotomou.forEach(l=>{if(!ag[l.data])ag[l.data]=[];ag[l.data].push({...l,_naotomou:true});});
+  const datas=Object.keys(ag).sort((a,b)=>parseDate(a)-parseDate(b));
+
+  const histHtml=datas.map(d=>{
+    const items=ag[d].map(r=>{
+      if(r._naotomou) return `<li style="color:#EF4444">🚫 ${r.acao.replace(/^.*Não tomou /,'')}</li>`;
+      const per=r.periodo==='noite'?'🌙 noite':'☀️ manhã';
+      const who=(USERS[r.usuario]||{}).nome||'?';
+      const nota=r.nota?` <em style="color:#6B7280">(${r.nota})</em>`:'';
+      return `<li>${r.nome} — ${per} às ${r.hora} — por ${who}${nota}</li>`;
+    }).join('');
+    return `<div style="margin-bottom:10px"><strong>📅 ${d}</strong><ul style="margin-top:3px;padding-left:16px;line-height:1.9">${items}</ul></div>`;
+  }).join('');
+
+  // Padrões de falha para este remédio
+  const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const porDow={};filtrado.forEach(r=>{const dow=parseDate(r.data).getDay();porDow[dow]=(porDow[dow]||0)+1;});
+  const totalDow=Math.ceil(_relPeriodo/7);
+  const padroes=Object.entries(porDow).filter(([dow,n])=>(n/totalDow)<0.7)
+    .map(([dow])=>`<li style="color:#EF4444">${dias[dow]}: baixa adesão</li>`).join('');
+
+  const dataInicio=inicio.toLocaleDateString('pt-BR');const dataFim=now.toLocaleDateString('pt-BR');
+
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Relatório — ${med.nome}</title>
+  <style>
+    body{font-family:Arial,sans-serif;padding:32px;color:#111;max-width:700px;margin:auto;font-size:13px}
+    h1{color:#3B82F6;font-size:20px;margin-bottom:4px}
+    h2{color:#374151;font-size:14px;margin:20px 0 8px;border-bottom:2px solid #E5E7EB;padding-bottom:4px}
+    .kpi{display:inline-block;text-align:center;padding:10px 18px;border-radius:10px;border:2px solid #E5E7EB;margin:0 8px 8px 0}
+    .kpi-num{font-size:26px;font-weight:900;display:block}
+    .tag{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:700;margin-right:4px}
+    .tag-a{background:#DBEAFE;color:#1D4ED8}.tag-m{background:#FCE7F3;color:#9D174D}
+    ul{line-height:2;margin:0}@media print{body{padding:16px}}
+  </style></head><body>
+  <h1>${med.icon} Relatório de Adesão — ${med.nome}</h1>
+  <p style="color:#6B7280;margin-bottom:8px">Período: <strong>${dataInicio}</strong> a <strong>${dataFim}</strong> (${_relPeriodo} dias) · Paciente: <strong>${_relCrianca==='Ambos'?'Arthur e Alice':_relCrianca}</strong></p>
+  <p style="color:#6B7280;margin-bottom:20px">Gerado em ${now.toLocaleString('pt-BR')} pelo app Controle de Remédios das Crianças</p>
+  <h2>📊 Resumo de adesão</h2>
+  <div style="margin-bottom:16px">
+    <div class="kpi"><span class="kpi-num" style="color:#6366F1">${pct}%</span><span style="font-size:11px;color:#6B7280">adesão geral</span></div>
+    <div class="kpi"><span class="kpi-num" style="color:#10B981">${filtrado.length}</span><span style="font-size:11px;color:#6B7280">doses tomadas</span></div>
+    <div class="kpi"><span class="kpi-num" style="color:#EF4444">${Math.max(0,totalEsp-filtrado.length)}</span><span style="font-size:11px;color:#6B7280">doses faltantes</span></div>
+    <div class="kpi"><span class="kpi-num" style="color:#F59E0B">${naotomou.length}</span><span style="font-size:11px;color:#6B7280">não tomou</span></div>
+  </div>
+  <h2>💊 Posologia</h2>
+  <p>${med.periodos.map(p=>p==='manha'?'☀️ Manhã ('+med.horaManha+')':'🌙 Noite ('+med.horaNoite+')').join(' e ')}</p>
+  ${med.periodoInicio?`<p style="margin-top:6px">📦 Frasco atual: ${new Date(med.periodoInicio+'T00:00:00').toLocaleDateString('pt-BR')} → ${med.periodoFim?new Date(med.periodoFim+'T00:00:00').toLocaleDateString('pt-BR'):'indefinido'}</p>`:''}
+  ${padroes?`<h2>🔍 Padrões de falha identificados</h2><ul>${padroes}</ul>`:''}
+  <h2>📋 Histórico detalhado</h2>
+  ${histHtml||'<p>Nenhum registro no período.</p>'}
+  <div style="margin-top:28px;padding-top:12px;border-top:1px solid #E5E7EB;font-size:11px;color:#9CA3AF">
+    Documento gerado pelo app Controle de Remédios das Crianças · ${now.toLocaleString('pt-BR')}
+  </div></body></html>`;
+
+  const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const w=window.open(url,'_blank');
+  if(w) setTimeout(()=>{try{w.print();}catch(e){}},800);
+  else{const a=Object.assign(document.createElement('a'),{href:url,download:'relatorio_'+_relMed+'_'+_relPeriodo+'d.html'});a.click();}
+  setTimeout(()=>URL.revokeObjectURL(url),5000);
 }
 
 // ═══════════════════════════════════════════════════════════
