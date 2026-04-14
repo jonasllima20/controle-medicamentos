@@ -1,0 +1,42 @@
+{
+  "name": "Remédios das Crianças",
+  "short_name": "Remédios",
+  "description": "Controle de remédios das crianças Arthur e Alice",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#F0F4FF",
+  "theme_color": "#6366F1",
+  "orientation": "portrait-primary",
+  "lang": "pt-BR",
+  "categories": ["medical", "health", "lifestyle"],
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Manhã",
+      "short_name": "☀️ Manhã",
+      "description": "Marcar remédios da manhã",
+      "url": "./?periodo=manha",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Noite",
+      "short_name": "🌙 Noite",
+      "description": "Marcar remédios da noite",
+      "url": "./?periodo=noite",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
