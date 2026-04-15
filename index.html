@@ -50,6 +50,8 @@ function setSyncStatus(s){
   if(s==='sync') { el.innerHTML='⏳ Sincronizando…'; el.style.color='var(--warn)'; }
   if(s==='err')  { el.innerHTML='⚠️ Sem conexão — <span onclick="window.fbStartListeners&&window.fbStartListeners()" style="text-decoration:underline;cursor:pointer">reconectar</span>'; el.style.color='var(--red)'; }
 }
+// Expor globalmente para uso fora do módulo
+window.setSyncStatus = setSyncStatus;
 
 // ── Cache local (fallback offline) ────────────────────────
 function cacheSet(k,v){ try{ localStorage.setItem('fb_cache_'+k, JSON.stringify(v)); }catch(e){} }
@@ -1033,7 +1035,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
       <div class="ucard" id="uc-mae" onclick="selUser('mae')">
         <span class="uc-em" id="uc-em-mae">👩</span>
         <div class="uc-n">Mãe</div>
-        <div class="uc-r" id="uc-r-mae">Daiana</div>
+        <div class="uc-r" id="uc-r-mae">Parceira</div>
       </div>
     </div>
     <div class="lfield">
@@ -1299,33 +1301,24 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     <div id="patterns-wrap"></div>
   </div>
 
-  <!-- DASHBOARD EXTRA -->
+  <!-- DASHBOARD EXTRA — linha 1: pizza + resumo mês -->
   <div class="dash-extra">
-    <!-- Pizza adesão por remédio -->
     <div class="dash-card">
       <div class="dash-card-title">🥧 Adesão por remédio — 7 dias</div>
       <div class="pizza-wrap"><canvas id="grafico-pizza"></canvas></div>
     </div>
-    <!-- Resumo do mês + streak risk -->
     <div class="dash-card">
       <div class="dash-card-title">📅 Resumo do mês</div>
       <div id="streak-risk-wrap"></div>
       <div class="mes-resumo-grid" id="mes-resumo-grid"></div>
     </div>
   </div>
-  <!-- Tendência + Recordes -->
-  <div class="dash-extra">
+  <!-- DASHBOARD EXTRA — linha 2: semana + tendência + recordes -->
+  <div class="dash-extra" style="grid-template-columns:1fr 1fr 1fr">
     <div class="dash-card">
-      <div class="dash-card-title">📈 Tendência semanal</div>
-      <div id="tendencia-wrap"></div>
+      <div class="dash-card-title">📆 Resumo da semana</div>
+      <div id="semana-resumo-wrap"></div>
     </div>
-    <div class="dash-card">
-      <div class="dash-card-title">🏆 Recordes</div>
-      <div id="recordes-wrap"></div>
-    </div>
-  </div>
-  <!-- Tendência + recordes -->
-  <div class="dash-extra">
     <div class="dash-card">
       <div class="dash-card-title">📈 Tendência semanal</div>
       <div id="tendencia-wrap"></div>
@@ -1747,8 +1740,11 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
       <button class="ctab on" id="saude-tab-Arthur" onclick="setSaudeTab('Arthur')">🧒 Arthur</button>
       <button class="ctab" id="saude-tab-Alice" onclick="setSaudeTab('Alice')">👧 Alice</button>
     </div>
-    <div id="saude-conteudo" style="max-height:500px;overflow-y:auto"></div>
-    <div class="mbtns"><button class="mbtn cancel" onclick="fecharMo('mo-saude')">Fechar</button></div>
+    <div id="saude-conteudo" style="max-height:460px;overflow-y:auto"></div>
+    <div class="mbtns">
+      <button class="mbtn cancel" onclick="fecharMo('mo-saude')">Fechar</button>
+      <button class="mbtn save" onclick="salvarSaudeAtual()">💾 Salvar dados</button>
+    </div>
   </div>
 </div>
 
@@ -1818,399 +1814,6 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
   </div>
 </div>
 
-<!-- MODAL PERFIL SAÚDE -->
-<div class="mo" id="mo-saude">
-  <div class="mbox wide">
-    <div class="mt">❤️ Perfil de Saúde</div>
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      <button class="ctab on" id="saude-tab-Arthur" onclick="setSaudeTab('Arthur')">🧒 Arthur</button>
-      <button class="ctab" id="saude-tab-Alice" onclick="setSaudeTab('Alice')">👧 Alice</button>
-    </div>
-    <div id="saude-conteudo" style="max-height:500px;overflow-y:auto"></div>
-    <div class="mbtns"><button class="mbtn cancel" onclick="fecharMo('mo-saude')">Fechar</button></div>
-  </div>
-</div>
-
-<!-- MODAL CONFIG CRIANÇAS -->
-<div class="mo" id="mo-criancas-config">
-  <div class="mbox">
-    <div class="mt">👶 Configurar Crianças</div>
-    <div id="criancas-config-lista"></div>
-    <div class="mbtns"><button class="mbtn cancel" onclick="fecharMo('mo-criancas-config')">Fechar</button></div>
-  </div>
-</div>
-
-<!-- MODAL EDITAR CRIANÇA -->
-<div class="mo" id="mo-crianca-edit">
-  <div class="mbox">
-    <div class="mt" id="ce-titulo">✏️ Editar criança</div>
-    <input type="hidden" id="ce-key">
-    <div class="field-row">
-      <div class="field"><label>Emoji</label><input id="ce-emoji" type="text" maxlength="4" placeholder="🧒"></div>
-      <div class="field"><label>Nome</label><input id="ce-nome" type="text" placeholder="Arthur"></div>
-    </div>
-    <div class="field">
-      <label>Cor de destaque</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-        <div class="cor-opt" data-cor="#3B82F6" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#3B82F6;cursor:pointer;border:3px solid transparent;transition:border-color .2s"></div>
-        <div class="cor-opt" data-cor="#EC4899" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#EC4899;cursor:pointer;border:3px solid transparent;transition:border-color .2s"></div>
-        <div class="cor-opt" data-cor="#10B981" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#10B981;cursor:pointer;border:3px solid transparent;transition:border-color .2s"></div>
-        <div class="cor-opt" data-cor="#F59E0B" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#F59E0B;cursor:pointer;border:3px solid transparent;transition:border-color .2s"></div>
-        <div class="cor-opt" data-cor="#8B5CF6" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#8B5CF6;cursor:pointer;border:3px solid transparent;transition:border-color .2s"></div>
-        <div class="cor-opt" data-cor="#EF4444" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#EF4444;cursor:pointer;border:3px solid transparent;transition:border-color .2s"></div>
-      </div>
-    </div>
-    <div class="mbtns">
-      <button class="mbtn cancel" onclick="fecharMo('mo-crianca-edit')">Cancelar</button>
-      <button class="mbtn save" onclick="salvarCriancaEdit()">Salvar</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL MEDIÇÃO SAÚDE -->
-<div class="mo" id="mo-medicao">
-  <div class="mbox">
-    <div class="mt" id="med-titulo">📏 Nova medição</div>
-    <input type="hidden" id="med-crianca">
-    <input type="hidden" id="med-tipo">
-    <div class="field-row">
-      <div class="field"><label id="med-val-lbl">Valor</label><input type="number" id="med-val" step="0.1" placeholder="0.0"></div>
-      <div class="field"><label>Data da medição</label><input type="date" id="med-data"></div>
-    </div>
-    <div class="field"><label>Obs (opcional)</label><input type="text" id="med-obs" placeholder="Ex: consulta Dr. João"></div>
-    <div class="mbtns">
-      <button class="mbtn cancel" onclick="fecharMo('mo-medicao')">Cancelar</button>
-      <button class="mbtn save" onclick="salvarMedicao()">Salvar</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL DOSE RECUPERAÇÃO -->
-<div class="mo" id="mo-recuperacao">
-  <div class="mbox">
-    <div class="mt">🔄 Recuperar dose esquecida?</div>
-    <div id="rec-context" style="font-size:.8rem;color:var(--muted);margin-bottom:12px">Detectamos que remédios não foram marcados ontem. Quer registrá-los?</div>
-    <div id="rec-opcoes"></div>
-    <div class="mbtns">
-      <button class="mbtn cancel" onclick="fecharMo('mo-recuperacao')">Não, obrigado</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL PERFIL SAÚDE -->
-<div class="mo" id="mo-saude">
-  <div class="mbox wide">
-    <div class="mt">❤️ Perfil de Saúde</div>
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      <button class="ctab on" id="saude-tab-Arthur" onclick="setSaudeTab('Arthur')">🧒 Arthur</button>
-      <button class="ctab" id="saude-tab-Alice" onclick="setSaudeTab('Alice')">👧 Alice</button>
-    </div>
-    <div id="saude-conteudo" style="max-height:480px;overflow-y:auto"></div>
-    <div class="mbtns"><button class="mbtn cancel" onclick="fecharMo('mo-saude')">Fechar</button></div>
-  </div>
-</div>
-
-<!-- MODAL CONFIG CRIANÇAS -->
-<div class="mo" id="mo-criancas-config">
-  <div class="mbox">
-    <div class="mt">👶 Configurar Crianças</div>
-    <div id="criancas-config-lista"></div>
-    <div class="mbtns"><button class="mbtn cancel" onclick="fecharMo('mo-criancas-config')">Fechar</button></div>
-  </div>
-</div>
-
-<!-- MODAL EDITAR CRIANÇA -->
-<div class="mo" id="mo-crianca-edit">
-  <div class="mbox">
-    <div class="mt" id="ce-titulo">✏️ Editar criança</div>
-    <input type="hidden" id="ce-key">
-    <div class="field-row">
-      <div class="field"><label>Emoji</label><input id="ce-emoji" type="text" maxlength="4" placeholder="🧒"></div>
-      <div class="field"><label>Nome</label><input id="ce-nome" type="text"></div>
-    </div>
-    <div class="field">
-      <label>Cor de destaque</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px" id="ce-cores">
-        <div class="cor-opt" data-cor="#3B82F6" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#3B82F6;cursor:pointer;border:3px solid transparent;transition:border .15s"></div>
-        <div class="cor-opt" data-cor="#EC4899" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#EC4899;cursor:pointer;border:3px solid transparent"></div>
-        <div class="cor-opt" data-cor="#10B981" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#10B981;cursor:pointer;border:3px solid transparent"></div>
-        <div class="cor-opt" data-cor="#F59E0B" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#F59E0B;cursor:pointer;border:3px solid transparent"></div>
-        <div class="cor-opt" data-cor="#8B5CF6" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#8B5CF6;cursor:pointer;border:3px solid transparent"></div>
-        <div class="cor-opt" data-cor="#EF4444" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#EF4444;cursor:pointer;border:3px solid transparent"></div>
-      </div>
-    </div>
-    <div class="mbtns">
-      <button class="mbtn cancel" onclick="fecharMo('mo-crianca-edit')">Cancelar</button>
-      <button class="mbtn save" onclick="salvarCriancaEdit()">Salvar</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL MEDIÇÃO (SAÚDE) -->
-<div class="mo" id="mo-medicao">
-  <div class="mbox">
-    <div class="mt" id="med-titulo">📏 Nova medição</div>
-    <input type="hidden" id="med-crianca">
-    <input type="hidden" id="med-tipo">
-    <div class="field-row">
-      <div class="field"><label id="med-val-lbl">Valor</label><input type="number" id="med-val" step="0.1" placeholder="0.0"></div>
-      <div class="field"><label>Data da medição</label><input type="date" id="med-data"></div>
-    </div>
-    <div class="field"><label>Observação (opcional)</label><input type="text" id="med-obs" placeholder="Ex: consulta Dr. João"></div>
-    <div class="mbtns">
-      <button class="mbtn cancel" onclick="fecharMo('mo-medicao')">Cancelar</button>
-      <button class="mbtn save" onclick="salvarMedicao()">Salvar</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL DOSE RECUPERAÇÃO -->
-<div class="mo" id="mo-recuperacao">
-  <div class="mbox">
-    <div class="mt">🔄 Dose esquecida?</div>
-    <div id="rec-context" style="font-size:.82rem;color:var(--muted);margin-bottom:12px;line-height:1.5"></div>
-    <div id="rec-opcoes"></div>
-    <div class="mbtns">
-      <button class="mbtn cancel" onclick="fecharMo('mo-recuperacao')">Não, obrigado</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL PERFIL SAÚDE -->
-<div class="mo" id="mo-saude">
-  <div class="mbox wide">
-    <div class="mt">❤️ Perfil de Saúde</div>
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      <button class="ctab on" id="saude-tab-Arthur" onclick="setSaudeTab('Arthur')">🧒 Arthur</button>
-      <button class="ctab" id="saude-tab-Alice" onclick="setSaudeTab('Alice')">👧 Alice</button>
-    </div>
-    <div id="saude-conteudo" style="max-height:500px;overflow-y:auto"></div>
-    <div class="mbtns"><button class="mbtn cancel" onclick="fecharMo('mo-saude')">Fechar</button></div>
-  </div>
-</div>
-
-<!-- MODAL CONFIG CRIANÇAS -->
-<div class="mo" id="mo-criancas-config">
-  <div class="mbox">
-    <div class="mt">👶 Configurar Crianças</div>
-    <div id="criancas-config-lista"></div>
-    <div class="mbtns"><button class="mbtn cancel" onclick="fecharMo('mo-criancas-config')">Fechar</button></div>
-  </div>
-</div>
-
-<!-- MODAL EDITAR CRIANÇA -->
-<div class="mo" id="mo-crianca-edit">
-  <div class="mbox">
-    <div class="mt" id="ce-titulo">✏️ Editar criança</div>
-    <input type="hidden" id="ce-key">
-    <div class="field-row">
-      <div class="field"><label>Emoji</label><input id="ce-emoji" type="text" maxlength="4" placeholder="🧒"></div>
-      <div class="field"><label>Nome</label><input id="ce-nome" type="text" placeholder="Arthur"></div>
-    </div>
-    <div class="field"><label>Cor de destaque</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px" id="ce-cores">
-        <div class="cor-opt" data-cor="#3B82F6" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#3B82F6;cursor:pointer;border:3px solid transparent;transition:border .2s;flex-shrink:0"></div>
-        <div class="cor-opt" data-cor="#EC4899" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#EC4899;cursor:pointer;border:3px solid transparent;flex-shrink:0"></div>
-        <div class="cor-opt" data-cor="#10B981" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#10B981;cursor:pointer;border:3px solid transparent;flex-shrink:0"></div>
-        <div class="cor-opt" data-cor="#F59E0B" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#F59E0B;cursor:pointer;border:3px solid transparent;flex-shrink:0"></div>
-        <div class="cor-opt" data-cor="#8B5CF6" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#8B5CF6;cursor:pointer;border:3px solid transparent;flex-shrink:0"></div>
-        <div class="cor-opt" data-cor="#EF4444" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#EF4444;cursor:pointer;border:3px solid transparent;flex-shrink:0"></div>
-      </div>
-    </div>
-    <div class="mbtns">
-      <button class="mbtn cancel" onclick="fecharMo('mo-crianca-edit')">Cancelar</button>
-      <button class="mbtn save" onclick="salvarCriancaEdit()">Salvar</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL MEDIÇÃO SAÚDE -->
-<div class="mo" id="mo-medicao">
-  <div class="mbox">
-    <div class="mt" id="med-titulo">📏 Nova medição</div>
-    <input type="hidden" id="med-crianca">
-    <input type="hidden" id="med-tipo">
-    <div class="field-row">
-      <div class="field"><label id="med-val-lbl">Valor</label><input type="number" id="med-val" step="0.1" placeholder="0.0"></div>
-      <div class="field"><label>Data</label><input type="date" id="med-data"></div>
-    </div>
-    <div class="field"><label>Observação (opcional)</label><input type="text" id="med-obs" placeholder="Ex: consulta Dr. João"></div>
-    <div class="mbtns">
-      <button class="mbtn cancel" onclick="fecharMo('mo-medicao')">Cancelar</button>
-      <button class="mbtn save" onclick="salvarMedicao()">Salvar</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL DOSE RECUPERAÇÃO -->
-<div class="mo" id="mo-recuperacao">
-  <div class="mbox">
-    <div class="mt">🔄 Dose esquecida ontem?</div>
-    <div id="rec-context" style="font-size:.8rem;color:var(--muted);margin-bottom:12px"></div>
-    <div id="rec-opcoes"></div>
-    <div class="mbtns">
-      <button class="mbtn cancel" onclick="fecharMo('mo-recuperacao')">Não, obrigado</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL PERFIL SAÚDE -->
-<div class="mo" id="mo-saude">
-  <div class="mbox wide">
-    <div class="mt">❤️ Perfil de Saúde</div>
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      <button class="ctab on" id="saude-tab-Arthur" onclick="setSaudeTab('Arthur')">🧒 Arthur</button>
-      <button class="ctab" id="saude-tab-Alice" onclick="setSaudeTab('Alice')">👧 Alice</button>
-    </div>
-    <div id="saude-conteudo" style="max-height:500px;overflow-y:auto"></div>
-    <div class="mbtns"><button class="mbtn cancel" onclick="fecharMo('mo-saude')">Fechar</button></div>
-  </div>
-</div>
-
-<!-- MODAL CONFIG CRIANÇAS -->
-<div class="mo" id="mo-criancas-config">
-  <div class="mbox">
-    <div class="mt">👶 Configurar Crianças</div>
-    <div id="criancas-config-lista"></div>
-    <div class="mbtns"><button class="mbtn cancel" onclick="fecharMo('mo-criancas-config')">Fechar</button></div>
-  </div>
-</div>
-
-<!-- MODAL EDITAR CRIANÇA -->
-<div class="mo" id="mo-crianca-edit">
-  <div class="mbox">
-    <div class="mt" id="ce-titulo">✏️ Editar criança</div>
-    <input type="hidden" id="ce-key">
-    <div class="field-row">
-      <div class="field"><label>Emoji</label><input id="ce-emoji" type="text" maxlength="4" placeholder="🧒"></div>
-      <div class="field"><label>Nome</label><input id="ce-nome" type="text" placeholder="Arthur"></div>
-    </div>
-    <div class="field">
-      <label>Cor de destaque</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-        <div class="cor-opt" data-cor="#3B82F6" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#3B82F6;cursor:pointer;border:3px solid transparent;transition:border .2s"></div>
-        <div class="cor-opt" data-cor="#EC4899" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#EC4899;cursor:pointer;border:3px solid transparent;transition:border .2s"></div>
-        <div class="cor-opt" data-cor="#10B981" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#10B981;cursor:pointer;border:3px solid transparent;transition:border .2s"></div>
-        <div class="cor-opt" data-cor="#F59E0B" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#F59E0B;cursor:pointer;border:3px solid transparent;transition:border .2s"></div>
-        <div class="cor-opt" data-cor="#8B5CF6" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#8B5CF6;cursor:pointer;border:3px solid transparent;transition:border .2s"></div>
-        <div class="cor-opt" data-cor="#EF4444" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#EF4444;cursor:pointer;border:3px solid transparent;transition:border .2s"></div>
-      </div>
-    </div>
-    <div class="mbtns">
-      <button class="mbtn cancel" onclick="fecharMo('mo-crianca-edit')">Cancelar</button>
-      <button class="mbtn save" onclick="salvarCriancaEdit()">Salvar</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL MEDIÇÃO SAÚDE -->
-<div class="mo" id="mo-medicao">
-  <div class="mbox">
-    <div class="mt" id="med-titulo">📏 Nova medição</div>
-    <input type="hidden" id="med-crianca">
-    <input type="hidden" id="med-tipo">
-    <div class="field-row">
-      <div class="field"><label id="med-val-lbl">Valor</label><input type="number" id="med-val" step="0.1"></div>
-      <div class="field"><label>Data</label><input type="date" id="med-data"></div>
-    </div>
-    <div class="field"><label>Observação (opcional)</label><input type="text" id="med-obs" placeholder="Ex: consulta Dr. João"></div>
-    <div class="mbtns">
-      <button class="mbtn cancel" onclick="fecharMo('mo-medicao')">Cancelar</button>
-      <button class="mbtn save" onclick="salvarMedicao()">Salvar</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL DOSE RECUPERAÇÃO -->
-<div class="mo" id="mo-recuperacao">
-  <div class="mbox">
-    <div class="mt">🔄 Dose esquecida?</div>
-    <div id="rec-context" style="font-size:.8rem;color:var(--muted);margin-bottom:12px"></div>
-    <div id="rec-opcoes"></div>
-    <div class="mbtns">
-      <button class="mbtn cancel" onclick="fecharMo('mo-recuperacao')">Não, obrigado</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL PERFIL SAÚDE -->
-<div class="mo" id="mo-saude">
-  <div class="mbox wide">
-    <div class="mt">❤️ Perfil de Saúde</div>
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      <button class="ctab on" id="saude-tab-Arthur" onclick="setSaudeTab('Arthur')">🧒 Arthur</button>
-      <button class="ctab" id="saude-tab-Alice" onclick="setSaudeTab('Alice')">👧 Alice</button>
-    </div>
-    <div id="saude-conteudo" style="max-height:480px;overflow-y:auto"></div>
-    <div class="mbtns"><button class="mbtn cancel" onclick="fecharMo('mo-saude')">Fechar</button></div>
-  </div>
-</div>
-
-<!-- MODAL CONFIG CRIANÇAS -->
-<div class="mo" id="mo-criancas-config">
-  <div class="mbox">
-    <div class="mt">👶 Configurar Crianças</div>
-    <div id="criancas-config-lista"></div>
-    <div class="mbtns"><button class="mbtn cancel" onclick="fecharMo('mo-criancas-config')">Fechar</button></div>
-  </div>
-</div>
-
-<!-- MODAL EDITAR CRIANÇA -->
-<div class="mo" id="mo-crianca-edit">
-  <div class="mbox">
-    <div class="mt" id="ce-titulo">✏️ Editar criança</div>
-    <input type="hidden" id="ce-key">
-    <div class="field-row">
-      <div class="field"><label>Emoji</label><input id="ce-emoji" type="text" maxlength="4" placeholder="🧒"></div>
-      <div class="field"><label>Nome</label><input id="ce-nome" type="text" placeholder="Arthur"></div>
-    </div>
-    <div class="field">
-      <label>Cor de destaque</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px" id="ce-cores">
-        <div class="cor-opt" data-cor="#3B82F6" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#3B82F6;cursor:pointer;border:3px solid transparent;transition:.2s"></div>
-        <div class="cor-opt" data-cor="#EC4899" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#EC4899;cursor:pointer;border:3px solid transparent;transition:.2s"></div>
-        <div class="cor-opt" data-cor="#10B981" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#10B981;cursor:pointer;border:3px solid transparent;transition:.2s"></div>
-        <div class="cor-opt" data-cor="#F59E0B" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#F59E0B;cursor:pointer;border:3px solid transparent;transition:.2s"></div>
-        <div class="cor-opt" data-cor="#8B5CF6" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#8B5CF6;cursor:pointer;border:3px solid transparent;transition:.2s"></div>
-        <div class="cor-opt" data-cor="#EF4444" onclick="selCorCrianca(this)" style="width:32px;height:32px;border-radius:50%;background:#EF4444;cursor:pointer;border:3px solid transparent;transition:.2s"></div>
-      </div>
-    </div>
-    <div class="mbtns">
-      <button class="mbtn cancel" onclick="fecharMo('mo-crianca-edit')">Cancelar</button>
-      <button class="mbtn save" onclick="salvarCriancaEdit()">Salvar</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL ADICIONAR MEDIÇÃO -->
-<div class="mo" id="mo-medicao">
-  <div class="mbox">
-    <div class="mt" id="med-titulo">📏 Nova medição</div>
-    <input type="hidden" id="med-crianca">
-    <input type="hidden" id="med-tipo">
-    <div class="field-row">
-      <div class="field"><label id="med-val-lbl">Valor</label><input type="number" id="med-val" step="0.1" placeholder="0.0"></div>
-      <div class="field"><label>Data da medição</label><input type="date" id="med-data"></div>
-    </div>
-    <div class="field"><label>Observação (opcional)</label><input type="text" id="med-obs" placeholder="Ex: consulta Dr. João"></div>
-    <div class="mbtns">
-      <button class="mbtn cancel" onclick="fecharMo('mo-medicao')">Cancelar</button>
-      <button class="mbtn save" onclick="salvarMedicao()">Salvar</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL DOSE RECUPERAÇÃO -->
-<div class="mo" id="mo-recuperacao">
-  <div class="mbox">
-    <div class="mt">🔄 Dose esquecida ontem?</div>
-    <div id="rec-context" style="font-size:.8rem;color:var(--muted);margin-bottom:12px"></div>
-    <div id="rec-opcoes"></div>
-    <div class="mbtns">
-      <button class="mbtn cancel" onclick="fecharMo('mo-recuperacao')">Não, obrigado</button>
-    </div>
-  </div>
-</div>
 
 <!-- MODAL NOTIFICAÇÕES CONFIG -->
 <!-- MODAL RELATÓRIO MÉDICO -->
@@ -3018,7 +2621,7 @@ function atualizarTudo(){
   renderCards();verificarPendencias();atualizarStreak();atualizarAdesao();
   atualizarGrafico();gerarCal();calcPatterns();renderProximos();atualizarStatEvento();
   atualizarPizza();atualizarDashboardExtra();verificarPeriodoAlertas();
-  atualizarTendencia();atualizarRecordes();
+  atualizarTendencia();atualizarRecordes();atualizarSemanaResumo();
 }
 function entrar(){
   aplicarTemaPorUsuario(activeUser);
@@ -3101,14 +2704,6 @@ document.addEventListener('keydown',e=>{
     if(typeof _notaCb!=='undefined'&&_notaCb){_notaCb(null);_notaCb=null;}
   }
 });
-
-// ═══════════════ SYNC STATUS ═══════════════
-function setSyncStatus(s){
-  const el=document.getElementById('sync-status');if(!el)return;
-  if(s==='ok'){el.innerHTML='☁️ Sincronizado';el.style.color='var(--green)';}
-  if(s==='sync'){el.innerHTML='⏳ Sincronizando…';el.style.color='var(--warn)';}
-  if(s==='err'){el.innerHTML='⚠️ Sem conexão — <span onclick="window.fbStartListeners&&window.fbStartListeners()" style="text-decoration:underline;cursor:pointer">reconectar</span>';el.style.color='var(--red)';}
-}
 
 // ═══════════════ HEADER USER ═══════════════
 function atualizarHeaderUser(){
@@ -3441,6 +3036,238 @@ function verificarBannerNotif(){
     if(s.isIOS&&!s.isPWA){const t=b.querySelector('.notif-banner-txt');if(t)t.innerHTML='<strong>Instale o app para notificações</strong><br>Compartilhar → "Adicionar à Tela de Início".';}
     b.classList.add('show');
   },3000);
+}
+
+// ═══════════════ RESUMO DA SEMANA ═══════════════
+function atualizarSemanaResumo(){
+  const wrap=document.getElementById('semana-resumo-wrap');if(!wrap)return;
+  const dados=getHist();const now=new Date();const CRIANCAS=getCriancas();
+  const totalD=totalDoses();
+  let html='';
+  CRIANCAS.forEach(nome=>{
+    const cfg=getCriancaConfig(nome);
+    let ok=0,total=0;
+    for(let i=0;i<7;i++){
+      const d=new Date(now);d.setDate(d.getDate()-i);const df=fmtDate(d);
+      total+=totalD;
+      ok+=dados.filter(r=>r.data===df&&r.nome===nome).length;
+    }
+    const pct=total>0?Math.round(ok/total*100):0;
+    html+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <div style="width:28px;height:28px;border-radius:50%;background:${cfg.cor};display:flex;align-items:center;justify-content:center;font-size:.85rem;flex-shrink:0">${cfg.emoji}</div>
+      <div style="flex:1">
+        <div style="font-size:.78rem;font-weight:700;color:var(--text)">${cfg.nome}: ${pct}%</div>
+        <div style="height:5px;background:var(--border);border-radius:99px;margin-top:3px;overflow:hidden">
+          <div style="height:100%;background:${cfg.cor};border-radius:99px;width:${pct}%"></div>
+        </div>
+      </div>
+      <div style="font-size:.7rem;color:var(--muted);white-space:nowrap">${ok}/${total}</div>
+    </div>`;
+  });
+  wrap.innerHTML=html||'<p style="color:var(--muted);font-size:.78rem">Sem dados esta semana.</p>';
+}
+
+// ═══════════════ LOG DE ATIVIDADES ═══════════════
+function abrirLog(){
+  fecharMenus();
+  const log=getLog();
+  const sel=document.getElementById('log-fil-data');
+  if(sel){
+    const datas=[...new Set(log.map(l=>l.data).filter(Boolean))].sort((a,b)=>parseDate(b)-parseDate(a));
+    sel.innerHTML='<option value="">Todos os dias</option>'+datas.map(d=>'<option value="'+d+'">'+d+'</option>').join('');
+  }
+  renderLog();abrirMo('mo-log');
+}
+function renderLog(){
+  const log=getLog();const fil=document.getElementById('log-fil-data')?.value||'';
+  const sorted=[...(fil?log.filter(l=>l.data===fil):log)].sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,120);
+  const div=document.getElementById('log-lista');if(!div)return;
+  if(!sorted.length){div.innerHTML='<div class="log-empty">Nenhuma atividade ainda.</div>';return;}
+  div.innerHTML=sorted.map(l=>{
+    const u=USERS[l.usuario]||{nome:'?',emoji:'👤',cor:'#888'};
+    const avSrc=localStorage.getItem('rm_av_u_'+(l.usuario||''));
+    return '<div class="log-item"><div class="log-av" style="background:'+(avSrc?'transparent':u.cor)+'">'+(avSrc?'<img src="'+avSrc+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%">':u.emoji)+'</div>'
+      +'<div><div class="log-who">'+u.nome+'</div><div class="log-what">'+l.acao+'</div><div class="log-when">📅 '+(l.data||'')+(l.hora?' às '+l.hora:'')+'</div></div></div>';
+  }).join('');
+}
+
+// ═══════════════ HISTÓRICO COMPLETO ═══════════════
+function abrirHistorico(){
+  fecharMenus();
+  const now=new Date();
+  const sm=document.getElementById('hf-mes');const sa=document.getElementById('hf-ano');
+  if(sm)sm.innerHTML=MESES.map((m,i)=>'<option value="'+i+'" '+(i===now.getMonth()?'selected':'')+'>'+m+'</option>').join('');
+  if(sa){sa.innerHTML='';for(let a=now.getFullYear();a>=now.getFullYear()-5;a--){const o=document.createElement('option');o.value=a;o.textContent=a;if(a===now.getFullYear())o.selected=true;sa.appendChild(o);}}
+  renderHistorico();abrirMo('mo-hist');
+}
+function renderHistorico(){
+  const dados=getHist();
+  const mes=parseInt(document.getElementById('hf-mes')?.value??new Date().getMonth());
+  const ano=parseInt(document.getElementById('hf-ano')?.value??new Date().getFullYear());
+  const cri=document.getElementById('hf-cri')?.value||'';
+  const usr=document.getElementById('hf-usr')?.value||'';
+  const fil=dados.filter(r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes&&(!cri||r.nome===cri)&&(!usr||r.usuario===usr);});
+  const diasM=new Date(ano,mes+1,0).getDate();const espT=totalDoses()*diasM*(cri?1:getCriancas().length);
+  const pctM=espT>0?Math.round(fil.length/espT*100):0;
+  const hres=document.getElementById('hres');
+  if(hres&&fil.length)hres.innerHTML='<div class="hres-grid"><div class="hres-item"><div class="hres-val" style="color:var(--ind)">'+pctM+'%</div><div class="hres-lbl">Adesão</div></div><div class="hres-item"><div class="hres-val" style="color:var(--green)">'+fil.length+'</div><div class="hres-lbl">Doses feitas</div></div><div class="hres-item"><div class="hres-val" style="color:var(--red)">'+Math.max(0,espT-fil.length)+'</div><div class="hres-lbl">Faltantes</div></div></div>';
+  else if(hres)hres.innerHTML='';
+  const ag={};fil.forEach(r=>{if(!ag[r.data])ag[r.data]=[];ag[r.data].push(r);});
+  const datas=Object.keys(ag).sort((a,b)=>parseDate(b)-parseDate(a));
+  const div=document.getElementById('hlista');if(!div)return;
+  if(!datas.length){div.innerHTML='<p style="color:var(--muted);font-size:.8rem;text-align:center;padding:14px">Sem registros neste período.</p>';return;}
+  div.innerHTML=datas.map(d=>{
+    const pills=ag[d].map(r=>{
+      const icon=(getMeds().find(m=>m.nome===r.remedio)||{}).icon||'💊';
+      const per=r.periodo==='noite'?'🌙':'☀️';const u=USERS[r.usuario];const nota=r.nota?' 💬':'';
+      return '<span class="hpill h'+(r.nome===getCriancas()[0]?'a':'b')+'" title="'+(r.nota||'')+'">'+icon+' '+r.remedio+' '+per+' '+(u?.emoji||'')+nota+'</span>';
+    }).join('');
+    return '<div class="hdia"><div class="hdata">📅 '+d+'</div><div class="hitems">'+pills+'</div></div>';
+  }).join('');
+}
+function limparTudo(){
+  if(!confirm('Limpar TODO o histórico permanentemente?'))return;
+  localStorage.removeItem('rm_hist');localStorage.removeItem('rm_log');
+  Object.keys(localStorage).forEach(k=>{if(k.startsWith('obs_'))localStorage.removeItem(k);});
+  window._fbHist=[];window._fbLog=[];
+  if(window.fbLimparTudo)window.fbLimparTudo();
+  renderHistorico();renderLog();atualizarTudo();
+}
+
+// ═══════════════ AGENDA COMPLETA ═══════════════
+function abrirTodosEventos(){
+  fecharMenus();renderTodosEventos();abrirMo('mo-todos-eventos');
+}
+function renderTodosEventos(){
+  const filTipo=document.getElementById('ev-fil-tipo')?.value||'';
+  const filQuem=document.getElementById('ev-fil-quem')?.value||'';
+  const evs=getEventos().filter(e=>(!filTipo||e.tipo===filTipo)&&(!filQuem||e.quem===filQuem||e.quem==='Ambos'));
+  const div=document.getElementById('todos-eventos-lista');if(!div)return;
+  const hoje2=new Date();hoje2.setHours(0,0,0,0);
+  if(!evs.length){div.innerHTML='<p style="color:var(--muted);font-size:.8rem;text-align:center;padding:16px">Nenhum evento.</p>';return;}
+  div.innerHTML=evs.sort((a,b)=>a.dataISO.localeCompare(b.dataISO)).map(e=>{
+    const[y,m,d]=e.dataISO.split('-');const evDate=new Date(+y,+m-1,+d);
+    const passado=evDate<hoje2;const diff=Math.round((evDate-hoje2)/(1000*60*60*24));
+    const badge=diff===0?'<span class="ev-hoje-badge">HOJE</span>':diff===1?'<span class="ev-amanha-badge">AMANHÃ</span>':'';
+    return '<div class="ev-card'+(passado?' ev-vencido':'')+'"><div class="ev-card-top"><div class="ev-card-left">'
+      +'<div class="ev-titulo"><span class="ev-tipo-pill '+TIPO_CLS[e.tipo]+'">'+TIPO_LABELS[e.tipo]+'</span> <strong>'+e.titulo+'</strong>'+badge+'</div>'
+      +'<div class="ev-detalhe"><span>📅 '+d+'/'+m+'/'+y+(e.hora?' às '+e.hora:'')+'</span>'+(e.local?'<span>📍 '+e.local+'</span>':'')
+      +'<span>'+(e.quem==='Ambos'?'👫 Ambos':e.quem==='Arthur'?'🧒 Arthur':'👧 Alice')+'</span>'+(e.obs?'<span>📋 '+e.obs+'</span>':'')+'</div></div>'
+      +'<div class="ev-actions"><button class="ev-btn" onclick="abrirEditEvento(\''+e.id+'\');fecharMo(\'mo-todos-eventos\')">✏️</button></div>'
+      +'</div></div>';
+  }).join('');
+}
+
+// ═══════════════ EXPORTAR PDF/CSV ═══════════════
+function expCSV(){
+  const dados=getHist();if(!dados.length){alert('Nenhum dado.');return;}
+  const h='Data,Criança,Remédio,Período,Hora,Por,Nota\n';
+  const rows=dados.map(r=>'"'+r.data+'","'+r.nome+'","'+r.remedio+'","'+(r.periodo||'')+'","'+r.hora+'","'+(USERS[r.usuario]?.nome||'')+'","'+(r.nota||'')+'"').join('\n');
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob(['\uFEFF'+h+rows],{type:'text/csv;charset=utf-8'})),download:'remedios_'+hojeISO()+'.csv'});
+  a.click();
+}
+function expPDF(){
+  const dados=getHist();const evs=getEventos();const now=new Date();
+  const mes=now.getMonth(),ano=now.getFullYear(),diasP=now.getDate();
+  const dadosMes=dados.filter(r=>{const d=parseDate(r.data);return d.getMonth()===mes&&d.getFullYear()===ano;});
+  const evsMes=evs.filter(e=>{const[y,m]=e.dataISO.split('-');return parseInt(m)-1===mes&&parseInt(y)===ano;});
+  const espP=totalDoses()*diasP;const CRIANCAS=getCriancas();
+  function pctC(nome){const f=dadosMes.filter(r=>r.nome===nome).length;return espP>0?Math.round(f/espP*100):0;}
+  const ag={};dadosMes.forEach(r=>{if(!ag[r.data])ag[r.data]=[];ag[r.data].push(r);});
+  const datas=Object.keys(ag).sort((a,b)=>parseDate(a)-parseDate(b));
+  const histHtml=datas.map(d=>{
+    const items=ag[d].map(r=>{const icon=(getMeds().find(m=>m.nome===r.remedio)||{}).icon||'💊';const per=r.periodo==='noite'?'🌙':'☀️';const who=(USERS[r.usuario]||{}).nome||'?';const nota=r.nota?' <em>('+r.nota+')</em>':'';return '<li>'+icon+' '+r.remedio+' '+per+' — '+r.hora+' — '+who+nota+'</li>';}).join('');
+    return '<div style="margin-bottom:10px"><strong>📅 '+d+'</strong><ul style="margin-top:4px;padding-left:18px;line-height:1.9">'+items+'</ul></div>';
+  }).join('');
+  const evsHtml=evsMes.length?evsMes.map(e=>{const[y,m,d]=e.dataISO.split('-');return '<li>'+((TIPO_LABELS||{})[e.tipo]||e.tipo)+' — <strong>'+e.titulo+'</strong> · '+d+'/'+m+'/'+y+(e.hora?' às '+e.hora:'')+' · '+(e.local||'')+'</li>';}).join(''):'<li>Nenhum evento</li>';
+  const kpis=CRIANCAS.map(n=>'<div class="pct-box"><span class="pct-num" style="color:'+(getCriancaConfig(n).cor||'#6366F1')+'">'+pctC(n)+'%</span><span class="pct-lbl">'+(getCriancaConfig(n).emoji||'')+' '+n+'</span></div>').join('');
+  const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório '+MESES[mes]+' '+ano+'</title>'
+    +'<style>body{font-family:Arial,sans-serif;padding:32px;color:#111;max-width:750px;margin:auto;font-size:13px}h1{color:#3B82F6;margin-bottom:4px;font-size:20px}h2{color:#374151;font-size:14px;margin:20px 0 8px;border-bottom:2px solid #E5E7EB;padding-bottom:4px}.pct-box{display:inline-block;text-align:center;padding:10px 18px;border-radius:10px;border:2px solid #E5E7EB;margin:0 8px 8px 0}.pct-num{font-size:26px;font-weight:900;display:block}.pct-lbl{font-size:11px;color:#6B7280}ul{line-height:2}@media print{body{padding:16px}}</style></head><body>'
+    +'<h1>💊 Controle de Remédios das Crianças</h1>'
+    +'<p style="color:#6B7280;margin-bottom:16px">Relatório de <strong>'+MESES[mes]+' '+ano+'</strong> · Gerado em '+new Date().toLocaleDateString('pt-BR')+'</p>'
+    +'<h2>📊 Adesão</h2><div style="margin-bottom:14px">'+kpis+'</div>'
+    +'<h2>📋 Histórico</h2>'+(histHtml||'<p>Sem registros.</p>')
+    +'<h2>🏥 Eventos</h2><ul>'+evsHtml+'</ul>'
+    +'<div style="margin-top:24px;padding-top:10px;border-top:1px solid #E5E7EB;font-size:11px;color:#9CA3AF">Gerado em '+new Date().toLocaleString('pt-BR')+'</div>'
+    +'</body></html>';
+  const blob=new Blob([html],{type:'text/html;charset=utf-8'});const url=URL.createObjectURL(blob);
+  const w=window.open(url,'_blank');if(w)setTimeout(()=>{try{w.print();}catch(e){}},800);
+  else{const a=Object.assign(document.createElement('a'),{href:url,download:'relatorio_'+MESES[mes]+'_'+ano+'.html'});a.click();}
+  setTimeout(()=>URL.revokeObjectURL(url),5000);
+}
+
+// ═══════════════ RELATÓRIO MÉDICO ═══════════════
+let _relMed=null,_relPeriodo=30,_relCrianca='Ambos';
+function abrirRelatorio(){
+  fecharMenus();
+  const meds=getMeds().filter(m=>!m.suspenso);
+  const lista=document.getElementById('rel-med-lista');
+  if(lista){lista.innerHTML=meds.map((m,i)=>'<div class="rel-med-card'+(i===0?' sel':'')+'" onclick="selRelMed(this,\''+m.nome+'\')" ><span class="rmc-icon">'+m.icon+'</span><div><div class="rmc-nome">'+m.nome+'</div><div class="rmc-per">'+m.periodos.map(p=>p==='manha'?'☀️':'🌙').join('')+'</div></div></div>').join('');_relMed=meds[0]?.nome||null;}
+  _relPeriodo=30;_relCrianca='Ambos';
+  ['30','60','90'].forEach(p=>document.getElementById('rel-p-'+p)?.classList.toggle('on',p==='30'));
+  ['Ambos','Arthur','Alice'].forEach(c=>document.getElementById('rel-c-'+c)?.classList.toggle('on',c==='Ambos'));
+  atualizarRelPreview();abrirMo('mo-relatorio');
+}
+function selRelMed(el,nome){document.querySelectorAll('.rel-med-card').forEach(c=>c.classList.remove('sel'));el.classList.add('sel');_relMed=nome;atualizarRelPreview();}
+function setRelPeriodo(p){_relPeriodo=p;['30','60','90'].forEach(n=>document.getElementById('rel-p-'+n)?.classList.toggle('on',n===String(p)));atualizarRelPreview();}
+function setRelCrianca(c){_relCrianca=c;['Ambos','Arthur','Alice'].forEach(n=>document.getElementById('rel-c-'+n)?.classList.toggle('on',n===c));atualizarRelPreview();}
+function atualizarRelPreview(){
+  const prev=document.getElementById('rel-preview');if(!prev)return;
+  if(!_relMed){prev.textContent='Selecione um remédio.';return;}
+  const dados=getHist();const now=new Date();const inicio=new Date(now);inicio.setDate(inicio.getDate()-_relPeriodo);
+  const fil=dados.filter(r=>{const d=parseDate(r.data);return r.remedio===_relMed&&d>=inicio&&d<=now&&(_relCrianca==='Ambos'||r.nome===_relCrianca);});
+  const med=getMeds().find(m=>m.nome===_relMed);const criancas=_relCrianca==='Ambos'?getCriancas().length:1;
+  const totalEsp=(med?.periodos.length||1)*_relPeriodo*criancas;const pct=totalEsp>0?Math.round(fil.length/totalEsp*100):0;
+  prev.innerHTML='<div style="display:flex;gap:16px;flex-wrap:wrap">'
+    +'<div><span style="font-family:\'Nunito\',sans-serif;font-size:1.4rem;font-weight:900;color:var(--ind)">'+pct+'%</span><br><span style="font-size:.7rem;color:var(--muted)">adesão</span></div>'
+    +'<div><span style="font-family:\'Nunito\',sans-serif;font-size:1.4rem;font-weight:900;color:var(--green)">'+fil.length+'</span><br><span style="font-size:.7rem;color:var(--muted)">tomadas</span></div>'
+    +'<div><span style="font-family:\'Nunito\',sans-serif;font-size:1.4rem;font-weight:900;color:var(--red)">'+Math.max(0,totalEsp-fil.length)+'</span><br><span style="font-size:.7rem;color:var(--muted)">faltantes</span></div></div>';
+}
+function gerarRelatorioMedico(){
+  if(!_relMed){alert('Selecione um remédio.');return;}
+  const dados=getHist();const log=getLog()||[];const now=new Date();
+  const inicio=new Date(now);inicio.setDate(inicio.getDate()-_relPeriodo);
+  const med=getMeds().find(m=>m.nome===_relMed)||{icon:'💊',nome:_relMed,periodos:['manha']};
+  const filtrado=dados.filter(r=>{const d=parseDate(r.data);return r.remedio===_relMed&&d>=inicio&&d<=now&&(_relCrianca==='Ambos'||r.nome===_relCrianca);}).sort((a,b)=>parseDate(a.data)-parseDate(b.data));
+  const naotomou=log.filter(l=>{const d=l.data?parseDate(l.data):null;return d&&d>=inicio&&d<=now&&l.acao&&l.acao.includes('Não tomou')&&l.acao.includes(_relMed);});
+  const criancas=_relCrianca==='Ambos'?getCriancas().length:1;const totalEsp=(med.periodos.length)*_relPeriodo*criancas;const pct=totalEsp>0?Math.round(filtrado.length/totalEsp*100):0;
+  const ag={};filtrado.forEach(r=>{if(!ag[r.data])ag[r.data]=[];ag[r.data].push(r);});naotomou.forEach(l=>{if(!ag[l.data])ag[l.data]=[];ag[l.data].push({...l,_naotomou:true});});
+  const datas=Object.keys(ag).sort((a,b)=>parseDate(a)-parseDate(b));
+  const histHtml=datas.map(d=>{const items=ag[d].map(r=>{if(r._naotomou)return'<li style="color:#EF4444">🚫 '+r.acao+'</li>';const per=r.periodo==='noite'?'🌙':'☀️';const who=(USERS[r.usuario]||{}).nome||'?';return'<li>'+r.nome+' — '+per+' às '+r.hora+' — '+who+(r.nota?' ('+r.nota+')':'')+'</li>';}).join('');return'<div style="margin-bottom:10px"><strong>📅 '+d+'</strong><ul style="margin-top:4px;padding-left:16px;line-height:1.9">'+items+'</ul></div>';}).join('');
+  const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório — '+med.nome+'</title>'
+    +'<style>body{font-family:Arial,sans-serif;padding:32px;color:#111;max-width:700px;margin:auto;font-size:13px}h1{color:#3B82F6;font-size:18px}h2{color:#374151;font-size:14px;margin:18px 0 6px;border-bottom:2px solid #E5E7EB;padding-bottom:4px}.kpi{display:inline-block;text-align:center;padding:10px 16px;border-radius:10px;border:2px solid #E5E7EB;margin:0 8px 8px 0}.kn{font-size:24px;font-weight:900;display:block}ul{line-height:2}@media print{body{padding:16px}}</style></head><body>'
+    +'<h1>'+med.icon+' Relatório — '+med.nome+'</h1>'
+    +'<p style="color:#6B7280;margin-bottom:12px">Período: <strong>'+inicio.toLocaleDateString('pt-BR')+'</strong> a <strong>'+now.toLocaleDateString('pt-BR')+'</strong> ('+_relPeriodo+' dias) · Paciente: <strong>'+(_relCrianca==='Ambos'?'Arthur e Alice':_relCrianca)+'</strong></p>'
+    +'<h2>📊 Resumo</h2><div style="margin-bottom:14px">'
+    +'<div class="kpi"><span class="kn" style="color:#6366F1">'+pct+'%</span><span style="font-size:11px;color:#6B7280">adesão</span></div>'
+    +'<div class="kpi"><span class="kn" style="color:#10B981">'+filtrado.length+'</span><span style="font-size:11px;color:#6B7280">doses tomadas</span></div>'
+    +'<div class="kpi"><span class="kn" style="color:#EF4444">'+naotomou.length+'</span><span style="font-size:11px;color:#6B7280">não tomou</span></div></div>'
+    +'<h2>💊 Posologia</h2><p>'+med.periodos.map(p=>p==='manha'?'☀️ Manhã ('+med.horaManha+')':'🌙 Noite ('+med.horaNoite+')').join(' e ')+'</p>'
+    +(med.periodoFim?'<p>📦 Frasco: '+new Date(med.periodoInicio+'T00:00:00').toLocaleDateString('pt-BR')+' → '+new Date(med.periodoFim+'T00:00:00').toLocaleDateString('pt-BR')+'</p>':'')
+    +'<h2>📋 Histórico</h2>'+(histHtml||'<p>Sem registros.</p>')
+    +'<div style="margin-top:24px;padding-top:10px;border-top:1px solid #E5E7EB;font-size:11px;color:#9CA3AF">Gerado em '+now.toLocaleString('pt-BR')+'</div></body></html>';
+  const blob=new Blob([html],{type:'text/html;charset=utf-8'});const url=URL.createObjectURL(blob);
+  const w=window.open(url,'_blank');if(w)setTimeout(()=>{try{w.print();}catch(e){}},800);
+  else{const a=Object.assign(document.createElement('a'),{href:url,download:'relatorio_'+_relMed+'_'+_relPeriodo+'d.html'});a.click();}
+  setTimeout(()=>URL.revokeObjectURL(url),5000);
+}
+
+// ═══════════════ SAÚDE — SALVAR DADOS ═══════════════
+function salvarSaudeAtual(){
+  // Lê os campos visíveis e salva
+  const nome=_saudeTab||'Arthur';
+  const nasc=document.getElementById('saude-nasc')?.value||'';
+  const sexo=document.getElementById('saude-sexo')?.value||'';
+  const medico=document.getElementById('saude-medico')?.value||'';
+  const plano=document.getElementById('saude-plano')?.value||'';
+  const sd=getSaudeData();if(!sd[nome])sd[nome]={};
+  if(nasc)sd[nome].nascimento=nasc;
+  if(sexo)sd[nome].sexo=sexo;
+  if(medico)sd[nome].medico=medico;
+  if(plano)sd[nome].plano=plano;
+  setSaudeData(sd);
+  mostrarNotifInApp('✅ Dados salvos!','Perfil de '+nome+' atualizado.','ok');
+  renderSaudeConteudo(nome);
 }
 
 // ═══════════════ INIT ═══════════════
