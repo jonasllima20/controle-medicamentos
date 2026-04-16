@@ -1503,11 +1503,35 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
           <option value="ambos">Manhã e noite</option>
         </select>
       </div>
-      <div class="field"><label>Horário manhã</label><input id="me-hora-m" type="time"></div>
+      <div class="field">
+        <label>Quem vai</label>
+        <select id="me-quem" onchange="atualizarCamposHorario()">
+          <option value="Ambos">👫 Ambos</option>
+          <option value="Arthur">🧒 Arthur</option>
+          <option value="Alice">👧 Alice</option>
+        </select>
+      </div>
     </div>
-    <div class="field"><label>Horário noite</label><input id="me-hora-n" type="time"></div>
+    <!-- Horários para Ambos (padrão) -->
+    <div id="me-horas-ambos">
+      <div class="field-row">
+        <div class="field"><label>Horário manhã</label><input id="me-hora-m" type="time"></div>
+        <div class="field"><label>Horário noite</label><input id="me-hora-n" type="time"></div>
+      </div>
+    </div>
+    <!-- Horários individuais (quando escolher uma criança específica) -->
+    <div id="me-horas-individual" style="display:none">
+      <div style="font-size:.72rem;font-weight:700;color:var(--ind);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px" id="me-horas-individual-titulo">Horário específico</div>
+      <div class="field-row">
+        <div class="field"><label>Horário manhã</label><input id="me-hora-m-ind" type="time"></div>
+        <div class="field"><label>Horário noite</label><input id="me-hora-n-ind" type="time"></div>
+      </div>
+      <div style="font-size:.72rem;color:var(--muted);margin-top:4px;padding:8px;background:var(--indl);border-radius:8px">
+        ℹ️ Apenas o horário desta criança será alterado. A outra criança mantém o horário atual.
+      </div>
+    </div>
     <!-- CONTROLE DE PERÍODO DO FRASCO/CARTUCHO -->
-    <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+    <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:10px">
       <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">
         🗓️ Controle de período (frasco/cartucho)
       </div>
@@ -2030,9 +2054,43 @@ function checkStrength(){const v=document.getElementById('cp-nova').value;const 
 async function salvarSenha(){const err=document.getElementById('cp-err');const atual=document.getElementById('cp-atual').value,nova=document.getElementById('cp-nova').value,conf=document.getElementById('cp-conf').value;if(!atual||!nova||!conf){err.style.display='block';err.textContent='❌ Preencha todos.';return;}if(nova!==conf){err.style.display='block';err.textContent='❌ As senhas não coincidem.';return;}if(nova.length<8){err.style.display='block';err.textContent='❌ Mínimo 8 caracteres.';return;}if(await hashPwd(atual)!==getHashes()[activeUser]){err.style.display='block';err.textContent='❌ Senha atual incorreta.';return;}const h=getHashes();h[activeUser]=await hashPwd(nova);setHashes(h);err.style.display='none';['cp-atual','cp-nova','cp-conf'].forEach(id=>document.getElementById(id).value='');alert('✅ Senha alterada!');fecharMo('mo-perfil');}
 
 const PRIMEIRO_ACESSO_KEY='rm_setup_done';
+
 async function isPrimeiroAcesso(){
+  // 1. localStorage local — mais rápido
   if(localStorage.getItem(PRIMEIRO_ACESSO_KEY))return false;
-  if(window._fbDb){try{const{getDoc,doc}=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");const snap=await getDoc(doc(window._fbDb,'config','setup'));if(snap.exists()&&snap.data().done){localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');const snapH=await getDoc(doc(window._fbDb,'config','hashes'));if(snapH.exists())setHashes({pai:snapH.data().pai||null,mae:snapH.data().mae||null});return false;}}catch(e){}}
+
+  // 2. Hashes locais existem — já configurado antes neste dispositivo
+  const h=getHashes();
+  if(h.pai&&h.mae){localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');return false;}
+
+  // 3. Firebase com timeout de 4s — consultar se outro dispositivo já configurou
+  if(window._fbDb){
+    try{
+      const{getDoc,doc}=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+      // Timeout de 4 segundos para não bloquear
+      const fbPromise=getDoc(doc(window._fbDb,'config','setup'));
+      const timeoutPromise=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),4000));
+      const snap=await Promise.race([fbPromise,timeoutPromise]);
+      if(snap.exists()&&snap.data().done){
+        localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');
+        // Carregar hashes do Firebase
+        try{
+          const snapH=await getDoc(doc(window._fbDb,'config','hashes'));
+          if(snapH.exists()&&snapH.data().pai){
+            setHashes({pai:snapH.data().pai,mae:snapH.data().mae});
+          }
+        }catch(e){}
+        return false;
+      }
+    }catch(e){
+      console.warn('Firebase setup check:',e.message);
+      // Se timeout ou erro: NUNCA mostrar setup por segurança
+      // Mostrar login — o usuário digitará a senha errada e será informado
+      return false;
+    }
+  }
+
+  // 4. Sem Firebase e sem hashes locais: verdadeiro primeiro acesso
   return true;
 }
 async function initAuth(){
@@ -2092,7 +2150,9 @@ function renderCards(){
     lista.forEach(med=>{
       const suspenso=!!med.suspenso;
       const reg=!suspenso&&dados.find(r=>r.data===dHj&&r.nome===nome&&r.remedio===med.nome&&r.periodo===per);
-      const done=!!reg;const horaAlvo=per==='manha'?med.horaManha:med.horaNoite;
+      const done=!!reg;
+      // Usar horário específico da criança se existir, senão o geral
+      const horaAlvo=per==='manha'?(med['horaManha_'+nome]||med.horaManha):(med['horaNoite_'+nome]||med.horaNoite);
       let timeStatus='';
       if(!suspenso){
         if(done&&horaAlvo){const alvoMin=horaToMin(horaAlvo);const[rh,rm]=reg.hora.split(':').map(Number);const diff=rh*60+rm-alvoMin;if(diff<=15)timeStatus='<span class="on-time">✓ no horário</span>';else if(diff<=60)timeStatus='<span class="late">⚠️ '+diff+'min atrasado</span>';else timeStatus='<span class="late">⚠️ '+Math.round(diff/60)+'h atrasado</span>';}
@@ -3343,14 +3403,53 @@ function salvarSaudeAtual(){
 function renderMedsAdmin(){
   const meds=getMeds();const div=document.getElementById('meds-admin-lista');if(!div)return;
   if(!meds.length){div.innerHTML='<p style="color:var(--muted);font-size:.82rem">Nenhum remédio.</p>';return;}
-  div.innerHTML=meds.map((m,i)=>'<div class="med-admin-item'+(m.suspenso?' suspenso':'')+'"><div class="mai-left">'
-    +'<span class="mai-icon">'+m.icon+'</span><div><div class="mai-nome">'+m.nome+(m.suspenso?'<span class="sus-badge">⛔</span>':'')+'</div>'
-    +'<div class="mai-meta">'+m.periodos.map(p=>p==='manha'?'☀️ '+(m.horaManha||''):'🌙 '+(m.horaNoite||'')).join(' · ')+'</div></div></div>'
-    +'<div class="mai-actions">'
-    +'<button class="mai-btn" onclick="abrirEditMed('+i+')" title="Editar">✏️</button>'
-    +'<button class="mai-btn '+(m.suspenso?'':'del')+'" onclick="abrirSuspender('+i+')" title="'+(m.suspenso?'Reativar':'Suspender')+'">'+(m.suspenso?'✅':'⛔')+'</button>'
-    +'</div></div>').join('');
+  div.innerHTML=meds.map((m,i)=>{
+    // Mostrar horários por criança se houver diferença
+    const CRIANCAS=getCriancas();
+    let metaHtml=m.periodos.map(p=>{
+      const temIndividual=CRIANCAS.some(n=>m['horaManha_'+n]||m['horaNoite_'+n]);
+      if(temIndividual){
+        return CRIANCAS.map(n=>{
+          const h=p==='manha'?(m['horaManha_'+n]||m.horaManha||''):(m['horaNoite_'+n]||m.horaNoite||'');
+          const cfg=getCriancaConfig(n);
+          return (p==='manha'?'☀️':'🌙')+' '+cfg.emoji+' '+h;
+        }).join(' · ');
+      }
+      return (p==='manha'?'☀️ '+(m.horaManha||''):'🌙 '+(m.horaNoite||''));
+    }).join(' · ');
+    return '<div class="med-admin-item'+(m.suspenso?' suspenso':'')+'"><div class="mai-left">'
+      +'<span class="mai-icon">'+m.icon+'</span><div><div class="mai-nome">'+m.nome+(m.suspenso?'<span class="sus-badge">⛔</span>':'')+'</div>'
+      +'<div class="mai-meta">'+metaHtml+'</div></div></div>'
+      +'<div class="mai-actions">'
+      +'<button class="mai-btn" onclick="abrirEditMed('+i+')" title="Editar">✏️</button>'
+      +'<button class="mai-btn '+(m.suspenso?'':'del')+'" onclick="abrirSuspender('+i+')" title="'+(m.suspenso?'Reativar':'Suspender')+'">'+(m.suspenso?'✅':'⛔')+'</button>'
+      +'</div></div>';
+  }).join('');
 }
+
+function atualizarCamposHorario(){
+  const quem=document.getElementById('me-quem')?.value||'Ambos';
+  const divAmbos=document.getElementById('me-horas-ambos');
+  const divInd=document.getElementById('me-horas-individual');
+  const titulo=document.getElementById('me-horas-individual-titulo');
+  if(quem==='Ambos'){
+    if(divAmbos)divAmbos.style.display='block';
+    if(divInd)divInd.style.display='none';
+  } else {
+    if(divAmbos)divAmbos.style.display='none';
+    if(divInd)divInd.style.display='block';
+    if(titulo){const cfg=getCriancaConfig(quem);titulo.textContent=cfg.emoji+' Horário específico — '+cfg.nome;}
+    // Pré-preencher com o horário atual da criança específica
+    const i=parseInt(document.getElementById('me-idx')?.value||'0');
+    const meds=getMeds();const m=meds[i];
+    if(m){
+      const hm=document.getElementById('me-hora-m-ind');const hn=document.getElementById('me-hora-n-ind');
+      if(hm)hm.value=m['horaManha_'+quem]||m.horaManha||'';
+      if(hn)hn.value=m['horaNoite_'+quem]||m.horaNoite||'';
+    }
+  }
+}
+
 function abrirEditMed(i){
   const m=getMeds()[i];
   document.getElementById('me-idx').value=i;
@@ -3362,20 +3461,43 @@ function abrirEditMed(i){
   document.getElementById('me-hora-n').value=m.horaNoite||'';
   document.getElementById('me-periodo-inicio').value=m.periodoInicio||'';
   document.getElementById('me-periodo-fim').value=m.periodoFim||'';
+  // Reset quem para Ambos
+  const quemEl=document.getElementById('me-quem');if(quemEl)quemEl.value='Ambos';
+  const divAmbos=document.getElementById('me-horas-ambos');if(divAmbos)divAmbos.style.display='block';
+  const divInd=document.getElementById('me-horas-individual');if(divInd)divInd.style.display='none';
   abrirMo('mo-med-edit');
 }
+
 function salvarMedEdit(){
   const i=parseInt(document.getElementById('me-idx').value);
   const meds=getMeds();const perVal=document.getElementById('me-per').value;
-  meds[i]={...meds[i],
-    icon:document.getElementById('me-icon').value||'💊',
-    nome:document.getElementById('me-nome').value,
-    periodos:perVal==='ambos'?['manha','noite']:[perVal],
-    horaManha:document.getElementById('me-hora-m').value,
-    horaNoite:document.getElementById('me-hora-n').value,
-    periodoInicio:document.getElementById('me-periodo-inicio').value||'',
-    periodoFim:document.getElementById('me-periodo-fim').value||''
-  };
+  const quem=document.getElementById('me-quem')?.value||'Ambos';
+  const CRIANCAS=getCriancas();
+  if(quem==='Ambos'){
+    // Atualizar para todos
+    meds[i]={...meds[i],
+      icon:document.getElementById('me-icon').value||'💊',
+      nome:document.getElementById('me-nome').value,
+      periodos:perVal==='ambos'?['manha','noite']:[perVal],
+      horaManha:document.getElementById('me-hora-m').value,
+      horaNoite:document.getElementById('me-hora-n').value,
+      periodoInicio:document.getElementById('me-periodo-inicio').value||'',
+      periodoFim:document.getElementById('me-periodo-fim').value||''
+    };
+    // Limpar horários individuais quando for "Ambos"
+    CRIANCAS.forEach(n=>{delete meds[i]['horaManha_'+n];delete meds[i]['horaNoite_'+n];});
+  } else {
+    // Atualizar só para a criança selecionada
+    meds[i]={...meds[i],
+      icon:document.getElementById('me-icon').value||'💊',
+      nome:document.getElementById('me-nome').value,
+      periodos:perVal==='ambos'?['manha','noite']:[perVal],
+      periodoInicio:document.getElementById('me-periodo-inicio').value||'',
+      periodoFim:document.getElementById('me-periodo-fim').value||''
+    };
+    meds[i]['horaManha_'+quem]=document.getElementById('me-hora-m-ind')?.value||'';
+    meds[i]['horaNoite_'+quem]=document.getElementById('me-hora-n-ind')?.value||'';
+  }
   setMeds(meds);fecharMo('mo-med-edit');renderMedsAdmin();atualizarTudo();
 }
 function deletarMed(){
