@@ -112,14 +112,29 @@ window.setHist = async function(arr){
 window.getLog = function(){ return window._fbLog || []; };
 window.setLog = async function(arr){};
 
-// Adicionar dose individual
+// Adicionar dose individual (com suporte offline)
 window.fbAddDose = async function(reg){
+  if(!navigator.onLine){
+    // Enfileirar para enviar quando voltar online
+    const q=JSON.parse(localStorage.getItem('rm_offline_queue')||'[]');
+    q.push({type:'addDose',reg});
+    localStorage.setItem('rm_offline_queue',JSON.stringify(q));
+    setSyncStatus('err');
+    return;
+  }
   setSyncStatus('sync');
   try{
     const id = `${reg.dataISO}_${reg.nome}_${reg.remedio}_${reg.periodo}`;
     await setDoc(doc(db,'historico',id), {...reg, _t: APP_TOKEN, ts: serverTimestamp()});
     setSyncStatus('ok');
-  }catch(e){ console.error(e); setSyncStatus('err'); }
+  }catch(e){
+    console.error(e);
+    setSyncStatus('err');
+    // Enfileirar para retry
+    const q=JSON.parse(localStorage.getItem('rm_offline_queue')||'[]');
+    q.push({type:'addDose',reg});
+    localStorage.setItem('rm_offline_queue',JSON.stringify(q));
+  }
 };
 
 window.fbRemoveDose = async function(data,nome,remedio,periodo){
@@ -2504,21 +2519,27 @@ function aplicarTemaPorUsuario(user){
 }
 
 // ═══════════════ OFFLINE ROBUSTO ═══════════════
-let _offlineQueue=[];
-function enqueueOffline(op){_offlineQueue.push(op);localStorage.setItem('rm_offline_queue',JSON.stringify(_offlineQueue));}
 async function flushOfflineQueue(){
+  if(!navigator.onLine)return;
   const q=JSON.parse(localStorage.getItem('rm_offline_queue')||'[]');
   if(!q.length)return;
+  setSyncStatus('sync');
+  const remaining=[];
   for(const op of q){
     try{
-      if(op.type==='addDose'&&window.fbAddDose)await window.fbAddDose(op.reg);
-      if(op.type==='removeDose'&&window.fbRemoveDose)await window.fbRemoveDose(op.data,op.nome,op.remedio,op.periodo);
-    }catch(e){console.warn('Offline flush erro:',e);return;}
+      if(op.type==='addDose'&&window.fbAddDose){
+        // Bypass queue check — direct Firestore write
+        const{setDoc:sd,doc:dc,serverTimestamp:st}=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const id=`${op.reg.dataISO}_${op.reg.nome}_${op.reg.remedio}_${op.reg.periodo}`;
+        await sd(dc(window._fbDb,'historico',id),{...op.reg,_t:window.APP_TOKEN||'rem-fam-2026-xK9mQzP4',ts:st()});
+      }
+    }catch(e){console.warn('Flush erro:',e);remaining.push(op);}
   }
-  _offlineQueue=[];localStorage.removeItem('rm_offline_queue');
-  setSyncStatus('ok');mostrarNotifInApp('☁️ Dados sincronizados!','Registros offline enviados com sucesso.','ok');
+  localStorage.setItem('rm_offline_queue',JSON.stringify(remaining));
+  if(!remaining.length){setSyncStatus('ok');mostrarNotifInApp('☁️ Sincronizado!','Registros offline enviados.','ok');}
+  else setSyncStatus('err');
 }
-window.addEventListener('online',()=>{setTimeout(flushOfflineQueue,1000);});
+window.addEventListener('online',()=>setTimeout(flushOfflineQueue,1500));
 
 // ═══════════════ GRÁFICOS ═══════════════
 let chartInst=null,chartMode='14';
