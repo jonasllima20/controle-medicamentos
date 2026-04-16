@@ -401,6 +401,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
   background:linear-gradient(135deg,var(--a) 20%,var(--b));
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
   line-height:1.2;
+  user-select:none;-webkit-user-select:none;
 }
 .tb-left p{color:var(--muted);font-size:.75rem;margin-top:2px}
 .tb-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
@@ -2257,28 +2258,30 @@ function salvarObs(del){
 }
 
 // ═══════════════ TENDÊNCIA SEMANAL ═══════════════
+// ═══════════════ TENDÊNCIA SEMANAL ═══════════════
 function atualizarTendencia(){
   const wrap=document.getElementById('tendencia-wrap');if(!wrap)return;
-  const dados=getHist();const now=new Date();const CRIANCAS=getCriancas();
-  const totalD=totalDoses()*CRIANCAS.length;
-  function semDoses(offsetSem){
-    let total=0;
-    for(let i=0;i<7;i++){const d=new Date(now);d.setDate(d.getDate()-offsetSem*7-i);total+=dados.filter(r=>r.data===fmtDate(d)).length;}
-    return total;
+  const dados=window._fbHist||cacheGet('hist')||[];
+  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Registre remédios por 2 semanas para ver tendência.</p>';return;}
+  const now=new Date();const CRIANCAS=getCriancas();const totalD=totalDoses()*CRIANCAS.length;
+  function dosesNaSemana(offset){
+    let n=0;
+    for(let i=0;i<7;i++){const d=new Date(now);d.setDate(d.getDate()-offset*7-i);const df=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();n+=dados.filter(r=>r.data===df).length;}
+    return n;
   }
-  const semAtual=semDoses(0),semAnterior=semDoses(1);
-  const espSem=totalD*7;
-  const pctAtual=espSem>0?Math.round(semAtual/espSem*100):0;
-  const pctAnterior=espSem>0?Math.round(semAnterior/espSem*100):0;
-  const diff=pctAtual-pctAnterior;
+  const semAtual=dosesNaSemana(0),semAnt=dosesNaSemana(1);
+  const espSem=Math.max(1,totalD*7);
+  const pctA=Math.min(100,Math.round(semAtual/espSem*100));
+  const pctB=Math.min(100,Math.round(semAnt/espSem*100));
+  const diff=pctA-pctB;
   const cls=diff>0?'tend-up':diff<0?'tend-down':'tend-same';
   const icon=diff>0?'📈':diff<0?'📉':'➡️';
-  const txt=diff>0?'+'+diff+'% vs sem. anterior':diff<0?diff+'% vs sem. anterior':'igual à sem. anterior';
+  const txt=diff>0?'+'+diff+'% vs semana anterior':diff<0?diff+'% vs semana anterior':'igual à semana anterior';
   wrap.innerHTML=`<div class="tendencia-card">
     <div class="tend-icon">${icon}</div>
     <div class="tend-body">
-      <div class="tend-title">Esta semana: ${pctAtual}% de adesão</div>
-      <div class="tend-sub">Semana anterior: ${pctAnterior}%</div>
+      <div class="tend-title">Esta semana: <strong>${pctA}%</strong></div>
+      <div class="tend-sub">Semana anterior: ${pctB}% · ${semAtual} doses</div>
     </div>
     <span class="tend-badge ${cls}">${txt}</span>
   </div>`;
@@ -2287,26 +2290,25 @@ function atualizarTendencia(){
 // ═══════════════ RECORDES ═══════════════
 function atualizarRecordes(){
   const wrap=document.getElementById('recordes-wrap');if(!wrap)return;
-  const dados=getHist();if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.78rem;text-align:center;padding:10px">Ainda sem dados suficientes.</p>';return;}
+  const dados=window._fbHist||cacheGet('hist')||[];
+  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Sem dados ainda.</p>';return;}
   const CRIANCAS=getCriancas();const totalD=totalDoses()*CRIANCAS.length;
   // Maior sequência histórica
   const pd={};dados.forEach(r=>{pd[r.data]=(pd[r.data]||0)+1;});
-  const datas=Object.keys(pd).sort((a,b)=>parseDate(a)-parseDate(b));
+  const datas=Object.keys(pd).sort((a,b)=>{try{return parseDate(a)-parseDate(b);}catch(e){return 0;}});
   let maxStreak=0,cur=0;
-  datas.forEach((d,i)=>{
-    if(pd[d]>=totalD){cur++;maxStreak=Math.max(maxStreak,cur);}
-    else cur=0;
-  });
+  datas.forEach(d=>{if((pd[d]||0)>=totalD){cur++;maxStreak=Math.max(maxStreak,cur);}else cur=0;});
+  // Streak atual
+  const streakAtual=calcStreak();
   // Melhor mês
-  const mesesMap={};dados.forEach(r=>{const d=parseDate(r.data);const k=d.getFullYear()+'-'+(d.getMonth()+1);mesesMap[k]=(mesesMap[k]||0)+1;});
+  const mesesMap={};dados.forEach(r=>{try{const d=parseDate(r.data);const k=d.getFullYear()+'-'+(d.getMonth()+1);mesesMap[k]=(mesesMap[k]||0)+1;}catch(e){}});
   let melhorMes='—',melhorMesVal=0;
-  Object.entries(mesesMap).forEach(([k,v])=>{if(v>melhorMesVal){melhorMesVal=v;const[y,m]=k.split('-');melhorMes=MESES[+m-1]+'/'+y;}});
-  // Total de doses
-  const totalAll=dados.length;
+  Object.entries(mesesMap).forEach(([k,v])=>{if(v>melhorMesVal){melhorMesVal=v;const[y,m]=k.split('-');melhorMes=(MESES[+m-1]||'?')+'/'+y;}});
   wrap.innerHTML=`
     <div class="record-item"><div class="rec-trophy">🔥</div><div class="rec-body"><div class="rec-title">Maior sequência</div><div class="rec-val">${maxStreak} dias</div></div></div>
-    <div class="record-item"><div class="rec-trophy">📅</div><div class="rec-body"><div class="rec-title">Melhor mês</div><div class="rec-val">${melhorMes}</div></div></div>
-    <div class="record-item"><div class="rec-trophy">💊</div><div class="rec-body"><div class="rec-title">Total de doses dadas</div><div class="rec-val">${totalAll}</div></div></div>`;
+    <div class="record-item"><div class="rec-trophy">⚡</div><div class="rec-body"><div class="rec-title">Sequência atual</div><div class="rec-val">${streakAtual} dias</div></div></div>
+    <div class="record-item"><div class="rec-trophy">📅</div><div class="rec-body"><div class="rec-title">Mês com mais doses</div><div class="rec-val">${melhorMes}</div></div></div>
+    <div class="record-item"><div class="rec-trophy">💊</div><div class="rec-body"><div class="rec-title">Total de doses</div><div class="rec-val">${dados.length}</div></div></div>`;
 }
 
 // ═══════════════ DOSE DE RECUPERAÇÃO ═══════════════
@@ -2398,15 +2400,24 @@ function aplicarNomesCriancas(){
   const CRIANCAS=getCriancas();
   CRIANCAS.forEach(key=>{
     const cfg=getCriancaConfig(key);
-    ['av-','uc-r-','uc-em-'].forEach(prefix=>{
-      const el=document.getElementById(prefix+key);
-      if(prefix==='av-'&&el&&!el.querySelector('img'))el.textContent=cfg.emoji.charAt(0).toUpperCase();
-      if(prefix==='uc-r-'&&el)el.textContent=cfg.nome;
-    });
-    // Atualizar nome no cartão
+    // Avatar da criança — só atualizar se não houver foto salva
+    const avPh=document.getElementById('av-'+key);
+    if(avPh){
+      const avSrc=localStorage.getItem('rm_av_'+key);
+      if(avSrc){
+        avPh.innerHTML='<img src="'+avSrc+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';
+        avPh.style.background='transparent';
+      } else {
+        avPh.textContent=cfg.emoji;
+        avPh.style.background=cfg.cor;
+      }
+    }
+    // Nome no card de login
+    const ucr=document.getElementById('uc-r-'+key);if(ucr)ucr.textContent=cfg.nome;
+    // Nome no cartão de doses
     const cc=document.querySelector('.crianca-card.'+( CRIANCAS.indexOf(key)===0?'a':'b')+' .cc-nome');
-    if(cc)cc.childNodes[cc.childNodes.length-1].textContent=' '+cfg.nome;
-    // CSS da cor
+    if(cc){const last=cc.childNodes[cc.childNodes.length-1];if(last)last.textContent=' '+cfg.nome;}
+    // Cor CSS
     document.documentElement.style.setProperty('--'+(CRIANCAS.indexOf(key)===0?'a':'b'),cfg.cor);
   });
 }
@@ -2594,15 +2605,21 @@ function atualizarGrafico(){
 // ═══════════════ PIZZA ═══════════════
 let pizzaInst=null;
 function atualizarPizza(){
-  const dados=getHist();const meds=getMeds().filter(m=>!m.suspenso);
+  const dados=window._fbHist||cacheGet('hist')||[];
+  const meds=getMeds().filter(m=>!m.suspenso);
   const ctx=document.getElementById('grafico-pizza')?.getContext('2d');if(!ctx)return;
   if(pizzaInst)pizzaInst.destroy();
+  if(!dados.length||!meds.length){pizzaInst=null;return;}
   const now=new Date();const CRIANCAS=getCriancas();
   const paleta=['#3B82F6','#EC4899','#10B981','#F59E0B','#8B5CF6','#EF4444','#06B6D4'];
   const labels=[],values=[],colors=[];
   meds.forEach((med,i)=>{
     const totalEsp=med.periodos.length*7*CRIANCAS.length;let tomadas=0;
-    for(let d=0;d<7;d++){const dia=new Date(now);dia.setDate(dia.getDate()-d);const df=fmtDate(dia);CRIANCAS.forEach(nome=>{med.periodos.forEach(per=>{if(dados.some(r=>r.data===df&&r.nome===nome&&r.remedio===med.nome&&r.periodo===per))tomadas++;});});}
+    for(let d=0;d<7;d++){
+      const dia=new Date(now);dia.setDate(dia.getDate()-d);
+      const df=String(dia.getDate()).padStart(2,'0')+'/'+String(dia.getMonth()+1).padStart(2,'0')+'/'+dia.getFullYear();
+      CRIANCAS.forEach(nome=>{med.periodos.forEach(per=>{if(dados.some(r=>r.data===df&&r.nome===nome&&r.remedio===med.nome&&r.periodo===per))tomadas++;});});
+    }
     labels.push(med.icon+' '+med.nome);values.push(totalEsp>0?Math.round(tomadas/totalEsp*100):0);colors.push(paleta[i%paleta.length]);
   });
   const dark=document.documentElement.getAttribute('data-theme')==='dark';const tc=dark?'#94A3B8':'#6B7280';
@@ -2774,11 +2791,17 @@ function atualizarHeaderUser(){
 // ═══════════════ AVATARES CRIANÇAS ═══════════════
 function aplicarAvatares(){
   getCriancas().forEach(nome=>{
-    const el=document.getElementById('av-'+nome);if(!el)return;
+    const ph=document.getElementById('av-'+nome);if(!ph)return;
     const src=localStorage.getItem('rm_av_'+nome);
-    const ph=el.querySelector('.avph');
-    if(src){el.style.background='transparent';if(ph)ph.innerHTML='<img src="'+src+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';}
-    else if(ph){const cfg=getCriancaConfig(nome);ph.style.background=cfg.cor;ph.textContent=cfg.emoji.charAt(0)||cfg.nome[0];}
+    const cfg=getCriancaConfig(nome);
+    if(src){
+      ph.innerHTML='<img src="'+src+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';
+      ph.style.background='transparent';
+    } else {
+      ph.innerHTML='';
+      ph.textContent=cfg.emoji;
+      ph.style.background=cfg.cor;
+    }
   });
 }
 function abrirAvatar(nome){
@@ -3083,32 +3106,34 @@ function verificarBannerNotif(){
 }
 
 // ═══════════════ RESUMO DA SEMANA ═══════════════
+// ═══════════════ RESUMO DA SEMANA ═══════════════
 function atualizarSemanaResumo(){
   const wrap=document.getElementById('semana-resumo-wrap');if(!wrap)return;
-  const dados=getHist();const now=new Date();const CRIANCAS=getCriancas();
-  const totalD=totalDoses();
+  const dados=window._fbHist||cacheGet('hist')||[];
+  const now=new Date();const CRIANCAS=getCriancas();const totalD=totalDoses();
+  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Sem dados esta semana.</p>';return;}
   let html='';
   CRIANCAS.forEach(nome=>{
-    const cfg=getCriancaConfig(nome);
-    let ok=0,total=0;
+    const cfg=getCriancaConfig(nome);let ok=0,total=0;
     for(let i=0;i<7;i++){
-      const d=new Date(now);d.setDate(d.getDate()-i);const df=fmtDate(d);
+      const d=new Date(now);d.setDate(d.getDate()-i);
+      const df=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
       total+=totalD;
       ok+=dados.filter(r=>r.data===df&&r.nome===nome).length;
     }
-    const pct=total>0?Math.round(ok/total*100):0;
-    html+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-      <div style="width:28px;height:28px;border-radius:50%;background:${cfg.cor};display:flex;align-items:center;justify-content:center;font-size:.85rem;flex-shrink:0">${cfg.emoji}</div>
+    const pct=total>0?Math.min(100,Math.round(ok/total*100)):0;
+    html+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
+      <div style="width:26px;height:26px;border-radius:50%;background:${cfg.cor};display:flex;align-items:center;justify-content:center;font-size:.8rem;flex-shrink:0">${cfg.emoji}</div>
       <div style="flex:1">
-        <div style="font-size:.78rem;font-weight:700;color:var(--text)">${cfg.nome}: ${pct}%</div>
+        <div style="font-size:.77rem;font-weight:700;color:var(--text);display:flex;justify-content:space-between"><span>${cfg.nome}</span><span>${pct}%</span></div>
         <div style="height:5px;background:var(--border);border-radius:99px;margin-top:3px;overflow:hidden">
-          <div style="height:100%;background:${cfg.cor};border-radius:99px;width:${pct}%"></div>
+          <div style="height:100%;background:${cfg.cor};border-radius:99px;width:${pct}%;transition:width .5s ease"></div>
         </div>
+        <div style="font-size:.65rem;color:var(--muted);margin-top:2px">${ok} de ${total} doses · 7 dias</div>
       </div>
-      <div style="font-size:.7rem;color:var(--muted);white-space:nowrap">${ok}/${total}</div>
     </div>`;
   });
-  wrap.innerHTML=html||'<p style="color:var(--muted);font-size:.78rem">Sem dados esta semana.</p>';
+  wrap.innerHTML=html;
 }
 
 // ═══════════════ LOG DE ATIVIDADES ═══════════════
