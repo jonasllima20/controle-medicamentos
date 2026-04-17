@@ -2201,7 +2201,6 @@ async function isPrimeiroAcesso(){
   const splashTimeout=setTimeout(()=>esconderSplash(),3000);
   (async () => {
 
-  // Fallback: esconder splash no máximo em 3s independente do resultado
   const splashTimeout = setTimeout(() => esconderSplash(), 3000);
 
   try {
@@ -2212,13 +2211,12 @@ async function isPrimeiroAcesso(){
       document.getElementById('tela-primeiro-acesso').classList.add('ativo');
     } else {
       document.getElementById('tela-login').style.display = 'flex';
-      selUser('pai');
+      window.selUser && window.selUser('pai');
     }
 
   } catch (e) {
-    // Em caso de erro, mostrar login normalmente
     document.getElementById('tela-login').style.display = 'flex';
-    selUser('pai');
+    window.selUser && window.selUser('pai');
   }
 
   clearTimeout(splashTimeout);
@@ -2226,7 +2224,6 @@ async function isPrimeiroAcesso(){
 
 })();
 
-}
 let _paSenhas={};
 function paStep(n){document.querySelectorAll('.pa-step').forEach((s,i)=>s.classList.toggle('ativo',i===n));document.querySelectorAll('.pa-dot').forEach((d,i)=>d.classList.toggle('on',i<=n));const f=['','pa-pai-s1','pa-mae-s1'];if(f[n])setTimeout(()=>document.getElementById(f[n])?.focus(),100);}
 function paCheckStrength(user){const v=document.getElementById(user==='pai'?'pa-pai-s1':'pa-mae-s1')?.value||'';let s=0;if(v.length>=8)s++;if(v.length>=12)s++;if(/[A-Z]/.test(v))s++;if(/[0-9]/.test(v))s++;if(/[^A-Za-z0-9]/.test(v))s++;const pcts=['0%','20%','40%','60%','80%','100%'];const cols=['#EF4444','#F59E0B','#F59E0B','#10B981','#10B981','#10B981'];const txts=['','Muito fraca','Fraca','Razoável','Boa','Forte','Muito forte'];const fill=document.getElementById('pa-str-'+user);const txt=document.getElementById('pa-str-txt-'+user);if(fill){fill.style.width=pcts[s];fill.style.background=cols[s];}if(txt){txt.textContent=txts[s];txt.style.color=cols[s];}}
