@@ -1161,10 +1161,10 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     </div>
     <div class="lfield">
       <label>Senha</label>
-      <input type="password" id="l-senha" placeholder="Digite sua senha…" onkeydown="if(event.key==='Enter')doLogin()">
+      <input type="password" id="l-senha" placeholder="Digite sua senha…" onkeydown="if(event.key==='Enter')fazerLogin()">
     </div>
     <div class="lerr" id="l-err"></div>
-    <button class="lbtn" onclick="doLogin()">Entrar →</button>
+    <button class="lbtn" onclick="fazerLogin()">Entrar →</button>
   </div>
 </div>
 
@@ -3853,7 +3853,9 @@ async function iniciarApp(){
   }
 }
 
-window.addEventListener('load', iniciarApp);
+window.addEventListener('load', () => {
+  iniciarApp();
+});
 
 // ===============================
 // FIX LOGIN (escopo global)
@@ -3861,8 +3863,6 @@ window.addEventListener('load', iniciarApp);
 window.usuarioSelecionado = null;
 
 window.selUser = function(tipo){
-  console.log('Selecionado:', tipo);
-
   window.usuarioSelecionado = tipo;
 
   document.querySelectorAll('.ucard').forEach(el => {
