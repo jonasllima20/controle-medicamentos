@@ -2056,41 +2056,36 @@ async function salvarSenha(){const err=document.getElementById('cp-err');const a
 const PRIMEIRO_ACESSO_KEY='rm_setup_done';
 
 async function isPrimeiroAcesso(){
-  // 1. localStorage local — mais rápido
+  // Passo 1: localStorage rápido
   if(localStorage.getItem(PRIMEIRO_ACESSO_KEY))return false;
-
-  // 2. Hashes locais existem — já configurado antes neste dispositivo
   const h=getHashes();
   if(h.pai&&h.mae){localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');return false;}
 
-  // 3. Firebase com timeout de 4s — consultar se outro dispositivo já configurou
+  // Passo 2: Tentar Firebase (com timeout 5s)
   if(window._fbDb){
     try{
       const{getDoc,doc}=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-      // Timeout de 4 segundos para não bloquear
-      const fbPromise=getDoc(doc(window._fbDb,'config','setup'));
-      const timeoutPromise=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),4000));
-      const snap=await Promise.race([fbPromise,timeoutPromise]);
-      if(snap.exists()&&snap.data().done){
+      const timeout=new Promise((_,r)=>setTimeout(()=>r('timeout'),5000));
+      // Checar hashes diretamente — mais confiável que 'setup'
+      const snapH=await Promise.race([getDoc(doc(window._fbDb,'config','hashes')),timeout]);
+      if(snapH&&snapH.exists&&snapH.exists()&&snapH.data().pai){
+        setHashes({pai:snapH.data().pai,mae:snapH.data().mae});
         localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');
-        // Carregar hashes do Firebase
-        try{
-          const snapH=await getDoc(doc(window._fbDb,'config','hashes'));
-          if(snapH.exists()&&snapH.data().pai){
-            setHashes({pai:snapH.data().pai,mae:snapH.data().mae});
-          }
-        }catch(e){}
+        return false;
+      }
+      // Checar setup também
+      const snapS=await Promise.race([getDoc(doc(window._fbDb,'config','setup')),timeout]);
+      if(snapS&&snapS.exists&&snapS.exists()&&snapS.data().done){
+        localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');
         return false;
       }
     }catch(e){
-      console.warn('Firebase setup check:',e.message);
-      // Se timeout ou erro: NUNCA mostrar setup por segurança
-      // Mostrar login — o usuário digitará a senha errada e será informado
+      console.warn('isPrimeiroAcesso Firebase erro:',e);
+      // NUNCA mostrar setup em caso de erro — mostrar login
       return false;
     }
   }
-
-  // 4. Sem Firebase e sem hashes locais: verdadeiro primeiro acesso
+  // Sem Firebase e sem hashes: verdadeiro primeiro acesso
   return true;
 }
 async function initAuth(){
@@ -2202,7 +2197,22 @@ function marcarDose(nome,remedio,periodo,btn,nota){
 }
 
 // ═══════════════ CELEBRAÇÃO ═══════════════
-function verificarCelebracao(){const dados=getHist();const dHj=hoje();const total=totalDoses()*getCriancas().length;if(dados.filter(r=>r.data===dHj).length>=total){confetti();tocarFanfarra();}}
+let _celebracaoFeitoHoje='';
+function verificarCelebracao(){
+  const dados=window._fbHist||[];
+  const dHj=hoje();
+  // Só celebrar uma vez por dia
+  if(_celebracaoFeitoHoje===dHj)return;
+  const meds=getMeds().filter(m=>!m.suspenso);
+  const CRIANCAS=getCriancas();
+  // Total esperado = cada remédio × cada período × cada criança
+  const total=meds.reduce((s,m)=>s+m.periodos.length,0)*CRIANCAS.length;
+  const feitas=dados.filter(r=>r.data===dHj).length;
+  if(total>0&&feitas>=total){
+    _celebracaoFeitoHoje=dHj;
+    setTimeout(()=>{confetti();tocarFanfarra();},400);
+  }
+}
 function confetti(){const canvas=document.getElementById('confetti-canvas');canvas.width=innerWidth;canvas.height=innerHeight;const ctx=canvas.getContext('2d');const cols=['#3B82F6','#EC4899','#10B981','#F59E0B','#8B5CF6','#EF4444'];const ps=Array.from({length:150},()=>({x:Math.random()*canvas.width,y:Math.random()*canvas.height-canvas.height,r:Math.random()*7+3,d:Math.random()*3+1,c:cols[Math.floor(Math.random()*cols.length)],t:Math.random()*10-10,a:0}));let f=0;function draw(){ctx.clearRect(0,0,canvas.width,canvas.height);ps.forEach(p=>{ctx.beginPath();ctx.lineWidth=p.r/2;ctx.strokeStyle=p.c;ctx.moveTo(p.x+p.t+p.r/4,p.y);ctx.lineTo(p.x+p.t,p.y+p.t+p.r/4);ctx.stroke();p.y+=p.d;p.t=Math.sin(p.a)*15;p.a+=.1;if(p.y>canvas.height){p.y=-10;p.x=Math.random()*canvas.width;}});if(++f<220)requestAnimationFrame(draw);else ctx.clearRect(0,0,canvas.width,canvas.height);}draw();}
 function tocarFanfarra(){try{const ctx=new(window.AudioContext||window.webkitAudioContext)();const notas=[523,659,784,1047,784,1047];const durs=[.12,.12,.12,.3,.12,.35];let t=ctx.currentTime;notas.forEach((freq,i)=>{const osc=ctx.createOscillator();const gain=ctx.createGain();osc.type='square';osc.frequency.value=freq;gain.gain.setValueAtTime(.18,t);gain.gain.exponentialRampToValueAtTime(.001,t+durs[i]);osc.connect(gain);gain.connect(ctx.destination);osc.start(t);osc.stop(t+durs[i]);t+=durs[i]+.02;});}catch(e){}}
 
@@ -2318,15 +2328,56 @@ function salvarObs(del){
 }
 
 // ═══════════════ TENDÊNCIA SEMANAL ═══════════════
+// ═══════════════ HELPERS DASHBOARDS ═══════════════
+function getDados(){
+  // Tenta todas as fontes disponíveis
+  if(window._fbHist&&window._fbHist.length)return window._fbHist;
+  const cached=localStorage.getItem('fb_cache_hist');
+  if(cached){try{const arr=JSON.parse(cached);if(arr&&arr.length){window._fbHist=arr;return arr;}}catch(e){}}
+  return[];
+}
+function dfFromDate(d){
+  return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
+}
+
+// ═══════════════ RESUMO DA SEMANA ═══════════════
+function atualizarSemanaResumo(){
+  const wrap=document.getElementById('semana-resumo-wrap');if(!wrap)return;
+  const dados=getDados();
+  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Aguardando dados...</p>';return;}
+  const now=new Date();const CRIANCAS=getCriancas();const totalD=totalDoses();
+  let html='';
+  CRIANCAS.forEach(nome=>{
+    const cfg=getCriancaConfig(nome);let ok=0,total=0;
+    for(let i=0;i<7;i++){
+      const d=new Date(now);d.setDate(d.getDate()-i);
+      total+=totalD;
+      ok+=dados.filter(r=>r.data===dfFromDate(d)&&r.nome===nome).length;
+    }
+    const pct=total>0?Math.min(100,Math.round(ok/total*100)):0;
+    html+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
+      <div style="width:26px;height:26px;border-radius:50%;background:${cfg.cor};display:flex;align-items:center;justify-content:center;font-size:.8rem;flex-shrink:0">${cfg.emoji}</div>
+      <div style="flex:1">
+        <div style="font-size:.77rem;font-weight:700;color:var(--text);display:flex;justify-content:space-between"><span>${cfg.nome}</span><span>${pct}%</span></div>
+        <div style="height:5px;background:var(--border);border-radius:99px;margin-top:3px;overflow:hidden">
+          <div style="height:100%;background:${cfg.cor};border-radius:99px;width:${pct}%;transition:width .5s ease"></div>
+        </div>
+        <div style="font-size:.65rem;color:var(--muted);margin-top:2px">${ok}/${total} doses em 7 dias</div>
+      </div>
+    </div>`;
+  });
+  wrap.innerHTML=html;
+}
+
 // ═══════════════ TENDÊNCIA SEMANAL ═══════════════
 function atualizarTendencia(){
   const wrap=document.getElementById('tendencia-wrap');if(!wrap)return;
-  const dados=window._fbHist||cacheGet('hist')||[];
-  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Registre remédios por 2 semanas para ver tendência.</p>';return;}
+  const dados=getDados();
+  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Aguardando dados...</p>';return;}
   const now=new Date();const CRIANCAS=getCriancas();const totalD=totalDoses()*CRIANCAS.length;
   function dosesNaSemana(offset){
     let n=0;
-    for(let i=0;i<7;i++){const d=new Date(now);d.setDate(d.getDate()-offset*7-i);const df=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();n+=dados.filter(r=>r.data===df).length;}
+    for(let i=0;i<7;i++){const d=new Date(now);d.setDate(d.getDate()-offset*7-i);n+=dados.filter(r=>r.data===dfFromDate(d)).length;}
     return n;
   }
   const semAtual=dosesNaSemana(0),semAnt=dosesNaSemana(1);
@@ -2350,25 +2401,26 @@ function atualizarTendencia(){
 // ═══════════════ RECORDES ═══════════════
 function atualizarRecordes(){
   const wrap=document.getElementById('recordes-wrap');if(!wrap)return;
-  const dados=window._fbHist||cacheGet('hist')||[];
-  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Sem dados ainda.</p>';return;}
+  const dados=getDados();
+  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Aguardando dados...</p>';return;}
   const CRIANCAS=getCriancas();const totalD=totalDoses()*CRIANCAS.length;
   // Maior sequência histórica
   const pd={};dados.forEach(r=>{pd[r.data]=(pd[r.data]||0)+1;});
-  const datas=Object.keys(pd).sort((a,b)=>{try{return parseDate(a)-parseDate(b);}catch(e){return 0;}});
+  const parseD=s=>{try{const p=s.split('/');return new Date(+p[2],+p[1]-1,+p[0]);}catch(e){return new Date(0);}};
+  const datas=Object.keys(pd).sort((a,b)=>parseD(a)-parseD(b));
   let maxStreak=0,cur=0;
   datas.forEach(d=>{if((pd[d]||0)>=totalD){cur++;maxStreak=Math.max(maxStreak,cur);}else cur=0;});
-  // Streak atual
   const streakAtual=calcStreak();
   // Melhor mês
-  const mesesMap={};dados.forEach(r=>{try{const d=parseDate(r.data);const k=d.getFullYear()+'-'+(d.getMonth()+1);mesesMap[k]=(mesesMap[k]||0)+1;}catch(e){}});
+  const mm={};dados.forEach(r=>{try{const d=parseD(r.data);const k=d.getFullYear()+'-'+(d.getMonth()+1);mm[k]=(mm[k]||0)+1;}catch(e){}});
   let melhorMes='—',melhorMesVal=0;
-  Object.entries(mesesMap).forEach(([k,v])=>{if(v>melhorMesVal){melhorMesVal=v;const[y,m]=k.split('-');melhorMes=(MESES[+m-1]||'?')+'/'+y;}});
+  Object.entries(mm).forEach(([k,v])=>{if(v>melhorMesVal){melhorMesVal=v;const[y,m]=k.split('-');melhorMes=(MESES[+m-1]||'?')+'/'+y;}});
   wrap.innerHTML=`
     <div class="record-item"><div class="rec-trophy">🔥</div><div class="rec-body"><div class="rec-title">Maior sequência</div><div class="rec-val">${maxStreak} dias</div></div></div>
     <div class="record-item"><div class="rec-trophy">⚡</div><div class="rec-body"><div class="rec-title">Sequência atual</div><div class="rec-val">${streakAtual} dias</div></div></div>
     <div class="record-item"><div class="rec-trophy">📅</div><div class="rec-body"><div class="rec-title">Mês com mais doses</div><div class="rec-val">${melhorMes}</div></div></div>
     <div class="record-item"><div class="rec-trophy">💊</div><div class="rec-body"><div class="rec-title">Total de doses</div><div class="rec-val">${dados.length}</div></div></div>`;
+}
 }
 
 // ═══════════════ DOSE DE RECUPERAÇÃO ═══════════════
@@ -3165,36 +3217,6 @@ function verificarBannerNotif(){
   },3000);
 }
 
-// ═══════════════ RESUMO DA SEMANA ═══════════════
-// ═══════════════ RESUMO DA SEMANA ═══════════════
-function atualizarSemanaResumo(){
-  const wrap=document.getElementById('semana-resumo-wrap');if(!wrap)return;
-  const dados=window._fbHist||cacheGet('hist')||[];
-  const now=new Date();const CRIANCAS=getCriancas();const totalD=totalDoses();
-  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Sem dados esta semana.</p>';return;}
-  let html='';
-  CRIANCAS.forEach(nome=>{
-    const cfg=getCriancaConfig(nome);let ok=0,total=0;
-    for(let i=0;i<7;i++){
-      const d=new Date(now);d.setDate(d.getDate()-i);
-      const df=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
-      total+=totalD;
-      ok+=dados.filter(r=>r.data===df&&r.nome===nome).length;
-    }
-    const pct=total>0?Math.min(100,Math.round(ok/total*100)):0;
-    html+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
-      <div style="width:26px;height:26px;border-radius:50%;background:${cfg.cor};display:flex;align-items:center;justify-content:center;font-size:.8rem;flex-shrink:0">${cfg.emoji}</div>
-      <div style="flex:1">
-        <div style="font-size:.77rem;font-weight:700;color:var(--text);display:flex;justify-content:space-between"><span>${cfg.nome}</span><span>${pct}%</span></div>
-        <div style="height:5px;background:var(--border);border-radius:99px;margin-top:3px;overflow:hidden">
-          <div style="height:100%;background:${cfg.cor};border-radius:99px;width:${pct}%;transition:width .5s ease"></div>
-        </div>
-        <div style="font-size:.65rem;color:var(--muted);margin-top:2px">${ok} de ${total} doses · 7 dias</div>
-      </div>
-    </div>`;
-  });
-  wrap.innerHTML=html;
-}
 
 // ═══════════════ LOG DE ATIVIDADES ═══════════════
 function abrirLog(){
@@ -3470,35 +3492,39 @@ function abrirEditMed(i){
 
 function salvarMedEdit(){
   const i=parseInt(document.getElementById('me-idx').value);
-  const meds=getMeds();const perVal=document.getElementById('me-per').value;
+  const meds=getMeds();
+  const perVal=document.getElementById('me-per').value;
   const quem=document.getElementById('me-quem')?.value||'Ambos';
   const CRIANCAS=getCriancas();
+  const periodos=perVal==='ambos'?['manha','noite']:[perVal];
+  const periodoInicio=document.getElementById('me-periodo-inicio').value||'';
+  const periodoFim=document.getElementById('me-periodo-fim').value||'';
+  const icon=document.getElementById('me-icon').value||'💊';
+  const nome=document.getElementById('me-nome').value;
+
   if(quem==='Ambos'){
-    // Atualizar para todos
-    meds[i]={...meds[i],
-      icon:document.getElementById('me-icon').value||'💊',
-      nome:document.getElementById('me-nome').value,
-      periodos:perVal==='ambos'?['manha','noite']:[perVal],
+    // Atualizar horário geral para todos — limpar individuais
+    const updated={...meds[i],icon,nome,periodos,
       horaManha:document.getElementById('me-hora-m').value,
       horaNoite:document.getElementById('me-hora-n').value,
-      periodoInicio:document.getElementById('me-periodo-inicio').value||'',
-      periodoFim:document.getElementById('me-periodo-fim').value||''
-    };
-    // Limpar horários individuais quando for "Ambos"
-    CRIANCAS.forEach(n=>{delete meds[i]['horaManha_'+n];delete meds[i]['horaNoite_'+n];});
+      periodoInicio,periodoFim};
+    // Remover chaves individuais
+    CRIANCAS.forEach(n=>{delete updated['horaManha_'+n];delete updated['horaNoite_'+n];});
+    meds[i]=updated;
   } else {
-    // Atualizar só para a criança selecionada
-    meds[i]={...meds[i],
-      icon:document.getElementById('me-icon').value||'💊',
-      nome:document.getElementById('me-nome').value,
-      periodos:perVal==='ambos'?['manha','noite']:[perVal],
-      periodoInicio:document.getElementById('me-periodo-inicio').value||'',
-      periodoFim:document.getElementById('me-periodo-fim').value||''
-    };
-    meds[i]['horaManha_'+quem]=document.getElementById('me-hora-m-ind')?.value||'';
-    meds[i]['horaNoite_'+quem]=document.getElementById('me-hora-n-ind')?.value||'';
+    // Atualizar apenas o horário da criança selecionada
+    // Preservar tudo o mais intacto
+    const hmInd=document.getElementById('me-hora-m-ind')?.value||'';
+    const hnInd=document.getElementById('me-hora-n-ind')?.value||'';
+    // Se estava no período manhã, guardar horaManha_X; se noite, horaNoite_X; se ambos, ambos
+    const updated={...meds[i],icon,nome,periodos,periodoInicio,periodoFim};
+    if(periodos.includes('manha'))updated['horaManha_'+quem]=hmInd;
+    if(periodos.includes('noite'))updated['horaNoite_'+quem]=hnInd;
+    // NÃO alterar o horário da outra criança
+    meds[i]=updated;
   }
   setMeds(meds);fecharMo('mo-med-edit');renderMedsAdmin();atualizarTudo();
+  mostrarNotifInApp('✅ Remédio salvo!',quem==='Ambos'?'Horário atualizado para todos.':'Horário de '+quem+' atualizado.','ok');
 }
 function deletarMed(){
   if(!confirm('Excluir este remédio?'))return;
