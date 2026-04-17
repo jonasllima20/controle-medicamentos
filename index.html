@@ -240,95 +240,6 @@ window._fbServerTimestamp = serverTimestamp;
 window._fbDoc = doc;
 window._fbCollection = collection;
 
-// ===============================
-// 🔐 AUTH INTERMEDIÁRIO (FIRESTORE + HASH)
-// ===============================
-
-// SHA-256
-async function hashSenha(senha){
-  const encoder = new TextEncoder();
-  const data = encoder.encode(senha);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// Salvar senhas (primeiro acesso)
-window.authSalvarSenhas = async function(paiSenha, maeSenha){
-  const paiHash = await hashSenha(paiSenha);
-  const maeHash = await hashSenha(maeSenha);
-
-  await setDoc(doc(window._fbDb, 'config', 'auth'), {
-    pai: paiHash,
-    mae: maeHash,
-    _t: window.APP_TOKEN,
-    ts: window._fbServerTimestamp()
-  });
-};
-
-// Verificar se já existe autenticação
-window.authExiste = async function(){
-  try{
-    const snap = await getDoc(doc(window._fbDb, 'config', 'auth'));
-    return snap.exists() && snap.data()._t === window.APP_TOKEN;
-  }catch(e){
-    console.error('Erro authExiste', e);
-    return false;
-  }
-};
-
-// Validar login
-window.authLogin = async function(tipo, senhaDigitada){
-  try{
-    const snap = await getDoc(doc(window._fbDb, 'config', 'auth'));
-
-    if(!snap.exists()) return false;
-
-    const data = snap.data();
-
-    const hashDigitado = await hashSenha(senhaDigitada);
-
-    console.log("digitado:", hashDigitado);
-    console.log("salvo:", data[tipo]);
-
-    return hashDigitado === data[tipo];
-
-  }catch(e){
-    console.error('Erro login', e);
-    return false;
-  }
-};
-
-// Sessão local (12h)
-window.authSalvarSessao = function(user){
-  localStorage.setItem('rm_session', JSON.stringify({
-    user,
-    ts: Date.now()
-  }));
-};
-
-window.authGetSessao = function(){
-  try{
-    const s = localStorage.getItem('rm_session');
-    if(!s) return null;
-
-    const obj = JSON.parse(s);
-
-    if(Date.now() - obj.ts > 12 * 60 * 60 * 1000){
-      localStorage.removeItem('rm_session');
-      return null;
-    }
-
-    return obj;
-  }catch{
-    return null;
-  }
-};
-
-window.authLogout = function(){
-  localStorage.removeItem('rm_session');
-};
-
 // Iniciar após login
 window.fbReady = true;
 </script>
@@ -1159,15 +1070,15 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
       <div class="ucard" id="uc-mae" onclick="selUser('mae')">
         <span class="uc-em" id="uc-em-mae">👩</span>
         <div class="uc-n">Mãe</div>
-        <div class="uc-r" id="uc-r-mae">Daiana</div>
+        <div class="uc-r" id="uc-r-mae">Parceira</div>
       </div>
     </div>
     <div class="lfield">
       <label>Senha</label>
-      <input type="password" id="l-senha" placeholder="Digite sua senha…" onkeydown="if(event.key==='Enter')fazerLogin()">
+      <input type="password" id="l-senha" placeholder="Digite sua senha…" onkeydown="if(event.key==='Enter')doLogin()">
     </div>
     <div class="lerr" id="l-err"></div>
-    <button class="lbtn" onclick="fazerLogin()">Entrar →</button>
+    <button class="lbtn" onclick="doLogin()">Entrar →</button>
   </div>
 </div>
 
@@ -1714,7 +1625,6 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
           <option value="Ortopedista">🦴 Ortopedista</option>
           <option value="Oftalmologista">👁️ Oftalmologista</option>
           <option value="Otorrinolaringologista">👂 Otorrinolaringologista</option>
-          <option value="Dentista">🦷 Dentista</option>
           <option value="Outro">🩺 Outro</option>
         </select>
       </div>
@@ -2127,37 +2037,15 @@ function setHashes(h){localStorage.setItem('rm_hashes',JSON.stringify(h));}
 const USERS={pai:{nome:'Pai',emoji:'👨',cor:'#3B82F6',role:'Administrador pai'},mae:{nome:'Mãe',emoji:'👩',cor:'#EC4899',role:'Administrador mãe'}};
 let activeUser=null,selUserKey=null;
 function selUser(u){selUserKey=u;document.getElementById('uc-pai').classList.toggle('sel',u==='pai');document.getElementById('uc-mae').classList.toggle('sel',u==='mae');document.getElementById('l-senha').focus();}
-async function fazerLogin(){
-
-  const senha = document.getElementById('senha').value;
-  const tipo = window.usuarioSelecionado;
-
-if(!tipo){
-  alert('Selecione Pai ou Mãe');
-  return;
+async function doLogin(){
+  const err=document.getElementById('l-err');
+  if(!selUserKey){err.style.display='block';err.textContent='❌ Selecione pai ou mãe.';return;}
+  const pwd=document.getElementById('l-senha').value;
+  if(!pwd){err.style.display='block';err.textContent='❌ Digite a senha.';return;}
+  const h=await hashPwd(pwd);
+  if(h!==getHashes()[selUserKey]){err.style.display='block';err.textContent='❌ Senha incorreta.';document.getElementById('l-senha').value='';return;}
+  err.style.display='none';activeUser=selUserKey;entrar();
 }
-
- 
-  const ok = await authLogin(tipo, senha);
-
-  if(ok){
-    authSalvarSessao(tipo);
-    entrarNoApp(tipo);
-  }else{
-    document.getElementById('login-erro').style.display = 'block';
-  }
-}
-
-// ===============================
-// 🔐 SELEÇÃO DE USUÁRIO
-// ===============================
-window.selUser = function(tipo){
-  window.usuarioSelecionado = tipo;
-
-  document.querySelectorAll('.ucard').forEach(el => el.classList.remove('sel'));
-  document.getElementById('uc-' + tipo).classList.add('sel');
-}
-
 async function doUnlock(){const err=document.getElementById('lock-err');const h=await hashPwd(document.getElementById('lock-senha').value);if(h!==getHashes()[activeUser]){err.style.display='block';err.textContent='❌ Senha incorreta.';document.getElementById('lock-senha').value='';return;}err.style.display='none';document.getElementById('lock-senha').value='';document.getElementById('tela-bloqueada').style.display='none';resetTimeout();}
 function bloquear(){fecharMenus();document.getElementById('lock-user-txt').textContent=USERS[activeUser].emoji+' '+USERS[activeUser].nome+' — senha para continuar';document.getElementById('tela-bloqueada').style.display='flex';document.getElementById('lock-senha').focus();}
 function fazerLogout(){activeUser=null;selUserKey=null;clearTimeout(_toTimer);clearTimeout(_toBanner);document.getElementById('timeout-banner').style.display='none';document.getElementById('l-senha').value='';document.getElementById('tela-app').style.display='none';document.getElementById('tela-bloqueada').style.display='none';document.getElementById('tela-login').style.display='flex';document.querySelector('.agenda-fab').style.display='none';document.documentElement.removeAttribute('data-user');selUser('pai');fecharMenus();}
@@ -2167,66 +2055,63 @@ async function salvarSenha(){const err=document.getElementById('cp-err');const a
 const PRIMEIRO_ACESSO_KEY='rm_setup_done';
 
 async function isPrimeiroAcesso(){
-  // Passo 1: localStorage rápido
+  // 1. localStorage local — mais rápido
   if(localStorage.getItem(PRIMEIRO_ACESSO_KEY))return false;
+
+  // 2. Hashes locais existem — já configurado antes neste dispositivo
   const h=getHashes();
   if(h.pai&&h.mae){localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');return false;}
 
-  // Passo 2: Tentar Firebase (com timeout 5s)
+  // 3. Firebase com timeout de 4s — consultar se outro dispositivo já configurou
   if(window._fbDb){
     try{
       const{getDoc,doc}=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-      const timeout=new Promise((_,r)=>setTimeout(()=>r('timeout'),5000));
-      // Checar hashes diretamente — mais confiável que 'setup'
-      const snapH=await Promise.race([getDoc(doc(window._fbDb,'config','hashes')),timeout]);
-      if(snapH&&snapH.exists&&snapH.exists()&&snapH.data().pai){
-        setHashes({pai:snapH.data().pai,mae:snapH.data().mae});
+      // Timeout de 4 segundos para não bloquear
+      const fbPromise=getDoc(doc(window._fbDb,'config','setup'));
+      const timeoutPromise=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),4000));
+      const snap=await Promise.race([fbPromise,timeoutPromise]);
+      if(snap.exists()&&snap.data().done){
         localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');
-        return false;
-      }
-      // Checar setup também
-      const snapS=await Promise.race([getDoc(doc(window._fbDb,'config','setup')),timeout]);
-      if(snapS&&snapS.exists&&snapS.exists()&&snapS.data().done){
-        localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');
+        // Carregar hashes do Firebase
+        try{
+          const snapH=await getDoc(doc(window._fbDb,'config','hashes'));
+          if(snapH.exists()&&snapH.data().pai){
+            setHashes({pai:snapH.data().pai,mae:snapH.data().mae});
+          }
+        }catch(e){}
         return false;
       }
     }catch(e){
-      console.warn('isPrimeiroAcesso Firebase erro:',e);
-      // NUNCA mostrar setup em caso de erro — mostrar login
+      console.warn('Firebase setup check:',e.message);
+      // Se timeout ou erro: NUNCA mostrar setup por segurança
+      // Mostrar login — o usuário digitará a senha errada e será informado
       return false;
     }
   }
-  // Sem Firebase e sem hashes: verdadeiro primeiro acesso
+
+  // 4. Sem Firebase e sem hashes locais: verdadeiro primeiro acesso
   return true;
 }
-
+async function initAuth(){
   // Fallback: esconder splash no máximo em 3s independente do resultado
   const splashTimeout=setTimeout(()=>esconderSplash(),3000);
-  (async () => {
-
-  const splashTimeout = setTimeout(() => esconderSplash(), 3000);
-
-  try {
-    const primeiro = await isPrimeiroAcesso();
-
-    if (primeiro) {
-      document.getElementById('tela-login').style.display = 'none';
+  try{
+    const primeiro=await isPrimeiroAcesso();
+    if(primeiro){
+      document.getElementById('tela-login').style.display='none';
       document.getElementById('tela-primeiro-acesso').classList.add('ativo');
-    } else {
-      document.getElementById('tela-login').style.display = 'flex';
-      window.selUser && window.selUser('pai');
+    }else{
+      document.getElementById('tela-login').style.display='flex';
+      selUser('pai');
     }
-
-  } catch (e) {
-    document.getElementById('tela-login').style.display = 'flex';
-    window.selUser && window.selUser('pai');
+  }catch(e){
+    // Em caso de erro, mostrar login normalmente
+    document.getElementById('tela-login').style.display='flex';
+    selUser('pai');
   }
-
   clearTimeout(splashTimeout);
   esconderSplash();
-
-})();
-
+}
 let _paSenhas={};
 function paStep(n){document.querySelectorAll('.pa-step').forEach((s,i)=>s.classList.toggle('ativo',i===n));document.querySelectorAll('.pa-dot').forEach((d,i)=>d.classList.toggle('on',i<=n));const f=['','pa-pai-s1','pa-mae-s1'];if(f[n])setTimeout(()=>document.getElementById(f[n])?.focus(),100);}
 function paCheckStrength(user){const v=document.getElementById(user==='pai'?'pa-pai-s1':'pa-mae-s1')?.value||'';let s=0;if(v.length>=8)s++;if(v.length>=12)s++;if(/[A-Z]/.test(v))s++;if(/[0-9]/.test(v))s++;if(/[^A-Za-z0-9]/.test(v))s++;const pcts=['0%','20%','40%','60%','80%','100%'];const cols=['#EF4444','#F59E0B','#F59E0B','#10B981','#10B981','#10B981'];const txts=['','Muito fraca','Fraca','Razoável','Boa','Forte','Muito forte'];const fill=document.getElementById('pa-str-'+user);const txt=document.getElementById('pa-str-txt-'+user);if(fill){fill.style.width=pcts[s];fill.style.background=cols[s];}if(txt){txt.textContent=txts[s];txt.style.color=cols[s];}}
@@ -2316,22 +2201,7 @@ function marcarDose(nome,remedio,periodo,btn,nota){
 }
 
 // ═══════════════ CELEBRAÇÃO ═══════════════
-let _celebracaoFeitoHoje='';
-function verificarCelebracao(){
-  const dados=window._fbHist||[];
-  const dHj=hoje();
-  // Só celebrar uma vez por dia
-  if(_celebracaoFeitoHoje===dHj)return;
-  const meds=getMeds().filter(m=>!m.suspenso);
-  const CRIANCAS=getCriancas();
-  // Total esperado = cada remédio × cada período × cada criança
-  const total=meds.reduce((s,m)=>s+m.periodos.length,0)*CRIANCAS.length;
-  const feitas=dados.filter(r=>r.data===dHj).length;
-  if(total>0&&feitas>=total){
-    _celebracaoFeitoHoje=dHj;
-    setTimeout(()=>{confetti();tocarFanfarra();},400);
-  }
-}
+function verificarCelebracao(){const dados=getHist();const dHj=hoje();const total=totalDoses()*getCriancas().length;if(dados.filter(r=>r.data===dHj).length>=total){confetti();tocarFanfarra();}}
 function confetti(){const canvas=document.getElementById('confetti-canvas');canvas.width=innerWidth;canvas.height=innerHeight;const ctx=canvas.getContext('2d');const cols=['#3B82F6','#EC4899','#10B981','#F59E0B','#8B5CF6','#EF4444'];const ps=Array.from({length:150},()=>({x:Math.random()*canvas.width,y:Math.random()*canvas.height-canvas.height,r:Math.random()*7+3,d:Math.random()*3+1,c:cols[Math.floor(Math.random()*cols.length)],t:Math.random()*10-10,a:0}));let f=0;function draw(){ctx.clearRect(0,0,canvas.width,canvas.height);ps.forEach(p=>{ctx.beginPath();ctx.lineWidth=p.r/2;ctx.strokeStyle=p.c;ctx.moveTo(p.x+p.t+p.r/4,p.y);ctx.lineTo(p.x+p.t,p.y+p.t+p.r/4);ctx.stroke();p.y+=p.d;p.t=Math.sin(p.a)*15;p.a+=.1;if(p.y>canvas.height){p.y=-10;p.x=Math.random()*canvas.width;}});if(++f<220)requestAnimationFrame(draw);else ctx.clearRect(0,0,canvas.width,canvas.height);}draw();}
 function tocarFanfarra(){try{const ctx=new(window.AudioContext||window.webkitAudioContext)();const notas=[523,659,784,1047,784,1047];const durs=[.12,.12,.12,.3,.12,.35];let t=ctx.currentTime;notas.forEach((freq,i)=>{const osc=ctx.createOscillator();const gain=ctx.createGain();osc.type='square';osc.frequency.value=freq;gain.gain.setValueAtTime(.18,t);gain.gain.exponentialRampToValueAtTime(.001,t+durs[i]);osc.connect(gain);gain.connect(ctx.destination);osc.start(t);osc.stop(t+durs[i]);t+=durs[i]+.02;});}catch(e){}}
 
@@ -2447,56 +2317,15 @@ function salvarObs(del){
 }
 
 // ═══════════════ TENDÊNCIA SEMANAL ═══════════════
-// ═══════════════ HELPERS DASHBOARDS ═══════════════
-function getDados(){
-  // Tenta todas as fontes disponíveis
-  if(window._fbHist&&window._fbHist.length)return window._fbHist;
-  const cached=localStorage.getItem('fb_cache_hist');
-  if(cached){try{const arr=JSON.parse(cached);if(arr&&arr.length){window._fbHist=arr;return arr;}}catch(e){}}
-  return[];
-}
-function dfFromDate(d){
-  return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
-}
-
-// ═══════════════ RESUMO DA SEMANA ═══════════════
-function atualizarSemanaResumo(){
-  const wrap=document.getElementById('semana-resumo-wrap');if(!wrap)return;
-  const dados=getDados();
-  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Aguardando dados...</p>';return;}
-  const now=new Date();const CRIANCAS=getCriancas();const totalD=totalDoses();
-  let html='';
-  CRIANCAS.forEach(nome=>{
-    const cfg=getCriancaConfig(nome);let ok=0,total=0;
-    for(let i=0;i<7;i++){
-      const d=new Date(now);d.setDate(d.getDate()-i);
-      total+=totalD;
-      ok+=dados.filter(r=>r.data===dfFromDate(d)&&r.nome===nome).length;
-    }
-    const pct=total>0?Math.min(100,Math.round(ok/total*100)):0;
-    html+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
-      <div style="width:26px;height:26px;border-radius:50%;background:${cfg.cor};display:flex;align-items:center;justify-content:center;font-size:.8rem;flex-shrink:0">${cfg.emoji}</div>
-      <div style="flex:1">
-        <div style="font-size:.77rem;font-weight:700;color:var(--text);display:flex;justify-content:space-between"><span>${cfg.nome}</span><span>${pct}%</span></div>
-        <div style="height:5px;background:var(--border);border-radius:99px;margin-top:3px;overflow:hidden">
-          <div style="height:100%;background:${cfg.cor};border-radius:99px;width:${pct}%;transition:width .5s ease"></div>
-        </div>
-        <div style="font-size:.65rem;color:var(--muted);margin-top:2px">${ok}/${total} doses em 7 dias</div>
-      </div>
-    </div>`;
-  });
-  wrap.innerHTML=html;
-}
-
 // ═══════════════ TENDÊNCIA SEMANAL ═══════════════
 function atualizarTendencia(){
   const wrap=document.getElementById('tendencia-wrap');if(!wrap)return;
-  const dados=getDados();
-  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Aguardando dados...</p>';return;}
+  const dados=window._fbHist||cacheGet('hist')||[];
+  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Registre remédios por 2 semanas para ver tendência.</p>';return;}
   const now=new Date();const CRIANCAS=getCriancas();const totalD=totalDoses()*CRIANCAS.length;
   function dosesNaSemana(offset){
     let n=0;
-    for(let i=0;i<7;i++){const d=new Date(now);d.setDate(d.getDate()-offset*7-i);n+=dados.filter(r=>r.data===dfFromDate(d)).length;}
+    for(let i=0;i<7;i++){const d=new Date(now);d.setDate(d.getDate()-offset*7-i);const df=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();n+=dados.filter(r=>r.data===df).length;}
     return n;
   }
   const semAtual=dosesNaSemana(0),semAnt=dosesNaSemana(1);
@@ -2520,20 +2349,20 @@ function atualizarTendencia(){
 // ═══════════════ RECORDES ═══════════════
 function atualizarRecordes(){
   const wrap=document.getElementById('recordes-wrap');if(!wrap)return;
-  const dados=getDados();
-  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Aguardando dados...</p>';return;}
+  const dados=window._fbHist||cacheGet('hist')||[];
+  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Sem dados ainda.</p>';return;}
   const CRIANCAS=getCriancas();const totalD=totalDoses()*CRIANCAS.length;
   // Maior sequência histórica
   const pd={};dados.forEach(r=>{pd[r.data]=(pd[r.data]||0)+1;});
-  const parseD=s=>{try{const p=s.split('/');return new Date(+p[2],+p[1]-1,+p[0]);}catch(e){return new Date(0);}};
-  const datas=Object.keys(pd).sort((a,b)=>parseD(a)-parseD(b));
+  const datas=Object.keys(pd).sort((a,b)=>{try{return parseDate(a)-parseDate(b);}catch(e){return 0;}});
   let maxStreak=0,cur=0;
   datas.forEach(d=>{if((pd[d]||0)>=totalD){cur++;maxStreak=Math.max(maxStreak,cur);}else cur=0;});
+  // Streak atual
   const streakAtual=calcStreak();
   // Melhor mês
-  const mm={};dados.forEach(r=>{try{const d=parseD(r.data);const k=d.getFullYear()+'-'+(d.getMonth()+1);mm[k]=(mm[k]||0)+1;}catch(e){}});
+  const mesesMap={};dados.forEach(r=>{try{const d=parseDate(r.data);const k=d.getFullYear()+'-'+(d.getMonth()+1);mesesMap[k]=(mesesMap[k]||0)+1;}catch(e){}});
   let melhorMes='—',melhorMesVal=0;
-  Object.entries(mm).forEach(([k,v])=>{if(v>melhorMesVal){melhorMesVal=v;const[y,m]=k.split('-');melhorMes=(MESES[+m-1]||'?')+'/'+y;}});
+  Object.entries(mesesMap).forEach(([k,v])=>{if(v>melhorMesVal){melhorMesVal=v;const[y,m]=k.split('-');melhorMes=(MESES[+m-1]||'?')+'/'+y;}});
   wrap.innerHTML=`
     <div class="record-item"><div class="rec-trophy">🔥</div><div class="rec-body"><div class="rec-title">Maior sequência</div><div class="rec-val">${maxStreak} dias</div></div></div>
     <div class="record-item"><div class="rec-trophy">⚡</div><div class="rec-body"><div class="rec-title">Sequência atual</div><div class="rec-val">${streakAtual} dias</div></div></div>
@@ -3335,6 +3164,36 @@ function verificarBannerNotif(){
   },3000);
 }
 
+// ═══════════════ RESUMO DA SEMANA ═══════════════
+// ═══════════════ RESUMO DA SEMANA ═══════════════
+function atualizarSemanaResumo(){
+  const wrap=document.getElementById('semana-resumo-wrap');if(!wrap)return;
+  const dados=window._fbHist||cacheGet('hist')||[];
+  const now=new Date();const CRIANCAS=getCriancas();const totalD=totalDoses();
+  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Sem dados esta semana.</p>';return;}
+  let html='';
+  CRIANCAS.forEach(nome=>{
+    const cfg=getCriancaConfig(nome);let ok=0,total=0;
+    for(let i=0;i<7;i++){
+      const d=new Date(now);d.setDate(d.getDate()-i);
+      const df=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
+      total+=totalD;
+      ok+=dados.filter(r=>r.data===df&&r.nome===nome).length;
+    }
+    const pct=total>0?Math.min(100,Math.round(ok/total*100)):0;
+    html+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
+      <div style="width:26px;height:26px;border-radius:50%;background:${cfg.cor};display:flex;align-items:center;justify-content:center;font-size:.8rem;flex-shrink:0">${cfg.emoji}</div>
+      <div style="flex:1">
+        <div style="font-size:.77rem;font-weight:700;color:var(--text);display:flex;justify-content:space-between"><span>${cfg.nome}</span><span>${pct}%</span></div>
+        <div style="height:5px;background:var(--border);border-radius:99px;margin-top:3px;overflow:hidden">
+          <div style="height:100%;background:${cfg.cor};border-radius:99px;width:${pct}%;transition:width .5s ease"></div>
+        </div>
+        <div style="font-size:.65rem;color:var(--muted);margin-top:2px">${ok} de ${total} doses · 7 dias</div>
+      </div>
+    </div>`;
+  });
+  wrap.innerHTML=html;
+}
 
 // ═══════════════ LOG DE ATIVIDADES ═══════════════
 function abrirLog(){
@@ -3610,39 +3469,35 @@ function abrirEditMed(i){
 
 function salvarMedEdit(){
   const i=parseInt(document.getElementById('me-idx').value);
-  const meds=getMeds();
-  const perVal=document.getElementById('me-per').value;
+  const meds=getMeds();const perVal=document.getElementById('me-per').value;
   const quem=document.getElementById('me-quem')?.value||'Ambos';
   const CRIANCAS=getCriancas();
-  const periodos=perVal==='ambos'?['manha','noite']:[perVal];
-  const periodoInicio=document.getElementById('me-periodo-inicio').value||'';
-  const periodoFim=document.getElementById('me-periodo-fim').value||'';
-  const icon=document.getElementById('me-icon').value||'💊';
-  const nome=document.getElementById('me-nome').value;
-
   if(quem==='Ambos'){
-    // Atualizar horário geral para todos — limpar individuais
-    const updated={...meds[i],icon,nome,periodos,
+    // Atualizar para todos
+    meds[i]={...meds[i],
+      icon:document.getElementById('me-icon').value||'💊',
+      nome:document.getElementById('me-nome').value,
+      periodos:perVal==='ambos'?['manha','noite']:[perVal],
       horaManha:document.getElementById('me-hora-m').value,
       horaNoite:document.getElementById('me-hora-n').value,
-      periodoInicio,periodoFim};
-    // Remover chaves individuais
-    CRIANCAS.forEach(n=>{delete updated['horaManha_'+n];delete updated['horaNoite_'+n];});
-    meds[i]=updated;
+      periodoInicio:document.getElementById('me-periodo-inicio').value||'',
+      periodoFim:document.getElementById('me-periodo-fim').value||''
+    };
+    // Limpar horários individuais quando for "Ambos"
+    CRIANCAS.forEach(n=>{delete meds[i]['horaManha_'+n];delete meds[i]['horaNoite_'+n];});
   } else {
-    // Atualizar apenas o horário da criança selecionada
-    // Preservar tudo o mais intacto
-    const hmInd=document.getElementById('me-hora-m-ind')?.value||'';
-    const hnInd=document.getElementById('me-hora-n-ind')?.value||'';
-    // Se estava no período manhã, guardar horaManha_X; se noite, horaNoite_X; se ambos, ambos
-    const updated={...meds[i],icon,nome,periodos,periodoInicio,periodoFim};
-    if(periodos.includes('manha'))updated['horaManha_'+quem]=hmInd;
-    if(periodos.includes('noite'))updated['horaNoite_'+quem]=hnInd;
-    // NÃO alterar o horário da outra criança
-    meds[i]=updated;
+    // Atualizar só para a criança selecionada
+    meds[i]={...meds[i],
+      icon:document.getElementById('me-icon').value||'💊',
+      nome:document.getElementById('me-nome').value,
+      periodos:perVal==='ambos'?['manha','noite']:[perVal],
+      periodoInicio:document.getElementById('me-periodo-inicio').value||'',
+      periodoFim:document.getElementById('me-periodo-fim').value||''
+    };
+    meds[i]['horaManha_'+quem]=document.getElementById('me-hora-m-ind')?.value||'';
+    meds[i]['horaNoite_'+quem]=document.getElementById('me-hora-n-ind')?.value||'';
   }
   setMeds(meds);fecharMo('mo-med-edit');renderMedsAdmin();atualizarTudo();
-  mostrarNotifInApp('✅ Remédio salvo!',quem==='Ambos'?'Horário atualizado para todos.':'Horário de '+quem+' atualizado.','ok');
 }
 function deletarMed(){
   if(!confirm('Excluir este remédio?'))return;
@@ -3823,99 +3678,14 @@ function renderSusHistorico(med){
     +'</div>';
 }
 
-// ===============================
-// 🔐 PRIMEIRO ACESSO
-// ===============================
-async function criarSenhas(){
-
-  const pai = document.getElementById('senha-pai').value;
-  const mae = document.getElementById('senha-mae').value;
-
-  if(pai.length < 4 || mae.length < 4){
-    alert('Senha muito curta');
-    return;
-  }
-
-  await authSalvarSenhas(pai, mae);
-
-  alert('Senhas salvas com sucesso!');
-  location.reload();
-}
-
-
 // ═══════════════ INIT ═══════════════
-async function iniciarApp(){
-
-  const temAuth = await authExiste();
-
-  if(!temAuth){
-    document.getElementById('tela-login').style.display = 'none';
-    document.getElementById('tela-primeiro-acesso').classList.add('ativo');
-    return;
-  }
-
-  const sessao = authGetSessao();
-
-  if(sessao){
-    entrarNoApp(sessao.user);
-  }else{
-    document.getElementById('tela-login').style.display = 'flex';
-  }
-}
-
-window.addEventListener('load', () => {
-  iniciarApp();
-});
-
-// ===============================
-// FIX LOGIN (escopo global)
-// ===============================
-window.usuarioSelecionado = null;
-
-window.selUser = function(tipo){
-  window.usuarioSelecionado = tipo;
-
-  document.querySelectorAll('.ucard').forEach(el => {
-    el.classList.remove('sel');
-  });
-
-  const el = document.getElementById('uc-' + tipo);
-  if(el) el.classList.add('sel');
-};
-
-window.selUser = function(tipo){
-  window.usuarioSelecionado = tipo;
-
-  document.querySelectorAll('.ucard').forEach(el=>{
-    el.classList.remove('sel');
-  });
-
-  const el = document.querySelector(`[onclick="selUser('${tipo}')"]`);
-  if(el) el.classList.add('sel');
-};
-
-window.fazerLogin = async function(){
-  <input type="password" id="login-senha">
-
-  if(!window.usuarioSelecionado){
-    alert('Selecione um usuário');
-    return;
-  }
-
-  const ok = await window.authLogin(window.usuarioSelecionado, senha);
-
-  if(!ok){
-    alert('Senha incorreta');
-    return;
-  }
-
-  window.authSalvarSessao(window.usuarioSelecionado);
-
-  // aqui você pode liberar a tela
-  document.getElementById('tela-login').style.display = 'none';
-  document.getElementById('tela-app').style.display = 'block';
-};
-
+document.querySelector('.agenda-fab').style.display='none';
+// Mostrar splash ao carregar a página
+mostrarSplash();
+// initAuth já chama esconderSplash após verificar Firebase
+initAuth();
+initDark();
+if('serviceWorker' in navigator) initServiceWorker();
 </script>
 </body>
 </html>
