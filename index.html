@@ -2129,20 +2129,7 @@ async function fazerLogin(){
   const senha = document.getElementById('senha').value;
   const tipo = window.usuarioSelecionado;
 
-  function selUser(tipo){
-  window.usuarioSelecionado = tipo;
-
-  // remove seleção de todos
-  document.querySelectorAll('.ucard').forEach(el => el.classList.remove('sel'));
-
-  // adiciona no selecionado
-  document.getElementById('uc-' + tipo).classList.add('sel');
-
-  if(!tipo){
-    alert('Selecione usuário');
-    return;
-  }
-
+ 
   const ok = await authLogin(tipo, senha);
 
   if(ok){
@@ -2156,7 +2143,7 @@ async function fazerLogin(){
 // ===============================
 // 🔐 SELEÇÃO DE USUÁRIO
 // ===============================
-function selUser(tipo){
+window.selUser = function(tipo){
   window.usuarioSelecionado = tipo;
 
   document.querySelectorAll('.ucard').forEach(el => el.classList.remove('sel'));
