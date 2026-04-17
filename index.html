@@ -240,6 +240,92 @@ window._fbServerTimestamp = serverTimestamp;
 window._fbDoc = doc;
 window._fbCollection = collection;
 
+// ===============================
+// 🔐 AUTH INTERMEDIÁRIO (FIRESTORE + HASH)
+// ===============================
+
+// SHA-256
+async function hashSenha(senha){
+  const encoder = new TextEncoder();
+  const data = encoder.encode(senha);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Salvar senhas (primeiro acesso)
+window.authSalvarSenhas = async function(paiSenha, maeSenha){
+  const paiHash = await hashSenha(paiSenha);
+  const maeHash = await hashSenha(maeSenha);
+
+  await setDoc(doc(window._fbDb, 'config', 'auth'), {
+    pai: paiHash,
+    mae: maeHash,
+    _t: window.APP_TOKEN,
+    ts: window._fbServerTimestamp()
+  });
+};
+
+// Verificar se já existe autenticação
+window.authExiste = async function(){
+  try{
+    const snap = await getDoc(doc(window._fbDb, 'config', 'auth'));
+    return snap.exists() && snap.data()._t === window.APP_TOKEN;
+  }catch(e){
+    console.error('Erro authExiste', e);
+    return false;
+  }
+};
+
+// Validar login
+window.authLogin = async function(tipo, senhaDigitada){
+  try{
+    const snap = await getDoc(doc(window._fbDb, 'config', 'auth'));
+
+    if(!snap.exists()) return false;
+
+    const data = snap.data();
+    if(data._t !== window.APP_TOKEN) return false;
+
+    const hashDigitado = await hashSenha(senhaDigitada);
+
+    return hashDigitado === data[tipo];
+  }catch(e){
+    console.error('Erro login', e);
+    return false;
+  }
+};
+
+// Sessão local (12h)
+window.authSalvarSessao = function(user){
+  localStorage.setItem('rm_session', JSON.stringify({
+    user,
+    ts: Date.now()
+  }));
+};
+
+window.authGetSessao = function(){
+  try{
+    const s = localStorage.getItem('rm_session');
+    if(!s) return null;
+
+    const obj = JSON.parse(s);
+
+    if(Date.now() - obj.ts > 12 * 60 * 60 * 1000){
+      localStorage.removeItem('rm_session');
+      return null;
+    }
+
+    return obj;
+  }catch{
+    return null;
+  }
+};
+
+window.authLogout = function(){
+  localStorage.removeItem('rm_session');
+};
+
 // Iniciar após login
 window.fbReady = true;
 </script>
@@ -2038,14 +2124,24 @@ function setHashes(h){localStorage.setItem('rm_hashes',JSON.stringify(h));}
 const USERS={pai:{nome:'Pai',emoji:'👨',cor:'#3B82F6',role:'Administrador pai'},mae:{nome:'Mãe',emoji:'👩',cor:'#EC4899',role:'Administrador mãe'}};
 let activeUser=null,selUserKey=null;
 function selUser(u){selUserKey=u;document.getElementById('uc-pai').classList.toggle('sel',u==='pai');document.getElementById('uc-mae').classList.toggle('sel',u==='mae');document.getElementById('l-senha').focus();}
-async function doLogin(){
-  const err=document.getElementById('l-err');
-  if(!selUserKey){err.style.display='block';err.textContent='❌ Selecione pai ou mãe.';return;}
-  const pwd=document.getElementById('l-senha').value;
-  if(!pwd){err.style.display='block';err.textContent='❌ Digite a senha.';return;}
-  const h=await hashPwd(pwd);
-  if(h!==getHashes()[selUserKey]){err.style.display='block';err.textContent='❌ Senha incorreta.';document.getElementById('l-senha').value='';return;}
-  err.style.display='none';activeUser=selUserKey;entrar();
+async function fazerLogin(){
+
+  const senha = document.getElementById('senha').value;
+  const tipo = window.usuarioSelecionado;
+
+  if(!tipo){
+    alert('Selecione usuário');
+    return;
+  }
+
+  const ok = await authLogin(tipo, senha);
+
+  if(ok){
+    authSalvarSessao(tipo);
+    entrarNoApp(tipo);
+  }else{
+    document.getElementById('login-erro').style.display = 'block';
+  }
 }
 async function doUnlock(){const err=document.getElementById('lock-err');const h=await hashPwd(document.getElementById('lock-senha').value);if(h!==getHashes()[activeUser]){err.style.display='block';err.textContent='❌ Senha incorreta.';document.getElementById('lock-senha').value='';return;}err.style.display='none';document.getElementById('lock-senha').value='';document.getElementById('tela-bloqueada').style.display='none';resetTimeout();}
 function bloquear(){fecharMenus();document.getElementById('lock-user-txt').textContent=USERS[activeUser].emoji+' '+USERS[activeUser].nome+' — senha para continuar';document.getElementById('tela-bloqueada').style.display='flex';document.getElementById('lock-senha').focus();}
@@ -2088,7 +2184,7 @@ async function isPrimeiroAcesso(){
   // Sem Firebase e sem hashes: verdadeiro primeiro acesso
   return true;
 }
-async function initAuth(){
+
   // Fallback: esconder splash no máximo em 3s independente do resultado
   const splashTimeout=setTimeout(()=>esconderSplash(),3000);
   try{
@@ -2421,7 +2517,7 @@ function atualizarRecordes(){
     <div class="record-item"><div class="rec-trophy">📅</div><div class="rec-body"><div class="rec-title">Mês com mais doses</div><div class="rec-val">${melhorMes}</div></div></div>
     <div class="record-item"><div class="rec-trophy">💊</div><div class="rec-body"><div class="rec-title">Total de doses</div><div class="rec-val">${dados.length}</div></div></div>`;
 }
-
+}
 
 // ═══════════════ DOSE DE RECUPERAÇÃO ═══════════════
 function verificarDoseRecuperacao(){
@@ -3705,14 +3801,47 @@ function renderSusHistorico(med){
     +'</div>';
 }
 
+// ===============================
+// 🔐 PRIMEIRO ACESSO
+// ===============================
+async function criarSenhas(){
+
+  const pai = document.getElementById('senha-pai').value;
+  const mae = document.getElementById('senha-mae').value;
+
+  if(pai.length < 4 || mae.length < 4){
+    alert('Senha muito curta');
+    return;
+  }
+
+  await authSalvarSenhas(pai, mae);
+
+  alert('Senhas salvas com sucesso!');
+  location.reload();
+}
+
+
 // ═══════════════ INIT ═══════════════
-document.querySelector('.agenda-fab').style.display='none';
-// Mostrar splash ao carregar a página
-mostrarSplash();
-// initAuth já chama esconderSplash após verificar Firebase
-initAuth();
-initDark();
-if('serviceWorker' in navigator) initServiceWorker();
+async function iniciarApp(){
+
+  const temAuth = await authExiste();
+
+  if(!temAuth){
+    document.getElementById('tela-login').style.display = 'none';
+    document.getElementById('tela-primeiro-acesso').classList.add('ativo');
+    return;
+  }
+
+  const sessao = authGetSessao();
+
+  if(sessao){
+    entrarNoApp(sessao.user);
+  }else{
+    document.getElementById('tela-login').style.display = 'flex';
+  }
+}
+
+window.addEventListener('load', iniciarApp);
 </script>
 </body>
 </html>
