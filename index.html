@@ -2129,6 +2129,15 @@ async function fazerLogin(){
   const senha = document.getElementById('senha').value;
   const tipo = window.usuarioSelecionado;
 
+  function selUser(tipo){
+  window.usuarioSelecionado = tipo;
+
+  // remove seleção de todos
+  document.querySelectorAll('.ucard').forEach(el => el.classList.remove('sel'));
+
+  // adiciona no selecionado
+  document.getElementById('uc-' + tipo).classList.add('sel');
+
   if(!tipo){
     alert('Selecione usuário');
     return;
@@ -2143,6 +2152,17 @@ async function fazerLogin(){
     document.getElementById('login-erro').style.display = 'block';
   }
 }
+
+// ===============================
+// 🔐 SELEÇÃO DE USUÁRIO
+// ===============================
+function selUser(tipo){
+  window.usuarioSelecionado = tipo;
+
+  document.querySelectorAll('.ucard').forEach(el => el.classList.remove('sel'));
+  document.getElementById('uc-' + tipo).classList.add('sel');
+}
+
 async function doUnlock(){const err=document.getElementById('lock-err');const h=await hashPwd(document.getElementById('lock-senha').value);if(h!==getHashes()[activeUser]){err.style.display='block';err.textContent='❌ Senha incorreta.';document.getElementById('lock-senha').value='';return;}err.style.display='none';document.getElementById('lock-senha').value='';document.getElementById('tela-bloqueada').style.display='none';resetTimeout();}
 function bloquear(){fecharMenus();document.getElementById('lock-user-txt').textContent=USERS[activeUser].emoji+' '+USERS[activeUser].nome+' — senha para continuar';document.getElementById('tela-bloqueada').style.display='flex';document.getElementById('lock-senha').focus();}
 function fazerLogout(){activeUser=null;selUserKey=null;clearTimeout(_toTimer);clearTimeout(_toBanner);document.getElementById('timeout-banner').style.display='none';document.getElementById('l-senha').value='';document.getElementById('tela-app').style.display='none';document.getElementById('tela-bloqueada').style.display='none';document.getElementById('tela-login').style.display='flex';document.querySelector('.agenda-fab').style.display='none';document.documentElement.removeAttribute('data-user');selUser('pai');fecharMenus();}
