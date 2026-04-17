@@ -3873,6 +3873,39 @@ window.selUser = function(tipo){
   if(el) el.classList.add('sel');
 };
 
+window.selUser = function(tipo){
+  window.usuarioSelecionado = tipo;
+
+  document.querySelectorAll('.ucard').forEach(el=>{
+    el.classList.remove('sel');
+  });
+
+  const el = document.querySelector(`[onclick="selUser('${tipo}')"]`);
+  if(el) el.classList.add('sel');
+};
+
+window.fazerLogin = async function(){
+  const senha = document.querySelector('input[type="password"]').value;
+
+  if(!window.usuarioSelecionado){
+    alert('Selecione um usuário');
+    return;
+  }
+
+  const ok = await window.authLogin(window.usuarioSelecionado, senha);
+
+  if(!ok){
+    alert('Senha incorreta');
+    return;
+  }
+
+  window.authSalvarSessao(window.usuarioSelecionado);
+
+  // aqui você pode liberar a tela
+  document.getElementById('tela-login').style.display = 'none';
+  document.getElementById('tela-app').style.display = 'block';
+};
+
 </script>
 </body>
 </html>
