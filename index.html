@@ -2199,22 +2199,33 @@ async function isPrimeiroAcesso(){
 
   // Fallback: esconder splash no máximo em 3s independente do resultado
   const splashTimeout=setTimeout(()=>esconderSplash(),3000);
-  try{
-    const primeiro=await isPrimeiroAcesso();
-    if(primeiro){
-      document.getElementById('tela-login').style.display='none';
+  (async () => {
+
+  // Fallback: esconder splash no máximo em 3s independente do resultado
+  const splashTimeout = setTimeout(() => esconderSplash(), 3000);
+
+  try {
+    const primeiro = await isPrimeiroAcesso();
+
+    if (primeiro) {
+      document.getElementById('tela-login').style.display = 'none';
       document.getElementById('tela-primeiro-acesso').classList.add('ativo');
-    }else{
-      document.getElementById('tela-login').style.display='flex';
+    } else {
+      document.getElementById('tela-login').style.display = 'flex';
       selUser('pai');
     }
-  }catch(e){
+
+  } catch (e) {
     // Em caso de erro, mostrar login normalmente
-    document.getElementById('tela-login').style.display='flex';
+    document.getElementById('tela-login').style.display = 'flex';
     selUser('pai');
   }
+
   clearTimeout(splashTimeout);
   esconderSplash();
+
+})();
+
 }
 let _paSenhas={};
 function paStep(n){document.querySelectorAll('.pa-step').forEach((s,i)=>s.classList.toggle('ativo',i===n));document.querySelectorAll('.pa-dot').forEach((d,i)=>d.classList.toggle('on',i<=n));const f=['','pa-pai-s1','pa-mae-s1'];if(f[n])setTimeout(()=>document.getElementById(f[n])?.focus(),100);}
