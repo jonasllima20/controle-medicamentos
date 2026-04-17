@@ -2129,6 +2129,11 @@ async function fazerLogin(){
   const senha = document.getElementById('senha').value;
   const tipo = window.usuarioSelecionado;
 
+if(!tipo){
+  alert('Selecione Pai ou Mãe');
+  return;
+}
+
  
   const ok = await authLogin(tipo, senha);
 
@@ -3849,6 +3854,25 @@ async function iniciarApp(){
 }
 
 window.addEventListener('load', iniciarApp);
+
+// ===============================
+// FIX LOGIN (escopo global)
+// ===============================
+window.usuarioSelecionado = null;
+
+window.selUser = function(tipo){
+  console.log('Selecionado:', tipo);
+
+  window.usuarioSelecionado = tipo;
+
+  document.querySelectorAll('.ucard').forEach(el => {
+    el.classList.remove('sel');
+  });
+
+  const el = document.getElementById('uc-' + tipo);
+  if(el) el.classList.add('sel');
+};
+
 </script>
 </body>
 </html>
