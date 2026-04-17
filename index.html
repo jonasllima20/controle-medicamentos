@@ -2056,41 +2056,37 @@ async function salvarSenha(){const err=document.getElementById('cp-err');const a
 const PRIMEIRO_ACESSO_KEY='rm_setup_done';
 
 async function isPrimeiroAcesso(){
-  // 1. localStorage local — mais rápido
-  if(localStorage.getItem(PRIMEIRO_ACESSO_KEY))return false;
-
-  // 2. Hashes locais existem — já configurado antes neste dispositivo
-  const h=getHashes();
-  if(h.pai&&h.mae){localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');return false;}
-
-  // 3. Firebase com timeout de 4s — consultar se outro dispositivo já configurou
+  // 1. Tentar carregar hashes do Firebase SEMPRE (sincroniza entre dispositivos)
   if(window._fbDb){
     try{
       const{getDoc,doc}=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-      // Timeout de 4 segundos para não bloquear
-      const fbPromise=getDoc(doc(window._fbDb,'config','setup'));
-      const timeoutPromise=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),4000));
-      const snap=await Promise.race([fbPromise,timeoutPromise]);
-      if(snap.exists()&&snap.data().done){
+      const timeoutPromise=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),5000));
+      const snapH=await Promise.race([
+        getDoc(doc(window._fbDb,'config','hashes')),
+        timeoutPromise
+      ]);
+      if(snapH.exists()&&snapH.data().pai&&snapH.data().mae){
+        // Hashes encontrados no Firebase — sincronizar localmente
+        setHashes({pai:snapH.data().pai,mae:snapH.data().mae});
         localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');
-        // Carregar hashes do Firebase
-        try{
-          const snapH=await getDoc(doc(window._fbDb,'config','hashes'));
-          if(snapH.exists()&&snapH.data().pai){
-            setHashes({pai:snapH.data().pai,mae:snapH.data().mae});
-          }
-        }catch(e){}
         return false;
       }
     }catch(e){
-      console.warn('Firebase setup check:',e.message);
-      // Se timeout ou erro: NUNCA mostrar setup por segurança
-      // Mostrar login — o usuário digitará a senha errada e será informado
+      console.warn('Firebase hashes check:',e.message);
+      // Firebase indisponível — checar localmente como fallback
+      const h=getHashes();
+      if(h.pai&&h.mae){localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');return false;}
+      // Sem hashes em lugar nenhum e sem Firebase: não mostrar setup por segurança
+      // (pode ser problema de rede — melhor mostrar login e informar erro de senha)
       return false;
     }
   }
 
-  // 4. Sem Firebase e sem hashes locais: verdadeiro primeiro acesso
+  // 2. Fallback sem Firebase: checar hashes locais
+  const h=getHashes();
+  if(h.pai&&h.mae){localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');return false;}
+
+  // 3. Sem Firebase e sem hashes: verdadeiro primeiro acesso
   return true;
 }
 async function initAuth(){
@@ -2202,9 +2198,39 @@ function marcarDose(nome,remedio,periodo,btn,nota){
 }
 
 // ═══════════════ CELEBRAÇÃO ═══════════════
-function verificarCelebracao(){const dados=getHist();const dHj=hoje();const total=totalDoses()*getCriancas().length;if(dados.filter(r=>r.data===dHj).length>=total){confetti();tocarFanfarra();}}
-function confetti(){const canvas=document.getElementById('confetti-canvas');canvas.width=innerWidth;canvas.height=innerHeight;const ctx=canvas.getContext('2d');const cols=['#3B82F6','#EC4899','#10B981','#F59E0B','#8B5CF6','#EF4444'];const ps=Array.from({length:150},()=>({x:Math.random()*canvas.width,y:Math.random()*canvas.height-canvas.height,r:Math.random()*7+3,d:Math.random()*3+1,c:cols[Math.floor(Math.random()*cols.length)],t:Math.random()*10-10,a:0}));let f=0;function draw(){ctx.clearRect(0,0,canvas.width,canvas.height);ps.forEach(p=>{ctx.beginPath();ctx.lineWidth=p.r/2;ctx.strokeStyle=p.c;ctx.moveTo(p.x+p.t+p.r/4,p.y);ctx.lineTo(p.x+p.t,p.y+p.t+p.r/4);ctx.stroke();p.y+=p.d;p.t=Math.sin(p.a)*15;p.a+=.1;if(p.y>canvas.height){p.y=-10;p.x=Math.random()*canvas.width;}});if(++f<220)requestAnimationFrame(draw);else ctx.clearRect(0,0,canvas.width,canvas.height);}draw();}
-function tocarFanfarra(){try{const ctx=new(window.AudioContext||window.webkitAudioContext)();const notas=[523,659,784,1047,784,1047];const durs=[.12,.12,.12,.3,.12,.35];let t=ctx.currentTime;notas.forEach((freq,i)=>{const osc=ctx.createOscillator();const gain=ctx.createGain();osc.type='square';osc.frequency.value=freq;gain.gain.setValueAtTime(.18,t);gain.gain.exponentialRampToValueAtTime(.001,t+durs[i]);osc.connect(gain);gain.connect(ctx.destination);osc.start(t);osc.stop(t+durs[i]);t+=durs[i]+.02;});}catch(e){}}
+function verificarCelebracao(){
+  const dados=getHist();const dHj=hoje();
+  const CRIANCAS=getCriancas();
+  const meds=getMeds().filter(m=>!m.suspenso);
+  const total=meds.reduce((s,m)=>s+m.periodos.length,0)*CRIANCAS.length;
+  if(total===0)return;
+  const feitas=dados.filter(r=>r.data===dHj&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
+  if(feitas>=total){
+    const key='rm_celebrado_'+dHj;
+    if(sessionStorage.getItem(key))return;
+    sessionStorage.setItem(key,'1');
+    confetti();tocarFanfarra();
+  }
+}
+function confetti(){
+  const canvas=document.getElementById('confetti-canvas');if(!canvas)return;
+  canvas.width=window.innerWidth;canvas.height=window.innerHeight;
+  const ctx=canvas.getContext('2d');
+  const cols=['#3B82F6','#EC4899','#10B981','#F59E0B','#8B5CF6','#EF4444'];
+  const ps=Array.from({length:150},()=>({x:Math.random()*canvas.width,y:Math.random()*canvas.height-canvas.height,r:Math.random()*7+3,d:Math.random()*3+1,c:cols[Math.floor(Math.random()*cols.length)],t:Math.random()*10-10,a:0}));
+  let f=0;
+  function draw(){ctx.clearRect(0,0,canvas.width,canvas.height);ps.forEach(p=>{ctx.beginPath();ctx.lineWidth=p.r/2;ctx.strokeStyle=p.c;ctx.moveTo(p.x+p.t+p.r/4,p.y);ctx.lineTo(p.x+p.t,p.y+p.t+p.r/4);ctx.stroke();p.y+=p.d;p.t=Math.sin(p.a)*15;p.a+=.1;if(p.y>canvas.height){p.y=-10;p.x=Math.random()*canvas.width;}});if(++f<220)requestAnimationFrame(draw);else ctx.clearRect(0,0,canvas.width,canvas.height);}
+  draw();
+}
+function tocarFanfarra(){
+  try{
+    const AudioCtx=window.AudioContext||window.webkitAudioContext;if(!AudioCtx)return;
+    const ctx=new AudioCtx();
+    const notas=[523,659,784,1047,784,1047];const durs=[.12,.12,.12,.3,.12,.35];let t=ctx.currentTime;
+    notas.forEach((freq,i)=>{const osc=ctx.createOscillator();const gain=ctx.createGain();osc.type='triangle';osc.frequency.value=freq;gain.gain.setValueAtTime(.15,t);gain.gain.exponentialRampToValueAtTime(.001,t+durs[i]);osc.connect(gain);gain.connect(ctx.destination);osc.start(t);osc.stop(t+durs[i]);t+=durs[i]+.02;});
+    setTimeout(()=>{try{ctx.close();}catch(e){}},2000);
+  }catch(e){console.warn('Audio:',e);}
+}
 
 // ═══════════════ WIDGET + STATS ═══════════════
 function atualizarWidget(){const dados=getHist();const dHj=hoje();const CRIANCAS=getCriancas();const total=totalDoses()*CRIANCAS.length;const feitas=dados.filter(r=>r.data===dHj).length;const pct=total>0?Math.round(feitas/total*100):0;const el=document.getElementById('wd-title');const sub=document.getElementById('wd-sub');if(el)el.textContent=pct===100?'🎉 Tudo feito hoje!':feitas+' de '+total+' doses hoje';if(sub)sub.textContent=pct===100?'Parabéns pelo cuidado!':(total-feitas)+' dose'+(total-feitas!==1?'s':'')+' pendente'+(total-feitas!==1?'s':'');const badges=document.getElementById('wd-badges');if(badges)badges.innerHTML=CRIANCAS.map(n=>{const f=dados.filter(r=>r.data===dHj&&r.nome===n).length;const t=totalDoses();return '<div class="wd-badge"><div class="bdot '+(f>=t?'ok':'pend')+'"></div>'+n+': '+f+'/'+t+'</div>';}).join('');}
