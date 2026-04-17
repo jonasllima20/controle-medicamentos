@@ -285,11 +285,14 @@ window.authLogin = async function(tipo, senhaDigitada){
     if(!snap.exists()) return false;
 
     const data = snap.data();
-    if(data._t !== window.APP_TOKEN) return false;
 
     const hashDigitado = await hashSenha(senhaDigitada);
 
+    console.log("digitado:", hashDigitado);
+    console.log("salvo:", data[tipo]);
+
     return hashDigitado === data[tipo];
+
   }catch(e){
     console.error('Erro login', e);
     return false;
