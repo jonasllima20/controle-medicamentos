@@ -242,6 +242,8 @@ window._fbCollection = collection;
 
 // Iniciar após login
 window.fbReady = true;
+// Resolver a promise para sincronizar com initAuth
+if(window._fbReadyResolve) window._fbReadyResolve();
 </script>
 <style>
 /* ═══════════════════════════════════════════════════
@@ -1986,6 +1988,8 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
 
 
 <script>
+// Promise para aguardar o módulo Firebase inicializar
+window._fbReadyPromise = new Promise(resolve => { window._fbReadyResolve = resolve; });
 'use strict';
 // ═══════════════ DADOS BASE ═══════════════
 const DEFAULT_MEDS=[
@@ -2056,7 +2060,11 @@ async function salvarSenha(){const err=document.getElementById('cp-err');const a
 const PRIMEIRO_ACESSO_KEY='rm_setup_done';
 
 async function isPrimeiroAcesso(){
-  // 1. Tentar carregar hashes do Firebase SEMPRE (sincroniza entre dispositivos)
+  // 1. Garantir que o módulo Firebase terminou de inicializar
+  if(!window._fbDb && window._fbReadyPromise){
+    try{ await Promise.race([window._fbReadyPromise, new Promise(r=>setTimeout(r,5000))]); }catch(e){}
+  }
+  // 2. Tentar carregar hashes do Firebase SEMPRE (sincroniza entre dispositivos)
   if(window._fbDb){
     try{
       const{getDoc,doc}=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
@@ -2090,8 +2098,8 @@ async function isPrimeiroAcesso(){
   return true;
 }
 async function initAuth(){
-  // Fallback: esconder splash no máximo em 3s independente do resultado
-  const splashTimeout=setTimeout(()=>esconderSplash(),3000);
+  // Fallback: esconder splash no máximo em 8s (Firebase timeout = 5s + margem)
+  const splashTimeout=setTimeout(()=>esconderSplash(),8000);
   try{
     const primeiro=await isPrimeiroAcesso();
     if(primeiro){
