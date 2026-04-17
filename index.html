@@ -872,7 +872,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
 
 /* DASHBOARD EXTRA */
 .dash-extra{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
-@media(max-width:600px){.dash-extra{grid-template-columns:1fr}}
+@media(max-width:700px){.dash-extra{grid-template-columns:1fr!important}}
 .dash-card{background:var(--card);border-radius:var(--r);padding:16px;box-shadow:var(--sh);border:1px solid var(--border)}
 .dash-card-title{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:6px}
 .pizza-wrap{height:150px;position:relative}
@@ -1351,7 +1351,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     </div>
   </div>
   <!-- DASHBOARD EXTRA — linha 2: semana + tendência + recordes -->
-  <div class="dash-extra" style="grid-template-columns:1fr 1fr 1fr">
+  <div class="dash-extra" style="grid-template-columns:1fr 1fr 1fr" id="dash-row-semanal">
     <div class="dash-card">
       <div class="dash-card-title">📆 Resumo da semana</div>
       <div id="semana-resumo-wrap"></div>
@@ -2356,53 +2356,170 @@ function salvarObs(del){
 function atualizarTendencia(){
   const wrap=document.getElementById('tendencia-wrap');if(!wrap)return;
   const dados=window._fbHist||cacheGet('hist')||[];
-  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Registre remédios por 2 semanas para ver tendência.</p>';return;}
-  const now=new Date();const CRIANCAS=getCriancas();const totalD=totalDoses()*CRIANCAS.length;
-  function dosesNaSemana(offset){
-    let n=0;
-    for(let i=0;i<7;i++){const d=new Date(now);d.setDate(d.getDate()-offset*7-i);const df=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();n+=dados.filter(r=>r.data===df).length;}
-    return n;
-  }
-  const semAtual=dosesNaSemana(0),semAnt=dosesNaSemana(1);
+  const CRIANCAS=getCriancas();
+  const meds=getMeds().filter(m=>!m.suspenso);
+  const totalD=meds.reduce((s,m)=>s+m.periodos.length,0)*CRIANCAS.length;
   const espSem=Math.max(1,totalD*7);
-  const pctA=Math.min(100,Math.round(semAtual/espSem*100));
-  const pctB=Math.min(100,Math.round(semAnt/espSem*100));
-  const diff=pctA-pctB;
-  const cls=diff>0?'tend-up':diff<0?'tend-down':'tend-same';
-  const icon=diff>0?'📈':diff<0?'📉':'➡️';
-  const txt=diff>0?'+'+diff+'% vs semana anterior':diff<0?diff+'% vs semana anterior':'igual à semana anterior';
-  wrap.innerHTML=`<div class="tendencia-card">
-    <div class="tend-icon">${icon}</div>
-    <div class="tend-body">
-      <div class="tend-title">Esta semana: <strong>${pctA}%</strong></div>
-      <div class="tend-sub">Semana anterior: ${pctB}% · ${semAtual} doses</div>
-    </div>
-    <span class="tend-badge ${cls}">${txt}</span>
-  </div>`;
+  const now=new Date();
+
+  // Calcular % de adesão para qualquer semana (offset=0 = atual)
+  function pctSemana(offset){
+    let n=0;
+    for(let i=0;i<7;i++){
+      const d=new Date(now);d.setDate(d.getDate()-offset*7-i);
+      const df=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
+      n+=dados.filter(r=>r.data===df&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
+    }
+    return Math.min(100,Math.round(n/espSem*100));
+  }
+
+  // Descobrir em qual semana do mês estamos (1ª, 2ª, 3ª, 4ª, 5ª)
+  const diaDoMes=now.getDate();
+  const numSemana=Math.ceil(diaDoMes/7); // 1–5
+  const totalSemanasDoMes=Math.ceil(new Date(now.getFullYear(),now.getMonth()+1,0).getDate()/7);
+
+  const pctAtual=pctSemana(0);
+  const pctAnterior=pctSemana(1);
+  const diff=pctAtual-pctAnterior;
+
+  if(!dados.length){
+    wrap.innerHTML=`<div style="color:var(--muted);font-size:.75rem;text-align:center;padding:12px 0">Registre remédios por 2 semanas para ver tendência.</div>`;
+    return;
+  }
+
+  // Mensagem baseada na semana do mês
+  let mensagem='',icon='',corFundo='',corTexto='';
+  if(numSemana===1){
+    icon='🟢';mensagem='Início do mês: '+pctAtual+'% de adesão até agora!';
+    corFundo='var(--greenl)';corTexto='#065F46';
+  } else if(numSemana===totalSemanasDoMes&&totalSemanasDoMes>=4){
+    // Calcular média mensal
+    let somaAll=0;for(let s=0;s<numSemana;s++)somaAll+=pctSemana(s);
+    const mediaMes=Math.round(somaAll/numSemana);
+    const superou=pctAtual>=mediaMes;
+    icon=superou?'🚀':'📊';
+    mensagem=superou
+      ?`Fechamento de mês: Você superou a média mensal em ${pctAtual-mediaMes}%!`
+      :`Fechamento de mês: Adesão de ${pctAtual}% · Média do mês: ${mediaMes}%.`;
+    corFundo=superou?'var(--greenl)':'var(--indl)';
+    corTexto=superou?'#065F46':'var(--ind)';
+  } else if(diff>5){
+    icon='📈';mensagem=`Esta semana está ${diff}% melhor que a semana passada. Mais doses aplicadas!`;
+    corFundo='var(--greenl)';corTexto='#065F46';
+  } else if(diff<-5){
+    icon='📉';mensagem=`Esta semana está ${Math.abs(diff)}% pior que a semana passada. Houve algum esquecimento?`;
+    corFundo='var(--redl)';corTexto='#991B1B';
+  } else {
+    icon='🟡';mensagem=`Estabilidade: Desempenho ${diff===0?'igual':Math.abs(diff)+'% próximo'} à semana passada.`;
+    corFundo='var(--warnl)';corTexto='#92400E';
+  }
+
+  // Mini-barras das semanas do mês
+  const semanas=[];
+  for(let s=numSemana-1;s>=0;s--)semanas.unshift(pctSemana(s));
+
+  const barras=semanas.map((p,i)=>{
+    const label=i+1+'ª sem';
+    const isAtual=i===semanas.length-1;
+    const cor=p>=80?'var(--green)':p>=50?'var(--warn)':'var(--red)';
+    return `<div style="flex:1;text-align:center">
+      <div style="font-size:.6rem;color:var(--muted);margin-bottom:3px">${label}</div>
+      <div style="height:40px;background:var(--border);border-radius:6px;overflow:hidden;position:relative">
+        <div style="position:absolute;bottom:0;left:0;right:0;background:${cor};height:${p}%;transition:height .5s;border-radius:6px ${p===100?'6px 6px':'0 0'} 6px;opacity:${isAtual?1:.6}"></div>
+      </div>
+      <div style="font-size:.65rem;font-weight:700;color:${cor};margin-top:3px">${p}%</div>
+    </div>`;
+  }).join('');
+
+  wrap.innerHTML=`
+    <div style="display:flex;gap:6px;margin-bottom:10px;align-items:flex-end">${barras}</div>
+    <div style="background:${corFundo};border-radius:10px;padding:9px 11px;font-size:.75rem;font-weight:600;color:${corTexto};line-height:1.5">
+      ${icon} ${mensagem}
+    </div>`;
 }
 
 // ═══════════════ RECORDES ═══════════════
 function atualizarRecordes(){
   const wrap=document.getElementById('recordes-wrap');if(!wrap)return;
   const dados=window._fbHist||cacheGet('hist')||[];
-  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Sem dados ainda.</p>';return;}
-  const CRIANCAS=getCriancas();const totalD=totalDoses()*CRIANCAS.length;
+  if(!dados.length){
+    wrap.innerHTML=`<div style="text-align:center;padding:16px 0">
+      <div style="font-size:2rem;margin-bottom:8px">🏆</div>
+      <div style="font-size:.78rem;color:var(--muted)">Registre remédios para<br>desbloquear seus recordes!</div>
+    </div>`;
+    return;
+  }
+  const CRIANCAS=getCriancas();
+  const meds=getMeds().filter(m=>!m.suspenso);
+  const totalD=meds.reduce((s,m)=>s+m.periodos.length,0)*CRIANCAS.length;
+
   // Maior sequência histórica
   const pd={};dados.forEach(r=>{pd[r.data]=(pd[r.data]||0)+1;});
   const datas=Object.keys(pd).sort((a,b)=>{try{return parseDate(a)-parseDate(b);}catch(e){return 0;}});
   let maxStreak=0,cur=0;
   datas.forEach(d=>{if((pd[d]||0)>=totalD){cur++;maxStreak=Math.max(maxStreak,cur);}else cur=0;});
-  // Streak atual
+
   const streakAtual=calcStreak();
+  const totalDoses_=dados.filter(r=>!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
+
   // Melhor mês
-  const mesesMap={};dados.forEach(r=>{try{const d=parseDate(r.data);const k=d.getFullYear()+'-'+(d.getMonth()+1);mesesMap[k]=(mesesMap[k]||0)+1;}catch(e){}});
+  const mesesMap={};
+  dados.forEach(r=>{try{const d=parseDate(r.data);const k=d.getFullYear()+'-'+(d.getMonth()+1);mesesMap[k]=(mesesMap[k]||0)+1;}catch(e){}});
   let melhorMes='—',melhorMesVal=0;
   Object.entries(mesesMap).forEach(([k,v])=>{if(v>melhorMesVal){melhorMesVal=v;const[y,m]=k.split('-');melhorMes=(MESES[+m-1]||'?')+'/'+y;}});
+
+  // Adesão geral histórica
+  const diasComDados=Object.keys(pd).length;
+  const diasCompletos=Object.keys(pd).filter(d=>(pd[d]||0)>=totalD).length;
+  const taxaGeral=diasComDados>0?Math.round(diasCompletos/diasComDados*100):0;
+
+  // Visual do streak atual com progresso até o recorde
+  const progressoRecorde=maxStreak>0?Math.min(100,Math.round(streakAtual/maxStreak*100)):100;
+  const streakCor=streakAtual===0?'var(--muted)':streakAtual>=maxStreak?'var(--warn)':'var(--green)';
+  const streakMsg=streakAtual===0?'Comece hoje!'
+    :streakAtual>=maxStreak&&maxStreak>0?'🏆 Novo recorde!'
+    :''+Math.max(0,maxStreak-streakAtual)+' dias para o recorde';
+
   wrap.innerHTML=`
-    <div class="record-item"><div class="rec-trophy">🔥</div><div class="rec-body"><div class="rec-title">Maior sequência</div><div class="rec-val">${maxStreak} dias</div></div></div>
-    <div class="record-item"><div class="rec-trophy">⚡</div><div class="rec-body"><div class="rec-title">Sequência atual</div><div class="rec-val">${streakAtual} dias</div></div></div>
-    <div class="record-item"><div class="rec-trophy">📅</div><div class="rec-body"><div class="rec-title">Mês com mais doses</div><div class="rec-val">${melhorMes}</div></div></div>
-    <div class="record-item"><div class="rec-trophy">💊</div><div class="rec-body"><div class="rec-title">Total de doses</div><div class="rec-val">${dados.length}</div></div></div>`;
+    <!-- Destaque: Sequência atual vs Recorde -->
+    <div style="background:linear-gradient(135deg,var(--indl),var(--greenl));border-radius:12px;padding:12px 14px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:6px">
+        <div>
+          <div style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)">Sequência atual</div>
+          <div style="font-family:'Nunito',sans-serif;font-size:1.8rem;font-weight:900;color:${streakCor};line-height:1">${streakAtual} <span style="font-size:.8rem">dias 🔥</span></div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)">Recorde 🏆</div>
+          <div style="font-family:'Nunito',sans-serif;font-size:1.8rem;font-weight:900;color:var(--warn);line-height:1">${maxStreak} <span style="font-size:.8rem">dias</span></div>
+        </div>
+      </div>
+      <div style="height:6px;background:rgba(0,0,0,.08);border-radius:99px;overflow:hidden">
+        <div style="height:100%;background:${streakCor};border-radius:99px;width:${progressoRecorde}%;transition:width .6s ease"></div>
+      </div>
+      <div style="font-size:.68rem;color:var(--muted);margin-top:4px;text-align:center">${streakMsg}</div>
+    </div>
+    <!-- Itens de recorde -->
+    <div class="record-item">
+      <div class="rec-trophy">💊</div>
+      <div class="rec-body">
+        <div class="rec-title">Total de doses aplicadas</div>
+        <div class="rec-val">${totalDoses_}</div>
+      </div>
+    </div>
+    <div class="record-item">
+      <div class="rec-trophy">📅</div>
+      <div class="rec-body">
+        <div class="rec-title">Melhor mês</div>
+        <div class="rec-val">${melhorMes}</div>
+      </div>
+    </div>
+    <div class="record-item" style="border-bottom:none">
+      <div class="rec-trophy">📊</div>
+      <div class="rec-body">
+        <div class="rec-title">Taxa geral de adesão</div>
+        <div class="rec-val">${taxaGeral}%</div>
+      </div>
+    </div>`;
 }
 
 // ═══════════════ DOSE DE RECUPERAÇÃO ═══════════════
@@ -3204,30 +3321,77 @@ function verificarBannerNotif(){
 function atualizarSemanaResumo(){
   const wrap=document.getElementById('semana-resumo-wrap');if(!wrap)return;
   const dados=window._fbHist||cacheGet('hist')||[];
-  const now=new Date();const CRIANCAS=getCriancas();const totalD=totalDoses();
-  if(!dados.length){wrap.innerHTML='<p style="color:var(--muted);font-size:.75rem;text-align:center;padding:8px">Sem dados esta semana.</p>';return;}
-  let html='';
-  CRIANCAS.forEach(nome=>{
-    const cfg=getCriancaConfig(nome);let ok=0,total=0;
-    for(let i=0;i<7;i++){
-      const d=new Date(now);d.setDate(d.getDate()-i);
-      const df=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
-      total+=totalD;
-      ok+=dados.filter(r=>r.data===df&&r.nome===nome).length;
+  const now=new Date();const CRIANCAS=getCriancas();
+  const meds=getMeds().filter(m=>!m.suspenso);
+  const totalDiario=meds.reduce((s,m)=>s+m.periodos.length,0)*CRIANCAS.length;
+  const DIAS_PT=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+
+  // Construir os 7 dias (hoje = i=0, ontem = i=1, ... 6 dias atrás = i=6)
+  // Exibir em ordem cronológica (mais antigo primeiro)
+  const diasInfo=[];
+  for(let i=6;i>=0;i--){
+    const d=new Date(now);d.setDate(d.getDate()-i);
+    const df=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
+    const isHoje=i===0;
+    const isFuturo=false; // todos os dias já passaram ou são hoje
+    const dosesFeitas=dados.filter(r=>r.data===df&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
+    const naoTomouList=dados.filter(r=>r.data===df&&r.nota&&r.nota.startsWith('NAO_TOMOU'));
+    // Verificar se o dia é hoje e ainda não passou o horário noturno
+    const horaAtual=now.getHours();
+    const diaCompleto= isHoje?(horaAtual>=22?dosesFeitas>=totalDiario:false):dosesFeitas>=totalDiario;
+    const diaAguardando=isHoje&&!diaCompleto;
+    let status,icon,cor,detail='';
+    if(diaAguardando&&dosesFeitas===0){
+      status='Aguardando…';icon='⌛';cor='var(--muted)';
+    } else if(diaCompleto||(dosesFeitas>=totalDiario)){
+      status='Concluído';icon='✅';cor='var(--green)';
+    } else if(naoTomouList.length>0){
+      const remedios=[...new Set(naoTomouList.map(r=>r.remedio||'?'))];
+      status='Não tomou';icon='🚫';cor='var(--red)';
+      detail=remedios.slice(0,2).join(', ')+(remedios.length>2?'…':'');
+    } else if(dosesFeitas>0&&dosesFeitas<totalDiario){
+      const faltam=totalDiario-dosesFeitas;
+      status='Atenção';icon='⚠️';cor='var(--warn)';
+      detail='Faltou '+(faltam===1?'1 dose':faltam+' doses');
+    } else {
+      // Dia passado sem nenhum registro
+      status=isHoje?'Aguardando…':'Sem registro';
+      icon=isHoje?'⌛':'—';
+      cor='var(--muted)';
     }
-    const pct=total>0?Math.min(100,Math.round(ok/total*100)):0;
-    html+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
-      <div style="width:26px;height:26px;border-radius:50%;background:${cfg.cor};display:flex;align-items:center;justify-content:center;font-size:.8rem;flex-shrink:0">${cfg.emoji}</div>
-      <div style="flex:1">
-        <div style="font-size:.77rem;font-weight:700;color:var(--text);display:flex;justify-content:space-between"><span>${cfg.nome}</span><span>${pct}%</span></div>
-        <div style="height:5px;background:var(--border);border-radius:99px;margin-top:3px;overflow:hidden">
-          <div style="height:100%;background:${cfg.cor};border-radius:99px;width:${pct}%;transition:width .5s ease"></div>
-        </div>
-        <div style="font-size:.65rem;color:var(--muted);margin-top:2px">${ok} de ${total} doses · 7 dias</div>
+    diasInfo.push({df,dow:DIAS_PT[d.getDay()],isHoje,status,icon,cor,detail,dosesFeitas,totalDiario});
+  }
+
+  // Calcular veredito da semana
+  const diasPassados=diasInfo.filter(d=>!d.isHoje);
+  const diasOk=diasPassados.filter(d=>d.dosesFeitas>=d.totalDiario).length;
+  const diasFalha=diasPassados.filter(d=>d.status==='Atenção'||d.status==='Não tomou'||d.status==='Sem registro');
+  let veredito='',vCorFundo='',vCorTexto='';
+  if(!diasPassados.length){
+    veredito='📅 Início de semana — registros aparecerão aqui.';
+    vCorFundo='var(--indl)';vCorTexto='var(--ind)';
+  } else if(diasFalha.length===0){
+    veredito='Semana completa! ✅ Todos os remédios foram aplicados corretamente. Ótimo trabalho!';
+    vCorFundo='var(--greenl)';vCorTexto='#065F46';
+  } else {
+    const nomesDias=diasFalha.map(d=>d.dow).join(' e ');
+    veredito='⚠️ Em '+nomesDias+' houve registro de falta. Vamos tentar uma semana perfeita agora?';
+    vCorFundo='var(--warnl)';vCorTexto='#92400E';
+  }
+
+  const linhas=diasInfo.map(d=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:1rem;width:20px;text-align:center;flex-shrink:0">${d.icon}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.76rem;font-weight:700;color:${d.isHoje?'var(--ind)':d.cor}">${d.dow}${d.isHoje?' <span style="font-size:.6rem;background:var(--ind);color:white;padding:1px 5px;border-radius:99px;vertical-align:middle">hoje</span>':''}</div>
+        ${d.detail?`<div style="font-size:.65rem;color:${d.cor};margin-top:1px">${d.detail}</div>`:''}
       </div>
-    </div>`;
-  });
-  wrap.innerHTML=html;
+      <span style="font-size:.7rem;font-weight:700;color:${d.cor};white-space:nowrap">${d.status}</span>
+    </div>`).join('');
+
+  wrap.innerHTML=`
+    <div style="margin-bottom:8px">${linhas}</div>
+    <div style="background:${vCorFundo};border-radius:10px;padding:9px 11px;font-size:.75rem;font-weight:600;color:${vCorTexto};line-height:1.5;margin-top:4px">${veredito}</div>`;
 }
 
 // ═══════════════ LOG DE ATIVIDADES ═══════════════
