@@ -60,9 +60,39 @@ function cacheGet(k)  { try{ const v=localStorage.getItem('fb_cache_'+k); return
 // ── HISTÓRICO ─────────────────────────────────────────────
 window._fbUnsubHist = null;
 
+// Carregamento imediato via getDocs (garante dados mesmo se onSnapshot demorar)
+async function fbCarregarHistorico(){
+  try{
+    setSyncStatus('sync');
+    const snap = await getDocs(collection(db,'historico'));
+    const arr = snap.docs.map(d=>({id:d.id,...d.data()}));
+    cacheSet('hist', arr);
+    window._fbHist = arr;
+    setSyncStatus('ok');
+    if(typeof window.atualizarTudo==='function') window.atualizarTudo();
+  }catch(e){
+    console.error('[FB] getDocs historico falhou:', e);
+    setSyncStatus('err');
+  }
+}
+
+async function fbCarregarLog(){
+  try{
+    const snap = await getDocs(collection(db,'log'));
+    const arr = snap.docs.map(d=>({id:d.id,...d.data()}));
+    cacheSet('log', arr);
+    window._fbLog = arr;
+  }catch(e){ console.warn('[FB] getDocs log falhou:', e); }
+}
+
 window.fbStartListeners = function(){
   setSyncStatus('sync');
-  // Listener em tempo real para histórico
+
+  // 1. Carregar imediatamente via getDocs (não espera realtime)
+  fbCarregarHistorico();
+  fbCarregarLog();
+
+  // 2. Listener realtime para histórico (mantém sincronizado)
   if(window._fbUnsubHist) window._fbUnsubHist();
   window._fbUnsubHist = onSnapshot(
     collection(db,'historico'),
@@ -71,18 +101,17 @@ window.fbStartListeners = function(){
       cacheSet('hist', arr);
       window._fbHist = arr;
       setSyncStatus('ok');
-      // Atualizar dashboards após dados do Firestore chegarem
-      if(typeof window.atualizarTudo === 'function') window.atualizarTudo();
-      else if(typeof atualizarTudo === 'function') atualizarTudo();
+      if(typeof window.atualizarTudo==='function') window.atualizarTudo();
     },
     err => {
-      console.warn('Firestore hist error', err);
+      console.warn('[FB] onSnapshot hist erro:', err.code, err.message);
       setSyncStatus('err');
+      // Retry do listener após 5s
       setTimeout(()=>{ if(window.fbStartListeners) window.fbStartListeners(); }, 5000);
     }
   );
 
-  // Listener em tempo real para log
+  // 3. Listener realtime para log
   if(window._fbUnsubLog) window._fbUnsubLog();
   window._fbUnsubLog = onSnapshot(
     collection(db,'log'),
@@ -91,14 +120,13 @@ window.fbStartListeners = function(){
       cacheSet('log', arr);
       window._fbLog = arr;
     },
-    err => { console.warn('Firestore log error', err); }
+    err => { console.warn('[FB] onSnapshot log erro:', err.code); }
   );
 
-  // Remédios e observações
+  // 4. Carregar configs
   window.fbLoadMeds();
   window.fbLoadObs();
-  // Eventos da agenda
-  if(typeof fbLoadEventos==='function') fbLoadEventos();
+  if(window.fbLoadEventos) window.fbLoadEventos();
 };
 
 window._fbHist = cacheGet('hist') || [];
@@ -142,12 +170,13 @@ window.fbAddDose = async function(reg){
 window.fbRemoveDose = async function(data,nome,remedio,periodo){
   setSyncStatus('sync');
   try{
-    const d = parseDate(data);
-    const iso = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    // Converter data dd/mm/yyyy para iso yyyy-mm-dd sem depender de parseDate do script regular
+    const partes = data.split('/');
+    const iso = partes[2]+'-'+partes[1].padStart(2,'0')+'-'+partes[0].padStart(2,'0');
     const id = `${iso}_${nome}_${remedio}_${periodo}`;
     await deleteDoc(doc(db,'historico',id));
     setSyncStatus('ok');
-  }catch(e){ console.error(e); setSyncStatus('err'); }
+  }catch(e){ console.error('[FB] fbRemoveDose erro:', e); setSyncStatus('err'); }
 };
 
 window.fbAddLog = async function(entry){
