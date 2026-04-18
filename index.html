@@ -15,267 +15,8 @@
 <!-- EmailJS -->
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script type="module">
-// ═══════════════════════════════════════════════════════════
-// FIREBASE — inicialização e listeners em tempo real
-// ═══════════════════════════════════════════════════════════
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, doc, collection, setDoc, getDoc, getDocs,
-         deleteDoc, onSnapshot, writeBatch, serverTimestamp, query, where
-       } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-
-const firebaseConfig = {
-  apiKey:            "AIzaSyCyVsra1JxICGmvJsc-8sFb49KsFfhQPWA",
-  authDomain:        "remedios-criancas.firebaseapp.com",
-  projectId:         "remedios-criancas",
-  storageBucket:     "remedios-criancas.firebasestorage.app",
-  messagingSenderId: "880633884799",
-  appId:             "1:880633884799:web:77affc795107ddb066cf4a",
-  measurementId:     "G-MC28WKCEG0"
-};
-
-// Token secreto — só documentos com este campo são aceitos pela regra do Firestore
-// TROQUE por uma string aleatória sua e coloque a mesma nas Regras do Firestore
-const APP_TOKEN = "rem-fam-2026-xK9mQzP4";
-window.APP_TOKEN = APP_TOKEN;
-
-const fbApp = initializeApp(firebaseConfig);
-const db    = getFirestore(fbApp);
-
-// ── Indicador de sync ──────────────────────────────────────
-function setSyncStatus(s){
-  const el = document.getElementById('sync-status');
-  if(!el) return;
-  if(s==='ok')   { el.innerHTML='☁️ Sincronizado'; el.style.color='var(--green)'; }
-  if(s==='sync') { el.innerHTML='⏳ Sincronizando…'; el.style.color='var(--warn)'; }
-  if(s==='err')  { el.innerHTML='⚠️ Sem conexão — <span onclick="window.fbStartListeners&&window.fbStartListeners()" style="text-decoration:underline;cursor:pointer">reconectar</span>'; el.style.color='var(--red)'; }
-}
-// Expor globalmente para uso fora do módulo
-window.setSyncStatus = setSyncStatus;
-
-// ── Cache local (fallback offline) ────────────────────────
-function cacheSet(k,v){ try{ localStorage.setItem('fb_cache_'+k, JSON.stringify(v)); }catch(e){} }
-function cacheGet(k)  { try{ const v=localStorage.getItem('fb_cache_'+k); return v?JSON.parse(v):null; }catch(e){return null;} }
-
-// ── HISTÓRICO ─────────────────────────────────────────────
-window._fbUnsubHist = null;
-
-// Carregamento imediato via getDocs (garante dados mesmo se onSnapshot demorar)
-async function fbCarregarHistorico(){
-  try{
-    setSyncStatus('sync');
-    const snap = await getDocs(collection(db,'historico'));
-    const arr = snap.docs.map(d=>({id:d.id,...d.data()}));
-    cacheSet('hist', arr);
-    window._fbHist = arr;
-    setSyncStatus('ok');
-    if(typeof window.atualizarTudo==='function') window.atualizarTudo();
-  }catch(e){
-    console.error('[FB] getDocs historico falhou:', e);
-    setSyncStatus('err');
-  }
-}
-
-async function fbCarregarLog(){
-  try{
-    const snap = await getDocs(collection(db,'log'));
-    const arr = snap.docs.map(d=>({id:d.id,...d.data()}));
-    cacheSet('log', arr);
-    window._fbLog = arr;
-  }catch(e){ console.warn('[FB] getDocs log falhou:', e); }
-}
-
-window.fbStartListeners = function(){
-  setSyncStatus('sync');
-
-  // 1. Carregar imediatamente via getDocs (não espera realtime)
-  fbCarregarHistorico();
-  fbCarregarLog();
-
-  // 2. Listener realtime para histórico (mantém sincronizado)
-  if(window._fbUnsubHist) window._fbUnsubHist();
-  window._fbUnsubHist = onSnapshot(
-    collection(db,'historico'),
-    snap => {
-      const arr = snap.docs.map(d=>({id:d.id,...d.data()}));
-      cacheSet('hist', arr);
-      window._fbHist = arr;
-      setSyncStatus('ok');
-      if(typeof window.atualizarTudo==='function') window.atualizarTudo();
-    },
-    err => {
-      console.warn('[FB] onSnapshot hist erro:', err.code, err.message);
-      setSyncStatus('err');
-      // Retry do listener após 5s
-      setTimeout(()=>{ if(window.fbStartListeners) window.fbStartListeners(); }, 5000);
-    }
-  );
-
-  // 3. Listener realtime para log
-  if(window._fbUnsubLog) window._fbUnsubLog();
-  window._fbUnsubLog = onSnapshot(
-    collection(db,'log'),
-    snap => {
-      const arr = snap.docs.map(d=>({id:d.id,...d.data()}));
-      cacheSet('log', arr);
-      window._fbLog = arr;
-    },
-    err => { console.warn('[FB] onSnapshot log erro:', err.code); }
-  );
-
-  // 4. Carregar configs
-  window.fbLoadMeds();
-  window.fbLoadObs();
-  if(window.fbLoadEventos) window.fbLoadEventos();
-};
-
-window._fbHist = cacheGet('hist') || [];
-window._fbLog  = cacheGet('log')  || [];
-
-// Substituir getHist/setHist globais
-window.getHist = function(){ return window._fbHist || []; };
-window.setHist = async function(arr){
-  // usado só para DELEÇÃO em massa (limparTudo)
-  // para adição individual use fbAddDose
-};
-
-window.getLog = function(){ return window._fbLog || []; };
-window.setLog = async function(arr){};
-
-// Adicionar dose individual (com suporte offline)
-window.fbAddDose = async function(reg){
-  if(!navigator.onLine){
-    // Enfileirar para enviar quando voltar online
-    const q=JSON.parse(localStorage.getItem('rm_offline_queue')||'[]');
-    q.push({type:'addDose',reg});
-    localStorage.setItem('rm_offline_queue',JSON.stringify(q));
-    setSyncStatus('err');
-    return;
-  }
-  setSyncStatus('sync');
-  try{
-    const id = `${reg.dataISO}_${reg.nome}_${reg.remedio}_${reg.periodo}`;
-    await setDoc(doc(db,'historico',id), {...reg, _t: APP_TOKEN, ts: serverTimestamp()});
-    setSyncStatus('ok');
-  }catch(e){
-    console.error(e);
-    setSyncStatus('err');
-    // Enfileirar para retry
-    const q=JSON.parse(localStorage.getItem('rm_offline_queue')||'[]');
-    q.push({type:'addDose',reg});
-    localStorage.setItem('rm_offline_queue',JSON.stringify(q));
-  }
-};
-
-window.fbRemoveDose = async function(data,nome,remedio,periodo){
-  setSyncStatus('sync');
-  try{
-    // Converter data dd/mm/yyyy para iso yyyy-mm-dd sem depender de parseDate do script regular
-    const partes = data.split('/');
-    const iso = partes[2]+'-'+partes[1].padStart(2,'0')+'-'+partes[0].padStart(2,'0');
-    const id = `${iso}_${nome}_${remedio}_${periodo}`;
-    await deleteDoc(doc(db,'historico',id));
-    setSyncStatus('ok');
-  }catch(e){ console.error('[FB] fbRemoveDose erro:', e); setSyncStatus('err'); }
-};
-
-window.fbAddLog = async function(entry){
-  try{
-    const id = 'log_'+Date.now()+'_'+Math.random().toString(36).substr(2,5);
-    await setDoc(doc(db,'log',id), {...entry, _t: APP_TOKEN, ts: serverTimestamp()});
-  }catch(e){ console.error(e); }
-};
-
-// Remédios
-window.getMeds = function(){
-  const cached = cacheGet('meds');
-  return cached && cached.length ? cached : (JSON.parse(localStorage.getItem('rm_meds')||'null') || window._DEFAULT_MEDS);
-};
-window.setMeds = async function(arr){
-  cacheSet('meds', arr);
-  localStorage.setItem('rm_meds', JSON.stringify(arr));
-  try{
-    await setDoc(doc(db,'config','meds'), {lista: arr, _t: APP_TOKEN, ts: serverTimestamp()});
-  }catch(e){ console.error(e); }
-};
-window.fbLoadMeds = async function(){
-  try{
-    const snap = await getDoc(doc(db,'config','meds'));
-    if(snap.exists() && snap.data()._t === APP_TOKEN){
-      const arr = snap.data().lista;
-      cacheSet('meds', arr);
-      localStorage.setItem('rm_meds', JSON.stringify(arr));
-    }
-  }catch(e){ console.error(e); }
-};
-
-// Observações
-window.fbLoadObs = async function(){
-  try{
-    const snap = await getDoc(doc(db,'config','obs'));
-    if(snap.exists()){
-      const obs = snap.data().obs || {};
-      Object.keys(obs).forEach(k => localStorage.setItem('obs_'+k, obs[k]));
-    }
-  }catch(e){ console.error(e); }
-};
-window.fbSaveObs = async function(data, val){
-  try{
-    const snap = await getDoc(doc(db,'config','obs'));
-    const existing = snap.exists() ? (snap.data().obs||{}) : {};
-    if(val) existing[data]=val; else delete existing[data];
-    await setDoc(doc(db,'config','obs'), {obs: existing, _t: APP_TOKEN, ts: serverTimestamp()});
-  }catch(e){ console.error(e); }
-};
-
-// Limpar tudo
-window.fbLimparTudo = async function(){
-  setSyncStatus('sync');
-  try{
-    const [hSnap, lSnap] = await Promise.all([
-      getDocs(collection(db,'historico')),
-      getDocs(collection(db,'log'))
-    ]);
-    const batch = writeBatch(db);
-    hSnap.docs.forEach(d=>batch.delete(d.ref));
-    lSnap.docs.forEach(d=>batch.delete(d.ref));
-    await batch.commit();
-    window._fbHist=[];
-    window._fbLog=[];
-    setSyncStatus('ok');
-  }catch(e){ console.error(e); setSyncStatus('err'); }
-};
-
-// Eventos
-window.fbSaveEventos = async function(arr){
-  try{
-    await setDoc(doc(db,'config','eventos'),{lista:arr,_t:APP_TOKEN,ts:serverTimestamp()});
-  }catch(e){ console.error(e); }
-};
-window.fbLoadEventos = async function(){
-  try{
-    const snap = await getDoc(doc(db,'config','eventos'));
-    if(snap.exists()&&snap.data().lista){
-      const arr=snap.data().lista;
-      localStorage.setItem('rm_eventos',JSON.stringify(arr));
-      if(typeof renderProximos==='function')renderProximos();
-      if(typeof gerarCal==='function')gerarCal();
-      if(typeof atualizarStatEvento==='function')atualizarStatEvento();
-    }
-  }catch(e){ console.error(e); }
-};
-
-// Expor db para uso fora do module
-window._fbDb = db;
-window._fbServerTimestamp = serverTimestamp;
-window._fbDoc = doc;
-window._fbCollection = collection;
-
-// Iniciar após login
-window.fbReady = true;
-// Resolver a promise para sincronizar com initAuth
-if(window._fbReadyResolve) window._fbReadyResolve();
-</script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
 /* ═══════════════════════════════════════════════════
    TOKENS
@@ -2019,9 +1760,199 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
 
 
 <script>
-// Promise para aguardar o módulo Firebase inicializar
-window._fbReadyPromise = new Promise(resolve => { window._fbReadyResolve = resolve; });
 'use strict';
+
+// ═══════════════════════════════════════════════════════════
+// FIREBASE — inicialização síncrona (sem ES module)
+// ═══════════════════════════════════════════════════════════
+const _FB_CONFIG = {
+  apiKey:            "AIzaSyCyVsra1JxICGmvJsc-8sFb49KsFfhQPWA",
+  authDomain:        "remedios-criancas.firebaseapp.com",
+  projectId:         "remedios-criancas",
+  storageBucket:     "remedios-criancas.firebasestorage.app",
+  messagingSenderId: "880633884799",
+  appId:             "1:880633884799:web:77affc795107ddb066cf4a"
+};
+const _fbApp = firebase.initializeApp(_FB_CONFIG);
+const _db    = firebase.firestore();
+window._fbDb = _db;
+window.APP_TOKEN = "rem-fam-2026-xK9mQzP4";
+
+// ── Cache local ───────────────────────────────────────────
+function cacheSet(k,v){try{localStorage.setItem('fb_cache_'+k,JSON.stringify(v));}catch(e){}}
+function cacheGet(k){try{const v=localStorage.getItem('fb_cache_'+k);return v?JSON.parse(v):null;}catch(e){return null;}}
+
+// ── Estado global dos dados ───────────────────────────────
+window._fbHist = cacheGet('hist') || [];
+window._fbLog  = cacheGet('log')  || [];
+window._fbUnsubHist = null;
+window._fbUnsubLog  = null;
+
+// ── Helpers de acesso ─────────────────────────────────────
+function getHist(){ return window._fbHist || []; }
+function getLog() { return window._fbLog  || []; }
+window.getHist = getHist;
+window.getLog  = getLog;
+
+// ── Indicador de sync ─────────────────────────────────────
+function setSyncStatus(s){
+  const el = document.getElementById('sync-status');
+  if(!el) return;
+  if(s==='ok')  { el.innerHTML='☁️ Sincronizado'; el.style.color='var(--green)'; }
+  if(s==='sync'){ el.innerHTML='⏳ Sincronizando…'; el.style.color='var(--warn)'; }
+  if(s==='err') { el.innerHTML='⚠️ Sem conexão — <span onclick="window.fbStartListeners&&window.fbStartListeners()" style="text-decoration:underline;cursor:pointer">reconectar</span>'; el.style.color='var(--red)'; }
+}
+window.setSyncStatus = setSyncStatus;
+
+// ── Carregar histórico (getDocs + onSnapshot) ─────────────
+window.fbStartListeners = function(){
+  setSyncStatus('sync');
+
+  // Cancelar listeners anteriores
+  if(window._fbUnsubHist){ try{ window._fbUnsubHist(); }catch(e){} window._fbUnsubHist=null; }
+  if(window._fbUnsubLog) { try{ window._fbUnsubLog();  }catch(e){} window._fbUnsubLog=null;  }
+
+  // onSnapshot em tempo real — popula _fbHist quando dados chegam
+  window._fbUnsubHist = _db.collection('historico').onSnapshot(
+    function(snap){
+      const arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+      cacheSet('hist', arr);
+      window._fbHist = arr;
+      setSyncStatus('ok');
+      if(typeof window.atualizarTudo === 'function') window.atualizarTudo();
+    },
+    function(err){
+      console.error('[FB] historico onSnapshot erro:', err.code, err.message);
+      setSyncStatus('err');
+      setTimeout(function(){ if(window.fbStartListeners) window.fbStartListeners(); }, 5000);
+    }
+  );
+
+  window._fbUnsubLog = _db.collection('log').onSnapshot(
+    function(snap){
+      const arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+      cacheSet('log', arr);
+      window._fbLog = arr;
+    },
+    function(err){ console.warn('[FB] log onSnapshot erro:', err.code); }
+  );
+
+  // Carregar configs
+  window.fbLoadMeds();
+  window.fbLoadObs();
+  if(window.fbLoadEventos) window.fbLoadEventos();
+};
+
+// ── Adicionar / Remover dose ──────────────────────────────
+window.fbAddDose = function(reg){
+  if(!navigator.onLine){
+    const q=JSON.parse(localStorage.getItem('rm_offline_queue')||'[]');
+    q.push({type:'addDose',reg});
+    localStorage.setItem('rm_offline_queue',JSON.stringify(q));
+    setSyncStatus('err'); return;
+  }
+  setSyncStatus('sync');
+  const id = reg.dataISO+'_'+reg.nome+'_'+reg.remedio+'_'+reg.periodo;
+  _db.collection('historico').doc(id).set(
+    Object.assign({}, reg, {_t: window.APP_TOKEN, ts: firebase.firestore.FieldValue.serverTimestamp()})
+  ).then(function(){ setSyncStatus('ok'); })
+   .catch(function(e){ console.error('[FB] fbAddDose:', e); setSyncStatus('err'); });
+};
+
+window.fbRemoveDose = function(data,nome,remedio,periodo){
+  setSyncStatus('sync');
+  const p=data.split('/');
+  const iso=p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
+  const id=iso+'_'+nome+'_'+remedio+'_'+periodo;
+  _db.collection('historico').doc(id).delete()
+    .then(function(){ setSyncStatus('ok'); })
+    .catch(function(e){ console.error('[FB] fbRemoveDose:', e); setSyncStatus('err'); });
+};
+
+window.fbAddLog = function(entry){
+  const id='log_'+Date.now()+'_'+Math.random().toString(36).substr(2,5);
+  _db.collection('log').doc(id).set(
+    Object.assign({}, entry, {_t: window.APP_TOKEN, ts: firebase.firestore.FieldValue.serverTimestamp()})
+  ).catch(function(e){ console.error('[FB] fbAddLog:', e); });
+};
+
+// ── Remédios — getMeds/setMeds definidos no script principal ──
+window.fbLoadMeds = function(){
+  _db.collection('config').doc('meds').get().then(function(snap){
+    if(snap.exists && snap.data()._t === window.APP_TOKEN){
+      const arr=snap.data().lista; cacheSet('meds',arr); localStorage.setItem('rm_meds',JSON.stringify(arr));
+      if(typeof getMeds==='function') window.getMeds=getMeds; // re-sync after load
+    }
+  }).catch(function(e){ console.error('[FB] fbLoadMeds:', e); });
+};
+
+// ── Observações ───────────────────────────────────────────
+window.fbLoadObs = function(){
+  _db.collection('config').doc('obs').get().then(function(snap){
+    if(snap.exists){ const obs=snap.data().obs||{}; Object.keys(obs).forEach(function(k){ localStorage.setItem('obs_'+k,obs[k]); }); }
+  }).catch(function(e){ console.error('[FB] fbLoadObs:', e); });
+};
+window.fbSaveObs = function(data,val){
+  _db.collection('config').doc('obs').get().then(function(snap){
+    const ex=snap.exists?(snap.data().obs||{}):{};
+    if(val) ex[data]=val; else delete ex[data];
+    return _db.collection('config').doc('obs').set({obs:ex, _t:window.APP_TOKEN, ts:firebase.firestore.FieldValue.serverTimestamp()});
+  }).catch(function(e){ console.error('[FB] fbSaveObs:', e); });
+};
+
+// ── Limpar tudo ───────────────────────────────────────────
+window.fbLimparTudo = function(){
+  setSyncStatus('sync');
+  const batch = _db.batch();
+  _db.collection('historico').get().then(function(s){ s.docs.forEach(function(d){ batch.delete(d.ref); }); return _db.collection('log').get(); })
+    .then(function(s){ s.docs.forEach(function(d){ batch.delete(d.ref); }); return batch.commit(); })
+    .then(function(){ window._fbHist=[]; window._fbLog=[]; setSyncStatus('ok'); })
+    .catch(function(e){ console.error('[FB] fbLimparTudo:', e); setSyncStatus('err'); });
+};
+
+// ── Eventos ───────────────────────────────────────────────
+window.fbSaveEventos = function(arr){
+  _db.collection('config').doc('eventos').set({lista:arr, _t:window.APP_TOKEN, ts:firebase.firestore.FieldValue.serverTimestamp()})
+    .catch(function(e){ console.error('[FB] fbSaveEventos:', e); });
+};
+window.fbLoadEventos = function(){
+  _db.collection('config').doc('eventos').get().then(function(snap){
+    if(snap.exists&&snap.data().lista){
+      const arr=snap.data().lista; localStorage.setItem('rm_eventos',JSON.stringify(arr));
+      if(typeof renderProximos==='function') renderProximos();
+      if(typeof gerarCal==='function') gerarCal();
+      if(typeof atualizarStatEvento==='function') atualizarStatEvento();
+    }
+  }).catch(function(e){ console.error('[FB] fbLoadEventos:', e); });
+};
+
+// ── Offline queue flush ───────────────────────────────────
+window.flushOfflineQueueFB = function(){
+  if(!navigator.onLine) return;
+  const q=JSON.parse(localStorage.getItem('rm_offline_queue')||'[]');
+  if(!q.length) return;
+  setSyncStatus('sync');
+  const remaining=[];
+  const promises=q.map(function(op){
+    if(op.type==='addDose'){
+      const id=op.reg.dataISO+'_'+op.reg.nome+'_'+op.reg.remedio+'_'+op.reg.periodo;
+      return _db.collection('historico').doc(id).set(
+        Object.assign({},op.reg,{_t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()})
+      ).catch(function(){ remaining.push(op); });
+    }
+    return Promise.resolve();
+  });
+  Promise.all(promises).then(function(){
+    localStorage.setItem('rm_offline_queue',JSON.stringify(remaining));
+    if(!remaining.length){ setSyncStatus('ok'); if(typeof mostrarNotifInApp==='function') mostrarNotifInApp('☁️ Sincronizado!','Registros offline enviados.','ok'); }
+    else setSyncStatus('err');
+  });
+};
+window.addEventListener('online', function(){ setTimeout(function(){ if(window.flushOfflineQueueFB) window.flushOfflineQueueFB(); }, 1500); });
+
+// Firebase pronto
+window.fbReady = true;
+
 // ═══════════════ DADOS BASE ═══════════════
 const DEFAULT_MEDS=[
   {nome:'Ferro',icon:'🫀',periodos:['manha'],horaManha:'08:00',horaNoite:''},
@@ -2040,26 +1971,18 @@ function getCriancasConfig(){
 }
 function setCriancasConfig(c){localStorage.setItem('rm_criancas',JSON.stringify(c));fbSaveCriancas(c);}
 function getCriancas(){return Object.keys(getCriancasConfig());}
-async function fbSaveCriancas(c){if(!window._fbDb)return;try{const{setDoc,doc,serverTimestamp}=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");await setDoc(doc(window._fbDb,'config','criancas'),{data:c,_t:window.APP_TOKEN||'rem-fam-2026-xK9mQzP4',ts:serverTimestamp()});}catch(e){}}
-async function fbLoadCriancas(){if(!window._fbDb)return;try{const{getDoc,doc}=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");const snap=await getDoc(doc(window._fbDb,'config','criancas'));if(snap.exists()&&snap.data().data){localStorage.setItem('rm_criancas',JSON.stringify(snap.data().data));aplicarNomesCriancas();}}catch(e){}}
+function fbSaveCriancas(c){if(!window._db&&!_db)return;_db.collection('config').doc('criancas').set({data:c,_t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(e){console.warn('[FB] fbSaveCriancas:',e);});}
+function fbLoadCriancas(){_db.collection('config').doc('criancas').get().then(function(snap){if(snap.exists&&snap.data().data){localStorage.setItem('rm_criancas',JSON.stringify(snap.data().data));if(typeof aplicarNomesCriancas==='function')aplicarNomesCriancas();}}).catch(function(e){console.warn('[FB] fbLoadCriancas:',e);});}
 function getSaude(){return JSON.parse(localStorage.getItem('rm_saude')||'{}');}
 function setSaude(s){localStorage.setItem('rm_saude',JSON.stringify(s));fbSaveSaude(s);}
-async function fbSaveSaude(s){if(!window._fbDb)return;try{const{setDoc,doc,serverTimestamp}=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");await setDoc(doc(window._fbDb,'config','saude'),{data:s,_t:window.APP_TOKEN||'rem-fam-2026-xK9mQzP4',ts:serverTimestamp()});}catch(e){}}
-async function fbLoadSaude(){if(!window._fbDb)return;try{const{getDoc,doc}=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");const snap=await getDoc(doc(window._fbDb,'config','saude'));if(snap.exists()&&snap.data().data)localStorage.setItem('rm_saude',JSON.stringify(snap.data().data));}catch(e){}}
+function fbSaveSaude(s){_db.collection('config').doc('saude').set({data:s,_t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(e){console.warn('[FB] fbSaveSaude:',e);});}
+function fbLoadSaude(){_db.collection('config').doc('saude').get().then(function(snap){if(snap.exists&&snap.data().data)localStorage.setItem('rm_saude',JSON.stringify(snap.data().data));}).catch(function(e){console.warn('[FB] fbLoadSaude:',e);});}
 function getMeds(){const c=cacheGet('meds');return(c&&c.length)?c:(JSON.parse(localStorage.getItem('rm_meds')||'null')||DEFAULT_MEDS);}
-function setMeds(m){cacheSet('meds',m);localStorage.setItem('rm_meds',JSON.stringify(m));if(window._fbDb){import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js").then(({setDoc,doc,serverTimestamp})=>{setDoc(doc(window._fbDb,'config','meds'),{lista:m,_t:window.APP_TOKEN,ts:serverTimestamp()});}).catch(()=>{});}}
+function setMeds(m){cacheSet('meds',m);localStorage.setItem('rm_meds',JSON.stringify(m));if(typeof _db!=='undefined')_db.collection('config').doc('meds').set({lista:m,_t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(e){console.warn('[FB] setMeds:',e);});}
 function totalDoses(){return getMeds().reduce((s,m)=>s+m.periodos.length,0);}
 function getEventos(){return JSON.parse(localStorage.getItem('rm_eventos')||'[]');}
 function setEventos(e){localStorage.setItem('rm_eventos',JSON.stringify(e));}
-// getHist/getLog/cacheGet/cacheSet definidos no módulo Firebase (window.getHist etc.)
-// Garantir que _fbHist tem dados do cache se o módulo ainda não carregou
-if(!window._fbHist){try{const v=localStorage.getItem('fb_cache_hist');window._fbHist=v?JSON.parse(v):[];}catch(e){window._fbHist=[];}}
-if(!window._fbLog){try{const v=localStorage.getItem('fb_cache_log');window._fbLog=v?JSON.parse(v):[];}catch(e){window._fbLog=[];}}
-// Helpers locais para uso síncrono no script regular
-function cacheSet(k,v){try{localStorage.setItem('fb_cache_'+k,JSON.stringify(v));}catch(e){}}
-function cacheGet(k){try{const v=localStorage.getItem('fb_cache_'+k);return v?JSON.parse(v):null;}catch(e){return null;}}
-function getHist(){return window._fbHist||[];}
-function getLog(){return window._fbLog||[];}
+// getHist, getLog, cacheGet, cacheSet — definidos no bloco Firebase acima
 
 function hoje(){return new Date().toLocaleDateString('pt-BR');}
 function hojeISO(){return new Date().toISOString().split('T')[0];}
@@ -2089,47 +2012,41 @@ async function doUnlock(){const err=document.getElementById('lock-err');const h=
 function bloquear(){fecharMenus();document.getElementById('lock-user-txt').textContent=USERS[activeUser].emoji+' '+USERS[activeUser].nome+' — senha para continuar';document.getElementById('tela-bloqueada').style.display='flex';document.getElementById('lock-senha').focus();}
 function fazerLogout(){activeUser=null;selUserKey=null;clearTimeout(_toTimer);clearTimeout(_toBanner);document.getElementById('timeout-banner').style.display='none';document.getElementById('l-senha').value='';document.getElementById('tela-app').style.display='none';document.getElementById('tela-bloqueada').style.display='none';document.getElementById('tela-login').style.display='flex';document.querySelector('.agenda-fab').style.display='none';document.documentElement.removeAttribute('data-user');selUser('pai');fecharMenus();}
 function checkStrength(){const v=document.getElementById('cp-nova').value;const fill=document.getElementById('ps-fill');const txt=document.getElementById('ps-txt');let s=0;if(v.length>=8)s++;if(v.length>=12)s++;if(/[A-Z]/.test(v))s++;if(/[0-9]/.test(v))s++;if(/[^A-Za-z0-9]/.test(v))s++;const pcts=['0%','20%','40%','60%','80%','100%'];const cols=['#EF4444','#F59E0B','#F59E0B','#10B981','#10B981','#10B981'];const txts=['','Muito fraca','Fraca','Razoável','Boa','Forte','Muito forte'];if(fill){fill.style.width=pcts[s];fill.style.background=cols[s];}if(txt){txt.textContent=txts[s];txt.style.color=cols[s];}}
-async function salvarSenha(){const err=document.getElementById('cp-err');const atual=document.getElementById('cp-atual').value,nova=document.getElementById('cp-nova').value,conf=document.getElementById('cp-conf').value;if(!atual||!nova||!conf){err.style.display='block';err.textContent='❌ Preencha todos.';return;}if(nova!==conf){err.style.display='block';err.textContent='❌ As senhas não coincidem.';return;}if(nova.length<8){err.style.display='block';err.textContent='❌ Mínimo 8 caracteres.';return;}if(await hashPwd(atual)!==getHashes()[activeUser]){err.style.display='block';err.textContent='❌ Senha atual incorreta.';return;}const h=getHashes();h[activeUser]=await hashPwd(nova);setHashes(h);err.style.display='none';['cp-atual','cp-nova','cp-conf'].forEach(id=>document.getElementById(id).value='');alert('✅ Senha alterada!');fecharMo('mo-perfil');}
+async function salvarSenha(){const err=document.getElementById('cp-err');const atual=document.getElementById('cp-atual').value,nova=document.getElementById('cp-nova').value,conf=document.getElementById('cp-conf').value;if(!atual||!nova||!conf){err.style.display='block';err.textContent='❌ Preencha todos.';return;}if(nova!==conf){err.style.display='block';err.textContent='❌ As senhas não coincidem.';return;}if(nova.length<8){err.style.display='block';err.textContent='❌ Mínimo 8 caracteres.';return;}if(await hashPwd(atual)!==getHashes()[activeUser]){err.style.display='block';err.textContent='❌ Senha atual incorreta.';return;}const h=getHashes();h[activeUser]=await hashPwd(nova);setHashes(h);_db.collection('config').doc('hashes').set({pai:h.pai,mae:h.mae,_t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(e){console.warn('[FB] salvarSenha:',e);});err.style.display='none';['cp-atual','cp-nova','cp-conf'].forEach(id=>document.getElementById(id).value='');alert('✅ Senha alterada!');fecharMo('mo-perfil');}
 
 const PRIMEIRO_ACESSO_KEY='rm_setup_done';
 
 async function isPrimeiroAcesso(){
-  // 1. Garantir que o módulo Firebase terminou de inicializar
-  if(!window._fbDb && window._fbReadyPromise){
-    try{ await Promise.race([window._fbReadyPromise, new Promise(r=>setTimeout(r,5000))]); }catch(e){}
-  }
-  // 2. Tentar carregar hashes do Firebase SEMPRE (sincroniza entre dispositivos)
-  if(window._fbDb){
-    try{
-      const{getDoc,doc}=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-      const timeoutPromise=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),5000));
-      const snapH=await Promise.race([
-        getDoc(doc(window._fbDb,'config','hashes')),
-        timeoutPromise
-      ]);
-      if(snapH.exists()&&snapH.data().pai&&snapH.data().mae){
-        // Hashes encontrados no Firebase — sincronizar localmente
-        setHashes({pai:snapH.data().pai,mae:snapH.data().mae});
-        localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');
-        return false;
-      }
-    }catch(e){
-      console.warn('Firebase hashes check:',e.message);
-      // Firebase indisponível — checar localmente como fallback
+  // Usar compat API diretamente (sem dynamic import)
+  return new Promise(function(resolve){
+    const timeout = setTimeout(function(){
+      // Timeout — checar localmente
       const h=getHashes();
-      if(h.pai&&h.mae){localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');return false;}
-      // Sem hashes em lugar nenhum e sem Firebase: não mostrar setup por segurança
-      // (pode ser problema de rede — melhor mostrar login e informar erro de senha)
-      return false;
-    }
-  }
-
-  // 2. Fallback sem Firebase: checar hashes locais
-  const h=getHashes();
-  if(h.pai&&h.mae){localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');return false;}
-
-  // 3. Sem Firebase e sem hashes: verdadeiro primeiro acesso
-  return true;
+      if(h.pai&&h.mae){localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');resolve(false);}
+      else resolve(false); // Não mostrar setup se Firebase offline
+    }, 5000);
+    _db.collection('config').doc('hashes').get()
+      .then(function(snap){
+        clearTimeout(timeout);
+        if(snap.exists&&snap.data().pai&&snap.data().mae){
+          setHashes({pai:snap.data().pai,mae:snap.data().mae});
+          localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');
+          resolve(false);
+        } else {
+          // Sem hashes no Firebase — checar local
+          const h=getHashes();
+          if(h.pai&&h.mae){localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');resolve(false);}
+          else resolve(true); // Primeiro acesso real
+        }
+      })
+      .catch(function(e){
+        clearTimeout(timeout);
+        console.warn('[FB] isPrimeiroAcesso:', e.message);
+        const h=getHashes();
+        if(h.pai&&h.mae){localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');resolve(false);}
+        else resolve(false);
+      });
+  });
 }
 async function initAuth(){
   // Fallback: esconder splash no máximo em 8s (Firebase timeout = 5s + margem)
@@ -2163,7 +2080,10 @@ async function paConfirmarSenha(user){
   if(user==='pai'){paStep(2);}
   else{
     const h=getHashes();h.pai=_paSenhas.pai;h.mae=_paSenhas.mae;setHashes(h);localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');
-    if(window._fbDb){try{const{setDoc,doc,serverTimestamp}=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");const tok=window.APP_TOKEN||'rem-fam-2026-xK9mQzP4';await setDoc(doc(window._fbDb,'config','setup'),{done:true,_t:tok,ts:serverTimestamp()});await setDoc(doc(window._fbDb,'config','hashes'),{pai:h.pai,mae:h.mae,_t:tok,ts:serverTimestamp()});}catch(e){}}
+    // Salvar hashes e setup no Firebase
+    const tok=window.APP_TOKEN;
+    _db.collection('config').doc('setup').set({done:true,_t:tok,ts:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(e){console.warn('[FB] setup:',e);});
+    _db.collection('config').doc('hashes').set({pai:h.pai,mae:h.mae,_t:tok,ts:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(e){console.warn('[FB] hashes:',e);});
     _paSenhas={};document.getElementById('tela-primeiro-acesso').classList.remove('ativo');document.getElementById('tela-login').style.display='flex';selUser('pai');
     setTimeout(()=>mostrarNotifInApp('✅ Senhas configuradas!','Faça login com sua nova senha.','ok'),300);
   }
@@ -2600,11 +2520,7 @@ function getCriancaConfig(nome){
 }
 function setCriancasCfg(cfg){
   localStorage.setItem('rm_criancas_cfg',JSON.stringify(cfg));
-  if(window._fbDb){
-    import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js").then(({setDoc,doc,serverTimestamp})=>{
-      setDoc(doc(window._fbDb,'config','criancas'),{cfg,_t:window.APP_TOKEN||'rem-fam-2026-xK9mQzP4',ts:serverTimestamp()});
-    }).catch(()=>{});
-  }
+  if(typeof _db!=='undefined')_db.collection('config').doc('criancas').set({cfg,_t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(e){console.warn('[FB] setCriancasCfg:',e);});
 }
 function abrirCriancasConfig(){
   fecharMenus();
@@ -2681,7 +2597,7 @@ function setSaudeTab(nome){
 function getSaudeData(){return JSON.parse(localStorage.getItem('rm_saude')||'{}');}
 function setSaudeData(d){
   localStorage.setItem('rm_saude',JSON.stringify(d));
-  if(window._fbDb){import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js").then(({setDoc,doc,serverTimestamp})=>{setDoc(doc(window._fbDb,'config','saude'),{data:d,_t:window.APP_TOKEN||'rem-fam-2026-xK9mQzP4',ts:serverTimestamp()});}).catch(()=>{});}
+  if(typeof _db!=='undefined')_db.collection('config').doc('saude').set({data:d,_t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(e){console.warn('[FB] setSaudeData:',e);});
 }
 function renderSaudeConteudo(nome){
   const sd=getSaudeData();const p=sd[nome]||{};const div=document.getElementById('saude-conteudo');if(!div)return;
@@ -2775,27 +2691,7 @@ function aplicarTemaPorUsuario(user){
 }
 
 // ═══════════════ OFFLINE ROBUSTO ═══════════════
-async function flushOfflineQueue(){
-  if(!navigator.onLine)return;
-  const q=JSON.parse(localStorage.getItem('rm_offline_queue')||'[]');
-  if(!q.length)return;
-  setSyncStatus('sync');
-  const remaining=[];
-  for(const op of q){
-    try{
-      if(op.type==='addDose'&&window.fbAddDose){
-        // Bypass queue check — direct Firestore write
-        const{setDoc:sd,doc:dc,serverTimestamp:st}=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-        const id=`${op.reg.dataISO}_${op.reg.nome}_${op.reg.remedio}_${op.reg.periodo}`;
-        await sd(dc(window._fbDb,'historico',id),{...op.reg,_t:window.APP_TOKEN||'rem-fam-2026-xK9mQzP4',ts:st()});
-      }
-    }catch(e){console.warn('Flush erro:',e);remaining.push(op);}
-  }
-  localStorage.setItem('rm_offline_queue',JSON.stringify(remaining));
-  if(!remaining.length){setSyncStatus('ok');mostrarNotifInApp('☁️ Sincronizado!','Registros offline enviados.','ok');}
-  else setSyncStatus('err');
-}
-window.addEventListener('online',()=>setTimeout(flushOfflineQueue,1500));
+function flushOfflineQueue(){ if(window.flushOfflineQueueFB) window.flushOfflineQueueFB(); }
 
 // ═══════════════ GRÁFICOS ═══════════════
 let chartInst=null,chartMode='14';
@@ -2948,7 +2844,7 @@ function entrar(){
   setTimeout(()=>{
     reagendarNotificacoesPendentes();verificarEmailsParaEnviar();
     atualizarBadgeNotif(calcularNotificacoesPendentes());
-    flushOfflineQueue();
+    if(window.flushOfflineQueueFB)window.flushOfflineQueueFB();else if(typeof flushOfflineQueue==="function")flushOfflineQueue();
     verificarDoseRecuperacao();
   },2500);
 }
