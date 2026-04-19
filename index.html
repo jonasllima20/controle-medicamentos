@@ -1812,14 +1812,29 @@ window.fbStartListeners = function(){
   if(window._fbUnsubHist){ try{ window._fbUnsubHist(); }catch(e){} window._fbUnsubHist=null; }
   if(window._fbUnsubLog) { try{ window._fbUnsubLog();  }catch(e){} window._fbUnsubLog=null;  }
 
-  // onSnapshot em tempo real — popula _fbHist quando dados chegam
+  // Carga imediata via get() — garante dados antes mesmo do onSnapshot
+  _db.collection('historico').get().then(function(snap){
+    var arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+    cacheSet('hist', arr);
+    window._fbHist = arr;
+    setSyncStatus('ok');
+    if(typeof atualizarTudo === 'function') atualizarTudo();
+  }).catch(function(e){ console.error('[FB] get historico:', e); });
+
+  _db.collection('log').get().then(function(snap){
+    var arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+    cacheSet('log', arr);
+    window._fbLog = arr;
+  }).catch(function(e){ console.warn('[FB] get log:', e); });
+
+  // onSnapshot realtime — mantém sincronizado após a carga inicial
   window._fbUnsubHist = _db.collection('historico').onSnapshot(
     function(snap){
-      const arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+      var arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
       cacheSet('hist', arr);
       window._fbHist = arr;
       setSyncStatus('ok');
-      if(typeof window.atualizarTudo === 'function') window.atualizarTudo();
+      if(typeof atualizarTudo === 'function') atualizarTudo();
     },
     function(err){
       console.error('[FB] historico onSnapshot erro:', err.code, err.message);
@@ -1830,7 +1845,7 @@ window.fbStartListeners = function(){
 
   window._fbUnsubLog = _db.collection('log').onSnapshot(
     function(snap){
-      const arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+      var arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
       cacheSet('log', arr);
       window._fbLog = arr;
     },
@@ -2839,8 +2854,8 @@ function entrar(){
   initEmailJS();
   if(!localStorage.getItem('rm_notif_config')){const cfg=getNotifConfig();cfg.emailOn=true;setNotifConfig(cfg);}
   verificarBannerNotif();
-  // Segunda chamada após Firestore carregar (garante dashboards com dados reais)
-  setTimeout(()=>atualizarTudo(),2000);
+  // Retry de segurança após 3s caso get() seja lento
+  setTimeout(function(){ if(typeof atualizarTudo==='function') atualizarTudo(); },3000);
   setTimeout(()=>{
     reagendarNotificacoesPendentes();verificarEmailsParaEnviar();
     atualizarBadgeNotif(calcularNotificacoesPendentes());
