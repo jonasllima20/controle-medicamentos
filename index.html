@@ -15,8 +15,6 @@
 <!-- EmailJS -->
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
 /* ═══════════════════════════════════════════════════
    TOKENS
@@ -1264,48 +1262,57 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
   <div class="mbox">
     <div class="mt">✏️ Editar Remédio</div>
     <input type="hidden" id="me-idx">
-    <div class="field-row">
+    <div class="field-row" id="me-row-icone-nome">
       <div class="field"><label>Ícone</label><input id="me-icon" type="text" maxlength="4"></div>
       <div class="field"><label>Nome</label><input id="me-nome" type="text"></div>
     </div>
-    <div class="field-row">
-      <div class="field">
-        <label>Período(s)</label>
-        <select id="me-per">
-          <option value="manha">Só de manhã</option>
-          <option value="noite">Só à noite</option>
-          <option value="ambos">Manhã e noite</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Quem vai</label>
-        <select id="me-quem" onchange="atualizarCamposHorario()">
-          <option value="Ambos">👫 Ambos</option>
-          <option value="Arthur">🧒 Arthur</option>
-          <option value="Alice">👧 Alice</option>
-        </select>
-      </div>
-    </div>
-    <!-- Horários para Ambos (padrão) -->
-    <div id="me-horas-ambos">
+    <!-- Seção global (visível só no modo "Ambos") -->
+    <div id="me-secao-global">
       <div class="field-row">
-        <div class="field"><label>Horário manhã</label><input id="me-hora-m" type="time"></div>
-        <div class="field"><label>Horário noite</label><input id="me-hora-n" type="time"></div>
+        <div class="field">
+          <label>Período(s)</label>
+          <select id="me-per">
+            <option value="manha">Só de manhã</option>
+            <option value="noite">Só à noite</option>
+            <option value="ambos">Manhã e noite</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Editar horários de</label>
+          <select id="me-quem" onchange="atualizarCamposHorario()">
+            <option value="Ambos">👫 Ambos (geral)</option>
+            <option value="Arthur">🧒 Arthur (individual)</option>
+            <option value="Alice">👧 Alice (individual)</option>
+          </select>
+        </div>
+      </div>
+      <!-- Horários globais -->
+      <div id="me-horas-ambos">
+        <div class="field-row">
+          <div class="field"><label>Horário manhã (ambos)</label><input id="me-hora-m" type="time"></div>
+          <div class="field"><label>Horário noite (ambos)</label><input id="me-hora-n" type="time"></div>
+        </div>
       </div>
     </div>
     <!-- Horários individuais (quando escolher uma criança específica) -->
     <div id="me-horas-individual" style="display:none">
-      <div style="font-size:.72rem;font-weight:700;color:var(--ind);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px" id="me-horas-individual-titulo">Horário específico</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+        <div style="font-size:.72rem;font-weight:700;color:var(--ind);text-transform:uppercase;letter-spacing:.4px" id="me-horas-individual-titulo">Horário específico</div>
+        <select id="me-quem-ind" onchange="sincronizarQuem()" style="font-size:.75rem;border:1.5px solid var(--border);border-radius:8px;padding:4px 8px;background:var(--bg);color:var(--text);outline:none">
+          <option value="Arthur">🧒 Arthur</option>
+          <option value="Alice">👧 Alice</option>
+        </select>
+      </div>
       <div class="field-row">
         <div class="field"><label>Horário manhã</label><input id="me-hora-m-ind" type="time"></div>
         <div class="field"><label>Horário noite</label><input id="me-hora-n-ind" type="time"></div>
       </div>
-      <div style="font-size:.72rem;color:var(--muted);margin-top:4px;padding:8px;background:var(--indl);border-radius:8px">
-        ℹ️ Apenas o horário desta criança será alterado. A outra criança mantém o horário atual.
+      <div style="font-size:.72rem;color:#92400E;margin-top:6px;padding:8px 10px;background:var(--warnl);border-radius:8px;border:1px solid var(--mnb)">
+        ⚡ Apenas os horários desta criança serão alterados. Nome, períodos e frasco não são afetados.
       </div>
     </div>
     <!-- CONTROLE DE PERÍODO DO FRASCO/CARTUCHO -->
-    <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:10px">
+    <div id="me-secao-frasco" style="border-top:1px solid var(--border);padding-top:12px;margin-top:10px">
       <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">
         🗓️ Controle de período (frasco/cartucho)
       </div>
@@ -1759,8 +1766,13 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
 </div>
 
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
 'use strict';
+
+// Variáveis globais de sessão — declaradas primeiro para evitar TDZ em onclick handlers
+let activeUser=null, selUserKey=null;
 
 // ═══════════════════════════════════════════════════════════
 // FIREBASE — inicialização síncrona (sem ES module)
@@ -1773,8 +1785,14 @@ const _FB_CONFIG = {
   messagingSenderId: "880633884799",
   appId:             "1:880633884799:web:77affc795107ddb066cf4a"
 };
-const _fbApp = firebase.initializeApp(_FB_CONFIG);
-const _db    = firebase.firestore();
+// Guard: Firebase SDK must be loaded before init
+if(typeof firebase === 'undefined'){
+  console.error('Firebase SDK não carregou. Verifique a conexão com a internet.');
+  // Create stub to prevent crashes
+  window._db = null;
+}
+const _fbApp = typeof firebase !== 'undefined' ? firebase.initializeApp(_FB_CONFIG) : null;
+const _db    = _fbApp ? firebase.firestore() : null;
 window._fbDb = _db;
 window.APP_TOKEN = "rem-fam-2026-xK9mQzP4";
 
@@ -1806,6 +1824,7 @@ window.setSyncStatus = setSyncStatus;
 
 // ── Carregar histórico (getDocs + onSnapshot) ─────────────
 window.fbStartListeners = function(){
+  if(!_db){ console.warn('[FB] Firestore não disponível'); setSyncStatus('err'); return; }
   setSyncStatus('sync');
 
   // Cancelar listeners anteriores
@@ -2020,7 +2039,7 @@ async function hashPwd(pwd){const enc=new TextEncoder();const km=await crypto.su
 function getHashes(){return JSON.parse(localStorage.getItem('rm_hashes')||'null')||{pai:null,mae:null};}
 function setHashes(h){localStorage.setItem('rm_hashes',JSON.stringify(h));}
 const USERS={pai:{nome:'Pai',emoji:'👨',cor:'#3B82F6',role:'Administrador pai'},mae:{nome:'Mãe',emoji:'👩',cor:'#EC4899',role:'Administrador mãe'}};
-let activeUser=null,selUserKey=null;
+// activeUser and selUserKey declared at top of script
 function selUser(u){selUserKey=u;document.getElementById('uc-pai').classList.toggle('sel',u==='pai');document.getElementById('uc-mae').classList.toggle('sel',u==='mae');document.getElementById('l-senha').focus();}
 async function doLogin(){
   const err=document.getElementById('l-err');
@@ -2040,6 +2059,12 @@ async function salvarSenha(){const err=document.getElementById('cp-err');const a
 const PRIMEIRO_ACESSO_KEY='rm_setup_done';
 
 async function isPrimeiroAcesso(){
+  // Se Firebase não está disponível, verificar apenas localmente
+  if(!_db){
+    const h=getHashes();
+    if(h.pai&&h.mae){localStorage.setItem(PRIMEIRO_ACESSO_KEY,'1');return Promise.resolve(false);}
+    return Promise.resolve(true);
+  }
   // Usar compat API diretamente (sem dynamic import)
   return new Promise(function(resolve){
     const timeout = setTimeout(function(){
@@ -3596,25 +3621,45 @@ function renderMedsAdmin(){
 
 function atualizarCamposHorario(){
   const quem=document.getElementById('me-quem')?.value||'Ambos';
+  const secGlobal=document.getElementById('me-secao-global');
   const divAmbos=document.getElementById('me-horas-ambos');
   const divInd=document.getElementById('me-horas-individual');
-  const titulo=document.getElementById('me-horas-individual-titulo');
   if(quem==='Ambos'){
+    // Modo global: mostra todos os campos de edição geral
+    const rIn2=document.getElementById('me-row-icone-nome');if(rIn2)rIn2.style.display='grid';
+    const rFr2=document.getElementById('me-secao-frasco');if(rFr2)rFr2.style.display='block';
+    if(secGlobal)secGlobal.style.display='block';
     if(divAmbos)divAmbos.style.display='block';
     if(divInd)divInd.style.display='none';
   } else {
+    // Modo individual: esconde ícone/nome, mostra só horários da criança
+    const rIn=document.getElementById('me-row-icone-nome');if(rIn)rIn.style.display='none';
+    const rFr=document.getElementById('me-secao-frasco');if(rFr)rFr.style.display='none';
+    if(secGlobal)secGlobal.style.display='block'; // mantém select "Editar horários de"
     if(divAmbos)divAmbos.style.display='none';
     if(divInd)divInd.style.display='block';
-    if(titulo){const cfg=getCriancaConfig(quem);titulo.textContent=cfg.emoji+' Horário específico — '+cfg.nome;}
-    // Pré-preencher com o horário atual da criança específica
+    // Sincronizar select do painel individual com o select principal
+    const selInd=document.getElementById('me-quem-ind');
+    if(selInd)selInd.value=quem;
+    // Pré-preencher com horários atuais da criança
     const i=parseInt(document.getElementById('me-idx')?.value||'0');
-    const meds=getMeds();const m=meds[i];
+    const m=getMeds()[i];
     if(m){
-      const hm=document.getElementById('me-hora-m-ind');const hn=document.getElementById('me-hora-n-ind');
+      const hm=document.getElementById('me-hora-m-ind');
+      const hn=document.getElementById('me-hora-n-ind');
       if(hm)hm.value=m['horaManha_'+quem]||m.horaManha||'';
       if(hn)hn.value=m['horaNoite_'+quem]||m.horaNoite||'';
     }
+    const titulo=document.getElementById('me-horas-individual-titulo');
+    if(titulo){const cfg=getCriancaConfig(quem);titulo.textContent=cfg.emoji+' Horário específico — '+cfg.nome;}
   }
+}
+// Sincroniza o select interno do painel individual com o select principal
+function sincronizarQuem(){
+  const selInd=document.getElementById('me-quem-ind');
+  const selPrincipal=document.getElementById('me-quem');
+  if(selInd&&selPrincipal) selPrincipal.value=selInd.value;
+  atualizarCamposHorario();
 }
 
 function abrirEditMed(i){
@@ -3628,20 +3673,39 @@ function abrirEditMed(i){
   document.getElementById('me-hora-n').value=m.horaNoite||'';
   document.getElementById('me-periodo-inicio').value=m.periodoInicio||'';
   document.getElementById('me-periodo-fim').value=m.periodoFim||'';
-  // Reset quem para Ambos
+  // Sempre abrir em modo "Ambos" para evitar edição acidental de criança errada
   const quemEl=document.getElementById('me-quem');if(quemEl)quemEl.value='Ambos';
+  // Resetar visibilidade dos campos
+  const rIn=document.getElementById('me-row-icone-nome');if(rIn)rIn.style.display='grid';
+  const rFr=document.getElementById('me-secao-frasco');if(rFr)rFr.style.display='block';
   const divAmbos=document.getElementById('me-horas-ambos');if(divAmbos)divAmbos.style.display='block';
   const divInd=document.getElementById('me-horas-individual');if(divInd)divInd.style.display='none';
+  // Mostrar horários individuais existentes no painel de gerenciar
+  _renderHorariosIndividuais(m, i);
   abrirMo('mo-med-edit');
 }
+// Exibe aviso visual se existem horários individuais configurados
+function _renderHorariosIndividuais(m, idx){
+  const CRIANCAS=getCriancas();
+  const temInd=CRIANCAS.some(n=>m['horaManha_'+n]||m['horaNoite_'+n]);
+  let wrap=document.getElementById('me-ind-aviso');
+  if(!wrap){
+    wrap=document.createElement('div');wrap.id='me-ind-aviso';
+    const frasco=document.getElementById('me-secao-frasco');
+    if(frasco)frasco.parentNode.insertBefore(wrap,frasco);
+  }
+  if(!temInd){wrap.innerHTML='';return;}
+  wrap.innerHTML='<div style="background:var(--indl);border:1.5px solid var(--ind);border-radius:10px;padding:9px 12px;margin-bottom:10px;font-size:.75rem;color:var(--ind)">'    +'<div style="font-weight:700;margin-bottom:5px">⚡ Horários individuais configurados:</div>'    +CRIANCAS.filter(n=>m["horaManha_"+n]||m["horaNoite_"+n]).map(n=>{      const cfg=getCriancaConfig(n);      const hm=m["horaManha_"+n]||m.horaManha||"";      const hn=m["horaNoite_"+n]||m.horaNoite||"";      return cfg.emoji+" "+cfg.nome+": "+(hm?"☀️ "+hm:"")+(hm&&hn?" · ":"")+(hn?"🌙 "+hn:"");    }).join("<br>")    +"</div>";}
 
 function salvarMedEdit(){
   const i=parseInt(document.getElementById('me-idx').value);
-  const meds=getMeds();const perVal=document.getElementById('me-per').value;
+  const meds=getMeds();
   const quem=document.getElementById('me-quem')?.value||'Ambos';
   const CRIANCAS=getCriancas();
+
   if(quem==='Ambos'){
-    // Atualizar para todos
+    // Edição global: afeta nome, ícone, períodos e horários de TODAS as crianças
+    const perVal=document.getElementById('me-per').value;
     meds[i]={...meds[i],
       icon:document.getElementById('me-icon').value||'💊',
       nome:document.getElementById('me-nome').value,
@@ -3651,17 +3715,11 @@ function salvarMedEdit(){
       periodoInicio:document.getElementById('me-periodo-inicio').value||'',
       periodoFim:document.getElementById('me-periodo-fim').value||''
     };
-    // Limpar horários individuais quando for "Ambos"
+    // Limpar horários individuais — passam a usar o horário geral
     CRIANCAS.forEach(n=>{delete meds[i]['horaManha_'+n];delete meds[i]['horaNoite_'+n];});
   } else {
-    // Atualizar só para a criança selecionada
-    meds[i]={...meds[i],
-      icon:document.getElementById('me-icon').value||'💊',
-      nome:document.getElementById('me-nome').value,
-      periodos:perVal==='ambos'?['manha','noite']:[perVal],
-      periodoInicio:document.getElementById('me-periodo-inicio').value||'',
-      periodoFim:document.getElementById('me-periodo-fim').value||''
-    };
+    // Edição individual: SOMENTE os horários da criança selecionada são alterados
+    // Nome, ícone, períodos e frasco NÃO são tocados — evita afetar a outra criança
     meds[i]['horaManha_'+quem]=document.getElementById('me-hora-m-ind')?.value||'';
     meds[i]['horaNoite_'+quem]=document.getElementById('me-hora-n-ind')?.value||'';
   }
