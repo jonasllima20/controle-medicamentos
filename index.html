@@ -1818,8 +1818,13 @@ window.fbStartListeners = function(){
     cacheSet('hist', arr);
     window._fbHist = arr;
     setSyncStatus('ok');
-    if(typeof atualizarTudo === 'function') atualizarTudo();
-  }).catch(function(e){ console.error('[FB] get historico:', e); });
+    // Chamar as funções de dashboard diretamente (sem depender de atualizarTudo completo)
+    try{ if(typeof atualizarTendencia==='function') atualizarTendencia(); }catch(e){ console.error('tend:',e); }
+    try{ if(typeof atualizarRecordes==='function') atualizarRecordes(); }catch(e){ console.error('rec:',e); }
+    try{ if(typeof atualizarSemanaResumo==='function') atualizarSemanaResumo(); }catch(e){ console.error('sem:',e); }
+    // Atualizar o resto do app também
+    try{ if(typeof atualizarTudo==='function') atualizarTudo(); }catch(e){ console.error('tudo:',e); }
+  }).catch(function(e){ console.error('[FB] get historico:', e); setSyncStatus('err'); });
 
   _db.collection('log').get().then(function(snap){
     var arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
@@ -1834,7 +1839,10 @@ window.fbStartListeners = function(){
       cacheSet('hist', arr);
       window._fbHist = arr;
       setSyncStatus('ok');
-      if(typeof atualizarTudo === 'function') atualizarTudo();
+      try{ if(typeof atualizarTendencia==='function') atualizarTendencia(); }catch(e){}
+      try{ if(typeof atualizarRecordes==='function') atualizarRecordes(); }catch(e){}
+      try{ if(typeof atualizarSemanaResumo==='function') atualizarSemanaResumo(); }catch(e){}
+      try{ if(typeof atualizarTudo==='function') atualizarTudo(); }catch(e){}
     },
     function(err){
       console.error('[FB] historico onSnapshot erro:', err.code, err.message);
@@ -2324,7 +2332,8 @@ function salvarObs(del){
 // ═══════════════ TENDÊNCIA SEMANAL ═══════════════
 function atualizarTendencia(){
   const wrap=document.getElementById('tendencia-wrap');if(!wrap)return;
-  const dados=window._fbHist||cacheGet('hist')||[];
+  if(!window._fbHist||!window._fbHist.length){const cached=cacheGet('hist');if(cached&&cached.length)window._fbHist=cached;}
+  const dados=window._fbHist||[];
   const CRIANCAS=getCriancas();
   const meds=getMeds().filter(m=>!m.suspenso);
   const totalD=meds.reduce((s,m)=>s+m.periodos.length,0)*CRIANCAS.length;
@@ -2410,7 +2419,8 @@ function atualizarTendencia(){
 // ═══════════════ RECORDES ═══════════════
 function atualizarRecordes(){
   const wrap=document.getElementById('recordes-wrap');if(!wrap)return;
-  const dados=window._fbHist||cacheGet('hist')||[];
+  if(!window._fbHist||!window._fbHist.length){const cached=cacheGet('hist');if(cached&&cached.length)window._fbHist=cached;}
+  const dados=window._fbHist||[];
   if(!dados.length){
     wrap.innerHTML=`<div style="text-align:center;padding:16px 0">
       <div style="font-size:2rem;margin-bottom:8px">🏆</div>
@@ -2854,8 +2864,14 @@ function entrar(){
   initEmailJS();
   if(!localStorage.getItem('rm_notif_config')){const cfg=getNotifConfig();cfg.emailOn=true;setNotifConfig(cfg);}
   verificarBannerNotif();
-  // Retry de segurança após 3s caso get() seja lento
-  setTimeout(function(){ if(typeof atualizarTudo==='function') atualizarTudo(); },3000);
+  // Retries de segurança — garantem dashboards mesmo se get() for lento
+  [1000,3000,6000].forEach(function(ms){
+    setTimeout(function(){
+      if(typeof atualizarTendencia==='function') try{atualizarTendencia();}catch(e){}
+      if(typeof atualizarRecordes==='function')  try{atualizarRecordes();}catch(e){}
+      if(typeof atualizarSemanaResumo==='function') try{atualizarSemanaResumo();}catch(e){}
+    }, ms);
+  });
   setTimeout(()=>{
     reagendarNotificacoesPendentes();verificarEmailsParaEnviar();
     atualizarBadgeNotif(calcularNotificacoesPendentes());
@@ -3268,7 +3284,12 @@ function verificarBannerNotif(){
 // ═══════════════ RESUMO DA SEMANA ═══════════════
 function atualizarSemanaResumo(){
   const wrap=document.getElementById('semana-resumo-wrap');if(!wrap)return;
-  const dados=window._fbHist||cacheGet('hist')||[];
+  // Se _fbHist vazio mas temos cache, usar cache
+  if(!window._fbHist||!window._fbHist.length){
+    const cached=cacheGet('hist');
+    if(cached&&cached.length) window._fbHist=cached;
+  }
+  const dados=window._fbHist||[];
   const now=new Date();const CRIANCAS=getCriancas();
   const meds=getMeds().filter(m=>!m.suspenso);
   const totalDiario=meds.reduce((s,m)=>s+m.periodos.length,0)*CRIANCAS.length;
