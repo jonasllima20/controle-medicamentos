@@ -1252,7 +1252,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
         </div>
         <div class="field"><label>Horário ideal</label><input id="nm-hora" type="time" placeholder="08:00"></div>
       </div>
-      <div class="field"><label>Horário ideal (noite)</label><input id="nm-hora-noite" type="time" placeholder="20:00"></div>
+      <div class="field" id="nm-hora-noite-wrap"><label>Horário noite (só se precisar)</label><input id="nm-hora-noite" type="time"></div>
     </div>
     <div class="lerr" id="nm-err"></div>
     <div class="mbtns">
@@ -2189,8 +2189,26 @@ function normalizarDataISO(r){
   if(r.data){const p=r.data.split('/');if(p.length===3)return p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');}
   return '';
 }
-// Obter ícone de um remédio pelo nome
 function getIconRemedio(nome){return (getMedsNomes().find(m=>m.nome===nome)||{}).icon||'💊';}
+
+// ── Fonte única para cálculo de dia completo ─────────────
+// Conta doses válidas (não NAO_TOMOU) de um dia em dd/mm/yyyy
+function contarDosesDia(dados,df){
+  return dados.filter(r=>r.data===df&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
+}
+// Total de doses esperadas por dia (todas crianças, remédios ativos)
+function totalDosesDiario(){
+  return getCriancas().reduce((s,c)=>s+totalDoses(c),0);
+}
+// Verifica se um dia está 100% completo
+function diaConcluido(dados,df){
+  return contarDosesDia(dados,df)>=totalDosesDiario();
+}
+// Verifica se um dia específico de uma criança está completo
+function diaCrianaConcluido(dados,df,crianca){
+  const feitas=dados.filter(r=>r.data===df&&r.nome===crianca&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
+  return feitas>=totalDoses(crianca);
+}
 function parseDate(s){const p=s.split('/');return new Date(+p[2],+p[1]-1,+p[0]);}
 function fmtDate(d){return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();}
 function horaToMin(s){if(!s)return null;const[h,m]=s.split(':').map(Number);return h*60+m;}
@@ -2423,7 +2441,15 @@ function verificarPendencias(){
   const div=document.getElementById('alerta');if(div){if(!falta.length){div.className='alerta-ok';div.innerHTML='✅ Tudo administrado hoje! 🎉';}else{div.className='alerta-warn';div.innerHTML='⚠️ Faltando: '+falta.join(' · ');}}
   if('setAppBadge' in navigator){if(falta.length>0)navigator.setAppBadge(falta.length).catch(()=>{});else navigator.clearAppBadge().catch(()=>{});}
 }
-function calcStreak(){const dados=getHist();const CRIANCAS=getCriancas();const total=totalDoses()*CRIANCAS.length;if(!dados.length)return 0;const pd={};dados.forEach(r=>{pd[r.data]=(pd[r.data]||0)+1;});let s=0;const d=new Date();if((pd[fmtDate(d)]||0)<total)d.setDate(d.getDate()-1);while(true){const k=fmtDate(d);if((pd[k]||0)>=total){s++;d.setDate(d.getDate()-1);}else break;}return s;}
+function calcStreak(){
+  const dados=getHist();if(!dados.length)return 0;
+  const total=totalDosesDiario();
+  let s=0;const d=new Date();
+  // Se hoje não está completo, começa a contar de ontem
+  if(contarDosesDia(dados,fmtDate(d))<total) d.setDate(d.getDate()-1);
+  while(true){const k=fmtDate(d);if(contarDosesDia(dados,k)>=total){s++;d.setDate(d.getDate()-1);}else break;}
+  return s;
+}
 function atualizarStreak(){const s=calcStreak();const sv=document.getElementById('sv-streak');const ss=document.getElementById('ss-streak');if(sv)sv.textContent=s;if(ss)ss.textContent=s===0?'comece hoje':s===1?'dia seguido':'dias seguidos';}
 function atualizarAdesao(){
   const dados=getHist();const now=new Date();const ano=now.getFullYear(),mes=now.getMonth(),diasP=now.getDate();
@@ -2455,9 +2481,9 @@ function gerarCal(){
     if(!mapa[dk])mapa[dk]={};
     mapa[dk][r.nome]=(mapa[dk][r.nome]||0)+1;
   });
-  const totalD=CRIANCAS.reduce((s,c)=>s+totalDoses(c),0);
   Object.keys(mapa).forEach(data=>{
     const info=mapa[data];const key='rm_cal_done_'+data;const atual=JSON.parse(localStorage.getItem(key)||'{}');
+    // Usar totalDoses(crianca) como limiar individual por criança
     CRIANCAS.forEach(n=>{if((info[n]||0)>=totalDoses(n))atual[n]=true;});
     localStorage.setItem(key,JSON.stringify(atual));
   });
@@ -2469,8 +2495,8 @@ function gerarCal(){
     const df=String(d).padStart(2,'0')+'/'+String(_calMes+1).padStart(2,'0')+'/'+_calAno;
     const isoKey=_calAno+'-'+String(_calMes+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
     const liveInfo=mapa[df]||{};const persisted=JSON.parse(localStorage.getItem('rm_cal_done_'+df)||'{}');
-    const aOk=(liveInfo['Arthur']||0)>=totalD||persisted['Arthur'];
-    const bOk=(liveInfo['Alice']||0)>=totalD||persisted['Alice'];
+    const aOk=(liveInfo['Arthur']||0)>=totalDoses('Arthur')||persisted['Arthur'];
+    const bOk=(liveInfo['Alice']||0)>=totalDoses('Alice')||persisted['Alice'];
     const cell=document.createElement('div');
     const isHj=d===now.getDate()&&_calMes===now.getMonth()&&_calAno===now.getFullYear();
     cell.className='cal-day'+(isHj?' hoje':'');
@@ -2547,15 +2573,15 @@ function atualizarTendencia(){
     for(let i=0;i<7;i++){
       const d=new Date(now);d.setDate(d.getDate()-offset*7-i);
       const df=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
-      n+=dados.filter(r=>r.data===df&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
+      n+=contarDosesDia(dados,df);
     }
     return Math.min(100,Math.round(n/espSem*100));
   }
 
-  // Descobrir em qual semana do mês estamos (1ª, 2ª, 3ª, 4ª, 5ª)
-  const diaDoMes=now.getDate();
-  const numSemana=Math.ceil(diaDoMes/7); // 1–5
-  const totalSemanasDoMes=Math.ceil(new Date(now.getFullYear(),now.getMonth()+1,0).getDate()/7);
+  // Semana do mês usando dia 1 como âncora (igual ao calendário visual)
+  const inicio1=new Date(now.getFullYear(),now.getMonth(),1);
+  const numSemana=Math.ceil((now.getDate()+inicio1.getDay())/7); // 1–5, alinhado ao calendário
+  const totalSemanasDoMes=Math.ceil((new Date(now.getFullYear(),now.getMonth()+1,0).getDate()+inicio1.getDay())/7);
 
   const pctAtual=pctSemana(0);
   const pctAnterior=pctSemana(1);
@@ -3003,7 +3029,7 @@ function atualizarDashboardExtra(){
   const riskWrap=document.getElementById('streak-risk-wrap');
   if(riskWrap){
     const streak=calcStreak();const dHj=fmtDate(now);const CRIANCAS=getCriancas();
-    const dHjFeitas=dados.filter(r=>r.data===dHj).length;const totalHj=totalDoses()*CRIANCAS.length;
+    const dHjFeitas=contarDosesDia(dados,dHj);const totalHj=totalDosesDiario();
     const risco=streak>0&&dHjFeitas<totalHj;
     if(risco){const faltam=totalHj-dHjFeitas;riskWrap.innerHTML=`<div class="streak-risk"><div class="sr-icon">⚡</div><div><div class="sr-txt">Sequência em risco! 🔥${streak} dias</div><div class="sr-sub">Falta${faltam>1?'m':''} ${faltam} dose${faltam>1?'s':''} para hoje</div></div></div>`;}
     else riskWrap.innerHTML='';
@@ -3011,7 +3037,10 @@ function atualizarDashboardExtra(){
   const grid=document.getElementById('mes-resumo-grid');if(!grid)return;
   const CRIANCAS=getCriancas();const totalDiario=CRIANCAS.reduce((s,c)=>s+totalDoses(c),0);
   let diasCompletos=0;
-  for(let d=1;d<=diasP;d++){const df=String(d).padStart(2,'0')+'/'+String(mes+1).padStart(2,'0')+'/'+ano;if(dados.filter(r=>r.data===df).length>=totalDiario)diasCompletos++;}
+  for(let d=1;d<=diasP;d++){
+    const df=String(d).padStart(2,'0')+'/'+String(mes+1).padStart(2,'0')+'/'+ano;
+    if(diaConcluido(dados,df)) diasCompletos++;
+  }
   const dosesMes=dados.filter(r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes;}).length;
   const contPai=dados.filter(r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes&&r.usuario==='pai';}).length;
   const contMae=dados.filter(r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes&&r.usuario==='mae';}).length;
@@ -3026,8 +3055,18 @@ function calcPatterns(){
   const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];const alertas=[];const CRIANCAS=getCriancas();
   CRIANCAS.forEach(nome=>{getMeds(nome).filter(m=>!m.suspenso).forEach(med=>{getPeriodosMed(med).forEach(per=>{
     const porDow={0:0,1:0,2:0,3:0,4:0,5:0,6:0},totPorDow={0:0,1:0,2:0,3:0,4:0,5:0,6:0};
-    dados.forEach(r=>{const d=parseDate(r.data);const dow=d.getDay();totPorDow[dow]++;if(r.nome===nome&&r.remedio===med.remedio&&r.periodo===per)porDow[dow]++;});
-    Object.keys(totPorDow).forEach(dow=>{const totD=CRIANCAS.reduce((s,c)=>s+totalDoses(c),0)||1;const tot=Math.floor(totPorDow[dow]/totD);if(tot>=2){const taxa=tot>0?Math.round(porDow[dow]/tot*100):100;if(taxa<70)alertas.push({nome,med:med.remedio,per,dow:parseInt(dow),taxa,dias_:tot});}});
+    // Contar quantas vezes CADA dia da semana aparece nos dados (oportunidades)
+    const diasUnicos={};
+    dados.forEach(r=>{
+      const d=parseDate(r.data);const dow=d.getDay();
+      if(!diasUnicos[dow]) diasUnicos[dow]=new Set();
+      diasUnicos[dow].add(r.data);
+      if(r.nome===nome&&r.remedio===med.remedio&&r.periodo===per) porDow[dow]++;
+    });
+    Object.keys(diasUnicos).forEach(dow=>{
+      const tot=diasUnicos[dow].size; // número de vezes que esse dia-da-semana apareceu
+      if(tot>=2){const taxa=Math.round((porDow[dow]||0)/tot*100);if(taxa<70)alertas.push({nome,med:med.remedio,per,dow:parseInt(dow),taxa,dias_:tot});}
+    });
   });});});
   if(!alertas.length){wrap.innerHTML='<div style="color:var(--muted);font-size:.8rem;text-align:center;padding:14px">✅ Nenhum padrão de falha. Continue assim!</div>';return;}
   wrap.innerHTML=alertas.sort((a,b)=>a.taxa-b.taxa).slice(0,6).map(p=>'<div class="pattern-item"><div class="pat-icon">'+(p.taxa<40?'🚨':p.taxa<60?'⚠️':'📊')+'</div><div class="pat-body"><div class="pat-title">'+p.nome+' · '+p.med+' ('+(p.per==='noite'?'noite':'manhã')+') nas '+dias[p.dow]+'s</div><div class="pat-desc">Em '+p.dias_+' '+dias[p.dow]+(p.dias_>1?'s':'')+' registradas, aplicado em apenas <strong>'+p.taxa+'%</strong> das vezes.</div><span class="pat-miss">'+(100-p.taxa)+'% de falha</span></div></div>').join('');
@@ -3508,11 +3547,10 @@ function atualizarSemanaResumo(){
     const df=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
     const isHoje=i===0;
     const isFuturo=false; // todos os dias já passaram ou são hoje
-    const dosesFeitas=dados.filter(r=>r.data===df&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
+    const dosesFeitas=contarDosesDia(dados,df);
     const naoTomouList=dados.filter(r=>r.data===df&&r.nota&&r.nota.startsWith('NAO_TOMOU'));
-    // Verificar se o dia é hoje e ainda não passou o horário noturno
     const horaAtual=now.getHours();
-    const diaCompleto= isHoje?(horaAtual>=22?dosesFeitas>=totalDiario:false):dosesFeitas>=totalDiario;
+    const diaCompleto=isHoje?(horaAtual>=22?dosesFeitas>=totalDiario:false):diaConcluido(dados,df);
     const diaAguardando=isHoje&&!diaCompleto;
     let status,icon,cor,detail='';
     if(diaAguardando&&dosesFeitas===0){
@@ -3703,7 +3741,7 @@ function abrirRelatorio(){
   fecharMenus();
   const meds=getMedsNomes();
   const lista=document.getElementById('rel-med-lista');
-  if(lista){lista.innerHTML=meds.map((m,i)=>'<div class="rel-med-card'+(i===0?' sel':'')+'" onclick="selRelMed(this,\''+m.nome+'\')" ><span class="rmc-icon">'+m.icon+'</span><div><div class="rmc-nome">'+m.nome+'</div><div class="rmc-per">'+m.periodos.map(p=>p==='manha'?'☀️':'🌙').join('')+'</div></div></div>').join('');_relMed=meds[0]?.nome||null;}
+  if(lista){lista.innerHTML=meds.map((m,i)=>'<div class="rel-med-card'+(i===0?' sel':'')+'" onclick="selRelMed(this,\''+m.nome+'\')" ><span class="rmc-icon">'+m.icon+'</span><div><div class="rmc-nome">'+m.nome+'</div><div class="rmc-per">'+getPeriodosMed(getMedCfg(getCriancas()[0]||'Arthur',m.nome)||{}).map(p=>PERIODO_ICON[p]||'💊').join('')+'</div></div></div>').join('');_relMed=meds[0]?.nome||null;}
   _relPeriodo=30;_relCrianca='Ambos';
   ['30','60','90'].forEach(p=>document.getElementById('rel-p-'+p)?.classList.toggle('on',p==='30'));
   ['Ambos','Arthur','Alice'].forEach(c=>document.getElementById('rel-c-'+c)?.classList.toggle('on',c==='Ambos'));
@@ -3718,7 +3756,7 @@ function atualizarRelPreview(){
   const dados=getHist();const now=new Date();const inicio=new Date(now);inicio.setDate(inicio.getDate()-_relPeriodo);
   const fil=dados.filter(r=>{const d=parseDate(r.data);return r.remedio===_relMed&&d>=inicio&&d<=now&&(_relCrianca==='Ambos'||r.nome===_relCrianca);});
   const med=getMedsNomes().find(m=>m.nome===_relMed);const criancas=_relCrianca==='Ambos'?getCriancas().length:1;
-  const criancasList=_relCrianca==='Ambos'?getCriancas():[_relCrianca];const totalEsp=criancasList.reduce((s,c)=>{const mc=getMedCfg(c,_relMed||'');return s+(mc?mc.periodos.length*_relPeriodo:0);},0)||_relPeriodo;const pct=totalEsp>0?Math.round(fil.length/totalEsp*100):0;
+  const criancasList=_relCrianca==='Ambos'?getCriancas():[_relCrianca];const totalEsp=criancasList.reduce((s,c)=>{const mc=getMedCfg(c,_relMed||'');return s+(mc?getPeriodosMed(mc).length*_relPeriodo:0);},0)||_relPeriodo;const pct=totalEsp>0?Math.round(fil.length/totalEsp*100):0;
   prev.innerHTML='<div style="display:flex;gap:16px;flex-wrap:wrap">'
     +'<div><span style="font-family:\'Nunito\',sans-serif;font-size:1.4rem;font-weight:900;color:var(--ind)">'+pct+'%</span><br><span style="font-size:.7rem;color:var(--muted)">adesão</span></div>'
     +'<div><span style="font-family:\'Nunito\',sans-serif;font-size:1.4rem;font-weight:900;color:var(--green)">'+fil.length+'</span><br><span style="font-size:.7rem;color:var(--muted)">tomadas</span></div>'
