@@ -2145,8 +2145,19 @@ function getPeriodosMed(med){
   const pn=getPeriodoFromHora(med.horaNoite);
   if(pm&&!ps.includes(pm)) ps.push(pm);
   if(pn&&pn!==pm&&!ps.includes(pn)) ps.push(pn);
-  return ps.length?ps:['manha']; // fallback
+  return ps.length?ps:['manha'];
 }
+// Retorna o horário do remédio para um dado período (única fonte de verdade)
+function getMedHorario(med,periodo){
+  if(!med) return null;
+  for(const h of [med.horaManha,med.horaNoite]){
+    if(h&&getPeriodoFromHora(h)===periodo) return h;
+  }
+  return null;
+}
+// Ícone de período
+const PERIODO_ICON={'manha':'☀️','tarde':'🌤️','noite':'🌙'};
+const PERIODO_LABEL={'manha':'manhã','tarde':'tarde','noite':'noite'};
 function totalDoses(crianca){
   const criancas=getCriancas();
   const c=crianca||criancas[0]||'Arthur';
@@ -2172,6 +2183,14 @@ function setEventos(e){localStorage.setItem('rm_eventos',JSON.stringify(e));}
 
 function hoje(){return new Date().toLocaleDateString('pt-BR');}
 function hojeISO(){return new Date().toISOString().split('T')[0];}
+// Normaliza qualquer registro para obter dataISO (yyyy-mm-dd)
+function normalizarDataISO(r){
+  if(r.dataISO) return r.dataISO;
+  if(r.data){const p=r.data.split('/');if(p.length===3)return p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');}
+  return '';
+}
+// Obter ícone de um remédio pelo nome
+function getIconRemedio(nome){return (getMedsNomes().find(m=>m.nome===nome)||{}).icon||'💊';}
 function parseDate(s){const p=s.split('/');return new Date(+p[2],+p[1]-1,+p[0]);}
 function fmtDate(d){return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();}
 function horaToMin(s){if(!s)return null;const[h,m]=s.split(':').map(Number);return h*60+m;}
@@ -2305,22 +2324,14 @@ function renderCards(){
       const reg=!suspenso&&dados.find(r=>r.data===dHj&&r.nome===nome&&r.remedio===med.remedio&&r.periodo===per);
       const done=!!reg;
       // Horário específico desta criança (já é individual no novo modelo)
-      // Hora alvo = o horário do período atual para este remédio
-      const horaAlvo=(()=>{
-        const hm=med.horaManha,hn=med.horaNoite;
-        const pm=getPeriodoFromHora(hm),pn=getPeriodoFromHora(hn);
-        if(pm===per) return hm;
-        if(pn===per) return hn;
-        return hm||hn||''; // fallback
-      })();
+      const horaAlvo=getMedHorario(med,per)||'';
       let timeStatus='';
       if(!suspenso){
         if(done&&horaAlvo){const alvoMin=horaToMin(horaAlvo);const[rh,rm]=reg.hora.split(':').map(Number);const diff=rh*60+rm-alvoMin;if(diff<=15)timeStatus='<span class="on-time">✓ no horário</span>';else if(diff<=60)timeStatus='<span class="late">⚠️ '+diff+'min atrasado</span>';else timeStatus='<span class="late">⚠️ '+Math.round(diff/60)+'h atrasado</span>';}
         else if(!done&&horaAlvo&&nowMin()>horaToMin(horaAlvo)+30)timeStatus='<span class="late">⚠️ passou das '+horaAlvo+'</span>';
         else if(!done&&horaAlvo)timeStatus='<span style="color:var(--muted)">⏰ '+horaAlvo+'</span>';
       }
-      const PMAP={'manha':'manhã','tarde':'tarde','noite':'noite'};
-      const badge=getPeriodosMed(med).length>1?'<span class="med-badge b'+cls+'">'+(PMAP[per]||per)+'</span>':'';
+      const badge=getPeriodosMed(med).length>1?'<span class="med-badge b'+cls+'">'+(PERIODO_LABEL[per]||per)+'</span>':'';
       const susBadge=suspenso?'<span class="sus-badge">⛔ suspenso</span>':'';
       const item=document.createElement('div');item.className='med-item'+(done&&!suspenso?' d'+cls:'')+(suspenso?' suspenso':'');
       item.innerHTML='<div class="med-main"><div class="med-left"><span class="med-icon">'+med.icon+'</span><div><div class="med-nome">'+med.remedio+badge+susBadge+'</div><div class="med-meta">'+(suspenso?'suspenso':done?'✓ '+reg.hora+' — '+(USERS[reg.usuario]?.nome||''):'pendente')+' '+timeStatus+'</div></div></div>'
@@ -2438,11 +2449,16 @@ const TIPO_CLS={consulta:'ev-consulta',retorno:'ev-retorno',exame:'ev-exame',vac
 function mudaMes(d){_calMes+=d;if(_calMes<0){_calMes=11;_calAno--;}if(_calMes>11){_calMes=0;_calAno++;}gerarCal();}
 function gerarCal(){
   const dados=getHist();const mapa={};
-  dados.forEach(r=>{if(!mapa[r.data])mapa[r.data]={};const CRIANCAS=getCriancas();CRIANCAS.forEach(n=>{if(!mapa[r.data][n])mapa[r.data][n]=0;});mapa[r.data][r.nome]=(mapa[r.data][r.nome]||0)+1;});
-  const totalD=totalDoses();const CRIANCAS=getCriancas();
+  const CRIANCAS=getCriancas();
+  dados.forEach(r=>{
+    const dk=r.data||'';
+    if(!mapa[dk])mapa[dk]={};
+    mapa[dk][r.nome]=(mapa[dk][r.nome]||0)+1;
+  });
+  const totalD=CRIANCAS.reduce((s,c)=>s+totalDoses(c),0);
   Object.keys(mapa).forEach(data=>{
     const info=mapa[data];const key='rm_cal_done_'+data;const atual=JSON.parse(localStorage.getItem(key)||'{}');
-    CRIANCAS.forEach(n=>{if((info[n]||0)>=totalD)atual[n]=true;});
+    CRIANCAS.forEach(n=>{if((info[n]||0)>=totalDoses(n))atual[n]=true;});
     localStorage.setItem(key,JSON.stringify(atual));
   });
   const el=document.getElementById('cal-mes-txt');if(el)el.textContent=MESES[_calMes]+' '+_calAno;
@@ -2486,7 +2502,7 @@ function abrirDiaCal(df,isoKey){
         +'<div class="ev-detalhe" style="margin-top:4px">'+(e.hora?'<span>🕐 '+e.hora+'</span>':'')+(e.local?'<span>📍 '+e.local+'</span>':'')+'<span>'+(e.quem==='Ambos'?'👫 Ambos':e.quem==='Arthur'?'🧒 Arthur':'👧 Alice')+'</span></div></div>'
         +'<button class="ev-btn" onclick="abrirEditEvento(\''+e.id+'\');fecharMo(\'mo-obs\')">✏️</button></div></div>').join('');
   }
-  const dados=getHist();const dosesHoje=dados.filter(r=>r.data===df);
+  const dados=getHist();const dosesHoje=dados.filter(r=>r.data===df||normalizarDataISO(r)===isoKey);
   let histHtml='';
   if(dosesHoje.length){
     const CRIANCAS=getCriancas();
@@ -2496,7 +2512,7 @@ function abrirDiaCal(df,isoKey){
       const cfg=getCriancaConfig(nome);
       histHtml+=`<div style="font-size:.72rem;font-weight:700;color:${cfg.cor};margin:8px 0 4px">${cfg.emoji} ${nome}</div>`;
       dCri.forEach(r=>{
-        const icon=(meds.find(m=>m.nome===r.remedio)||{}).icon||'💊';
+        const icon=getIconRemedio(r.remedio);
         const per=({'manha':'☀️ manhã','tarde':'🌤️ tarde','noite':'🌙 noite'}[r.periodo]||r.periodo);
         const who=(USERS[r.usuario]||{}).nome||'?';
         histHtml+=`<div class="cal-dose-row"><span class="cal-dose-icon">${icon}</span><div class="cal-dose-body"><div class="cal-dose-nome">${r.remedio} <span style="opacity:.6;font-size:.65rem">${per}</span></div><div class="cal-dose-meta">✓ ${r.hora} — por ${who}</div>${r.nota?'<div class="cal-dose-nota">'+r.nota+'</div>':''}</div></div>`;
@@ -2956,14 +2972,14 @@ function atualizarGrafico(){
 let pizzaInst=null;
 function atualizarPizza(){
   const dados=window._fbHist||cacheGet('hist')||[];
-  // meds por criança abaixo
   const ctx=document.getElementById('grafico-pizza')?.getContext('2d');if(!ctx)return;
   if(pizzaInst)pizzaInst.destroy();
-  if(!dados.length||!meds.length){pizzaInst=null;return;}
+  const medsUnicos=getMedsNomes();
+  if(!dados.length||!medsUnicos.length){pizzaInst=null;return;}
   const now=new Date();const CRIANCAS=getCriancas();
   const paleta=['#3B82F6','#EC4899','#10B981','#F59E0B','#8B5CF6','#EF4444','#06B6D4'];
   const labels=[],values=[],colors=[];
-  getMedsNomes().forEach((med,i)=>{
+  medsUnicos.forEach((med,i)=>{
     let totalEsp=0,tomadas=0;
     CRIANCAS.forEach(nome=>{
       const mc=getMedCfg(nome,med.nome);
@@ -2993,7 +3009,7 @@ function atualizarDashboardExtra(){
     else riskWrap.innerHTML='';
   }
   const grid=document.getElementById('mes-resumo-grid');if(!grid)return;
-  const CRIANCAS=getCriancas();const totalDiario=totalDoses()*CRIANCAS.length;
+  const CRIANCAS=getCriancas();const totalDiario=CRIANCAS.reduce((s,c)=>s+totalDoses(c),0);
   let diasCompletos=0;
   for(let d=1;d<=diasP;d++){const df=String(d).padStart(2,'0')+'/'+String(mes+1).padStart(2,'0')+'/'+ano;if(dados.filter(r=>r.data===df).length>=totalDiario)diasCompletos++;}
   const dosesMes=dados.filter(r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes;}).length;
@@ -3010,8 +3026,8 @@ function calcPatterns(){
   const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];const alertas=[];const CRIANCAS=getCriancas();
   CRIANCAS.forEach(nome=>{getMeds(nome).filter(m=>!m.suspenso).forEach(med=>{getPeriodosMed(med).forEach(per=>{
     const porDow={0:0,1:0,2:0,3:0,4:0,5:0,6:0},totPorDow={0:0,1:0,2:0,3:0,4:0,5:0,6:0};
-    dados.forEach(r=>{const d=parseDate(r.data);const dow=d.getDay();totPorDow[dow]++;if(r.nome===nome&&r.remedio===med.nome&&r.periodo===per)porDow[dow]++;});
-    Object.keys(totPorDow).forEach(dow=>{const tot=Math.floor(totPorDow[dow]/totalDoses()/CRIANCAS.length);if(tot>=2){const taxa=tot>0?Math.round(porDow[dow]/tot*100):100;if(taxa<70)alertas.push({nome,med:med.remedio,per,dow:parseInt(dow),taxa,dias_:tot});}});
+    dados.forEach(r=>{const d=parseDate(r.data);const dow=d.getDay();totPorDow[dow]++;if(r.nome===nome&&r.remedio===med.remedio&&r.periodo===per)porDow[dow]++;});
+    Object.keys(totPorDow).forEach(dow=>{const totD=CRIANCAS.reduce((s,c)=>s+totalDoses(c),0)||1;const tot=Math.floor(totPorDow[dow]/totD);if(tot>=2){const taxa=tot>0?Math.round(porDow[dow]/tot*100):100;if(taxa<70)alertas.push({nome,med:med.remedio,per,dow:parseInt(dow),taxa,dias_:tot});}});
   });});});
   if(!alertas.length){wrap.innerHTML='<div style="color:var(--muted);font-size:.8rem;text-align:center;padding:14px">✅ Nenhum padrão de falha. Continue assim!</div>';return;}
   wrap.innerHTML=alertas.sort((a,b)=>a.taxa-b.taxa).slice(0,6).map(p=>'<div class="pattern-item"><div class="pat-icon">'+(p.taxa<40?'🚨':p.taxa<60?'⚠️':'📊')+'</div><div class="pat-body"><div class="pat-title">'+p.nome+' · '+p.med+' ('+(p.per==='noite'?'noite':'manhã')+') nas '+dias[p.dow]+'s</div><div class="pat-desc">Em '+p.dias_+' '+dias[p.dow]+(p.dias_>1?'s':'')+' registradas, aplicado em apenas <strong>'+p.taxa+'%</strong> das vezes.</div><span class="pat-miss">'+(100-p.taxa)+'% de falha</span></div></div>').join('');
@@ -3603,7 +3619,7 @@ function renderHistorico(){
   if(!datas.length){div.innerHTML='<p style="color:var(--muted);font-size:.8rem;text-align:center;padding:14px">Sem registros neste período.</p>';return;}
   div.innerHTML=datas.map(d=>{
     const pills=ag[d].map(r=>{
-      const icon=(getMedsNomes().find(m=>m.nome===r.remedio)||{}).icon||'💊';
+      const icon=getIconRemedio(r.remedio);
       const per=({'manha':'☀️','tarde':'🌤️','noite':'🌙'}[r.periodo]||'💊');const u=USERS[r.usuario];const nota=r.nota?' 💬':'';
       return '<span class="hpill h'+(r.nome===getCriancas()[0]?'a':'b')+'" title="'+(r.nota||'')+'">'+icon+' '+r.remedio+' '+per+' '+(u?.emoji||'')+nota+'</span>';
     }).join('');
@@ -3661,7 +3677,7 @@ function expPDF(){
   const ag={};dadosMes.forEach(r=>{if(!ag[r.data])ag[r.data]=[];ag[r.data].push(r);});
   const datas=Object.keys(ag).sort((a,b)=>parseDate(a)-parseDate(b));
   const histHtml=datas.map(d=>{
-    const items=ag[d].map(r=>{const icon=(getMedsNomes().find(m=>m.nome===r.remedio)||{}).icon||'💊';const per=({'manha':'☀️','tarde':'🌤️','noite':'🌙'}[r.periodo]||'💊');const who=(USERS[r.usuario]||{}).nome||'?';const nota=r.nota?' <em>('+r.nota+')</em>':'';return '<li>'+icon+' '+r.remedio+' '+per+' — '+r.hora+' — '+who+nota+'</li>';}).join('');
+    const items=ag[d].map(r=>{const icon=getIconRemedio(r.remedio);const per=({'manha':'☀️','tarde':'🌤️','noite':'🌙'}[r.periodo]||'💊');const who=(USERS[r.usuario]||{}).nome||'?';const nota=r.nota?' <em>('+r.nota+')</em>':'';return '<li>'+icon+' '+r.remedio+' '+per+' — '+r.hora+' — '+who+nota+'</li>';}).join('');
     return '<div style="margin-bottom:10px"><strong>📅 '+d+'</strong><ul style="margin-top:4px;padding-left:18px;line-height:1.9">'+items+'</ul></div>';
   }).join('');
   const evsHtml=evsMes.length?evsMes.map(e=>{const[y,m,d]=e.dataISO.split('-');return '<li>'+((TIPO_LABELS||{})[e.tipo]||e.tipo)+' — <strong>'+e.titulo+'</strong> · '+d+'/'+m+'/'+y+(e.hora?' às '+e.hora:'')+' · '+(e.local||'')+'</li>';}).join(''):'<li>Nenhum evento</li>';
@@ -3719,9 +3735,9 @@ function gerarRelatorioMedico(){
   const ag={};filtrado.forEach(r=>{if(!ag[r.data])ag[r.data]=[];ag[r.data].push(r);});naotomou.forEach(l=>{if(!ag[l.data])ag[l.data]=[];ag[l.data].push({...l,_naotomou:true});});
   const datas=Object.keys(ag).sort((a,b)=>parseDate(a)-parseDate(b));
   const histHtml=datas.map(d=>{const items=ag[d].map(r=>{if(r._naotomou)return'<li style="color:#EF4444">🚫 '+r.acao+'</li>';const per=({'manha':'☀️','tarde':'🌤️','noite':'🌙'}[r.periodo]||'💊');const who=(USERS[r.usuario]||{}).nome||'?';return'<li>'+r.nome+' — '+per+' às '+r.hora+' — '+who+(r.nota?' ('+r.nota+')':'')+'</li>';}).join('');return'<div style="margin-bottom:10px"><strong>📅 '+d+'</strong><ul style="margin-top:4px;padding-left:16px;line-height:1.9">'+items+'</ul></div>';}).join('');
-  const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório — '+med.nome+'</title>'
+  const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório — '+(med.nome||_relMed)+'</title>'
     +'<style>body{font-family:Arial,sans-serif;padding:32px;color:#111;max-width:700px;margin:auto;font-size:13px}h1{color:#3B82F6;font-size:18px}h2{color:#374151;font-size:14px;margin:18px 0 6px;border-bottom:2px solid #E5E7EB;padding-bottom:4px}.kpi{display:inline-block;text-align:center;padding:10px 16px;border-radius:10px;border:2px solid #E5E7EB;margin:0 8px 8px 0}.kn{font-size:24px;font-weight:900;display:block}ul{line-height:2}@media print{body{padding:16px}}</style></head><body>'
-    +'<h1>'+med.icon+' Relatório — '+med.nome+'</h1>'
+    +'<h1>'+(med.icon||'💊')+' Relatório — '+(med.nome||_relMed)+'</h1>'
     +'<p style="color:#6B7280;margin-bottom:12px">Período: <strong>'+inicio.toLocaleDateString('pt-BR')+'</strong> a <strong>'+now.toLocaleDateString('pt-BR')+'</strong> ('+_relPeriodo+' dias) · Paciente: <strong>'+(_relCrianca==='Ambos'?'Arthur e Alice':_relCrianca)+'</strong></p>'
     +'<h2>📊 Resumo</h2><div style="margin-bottom:14px">'
     +'<div class="kpi"><span class="kn" style="color:#6366F1">'+pct+'%</span><span style="font-size:11px;color:#6B7280">adesão</span></div>'
