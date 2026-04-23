@@ -2193,21 +2193,55 @@ function getIconRemedio(nome){return (getMedsNomes().find(m=>m.nome===nome)||{})
 
 // ── Fonte única para cálculo de dia completo ─────────────
 // Conta doses válidas (não NAO_TOMOU) de um dia em dd/mm/yyyy
+// ══ FONTE ÚNICA DE VERDADE ══════════════════════════════
+// getResumoDia: todos os módulos derivam daqui — calendário,
+// semana, mês, tendência, streak, padrões.
+
 function contarDosesDia(dados,df){
   return dados.filter(r=>r.data===df&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
 }
-// Total de doses esperadas por dia (todas crianças, remédios ativos)
 function totalDosesDiario(){
   return getCriancas().reduce((s,c)=>s+totalDoses(c),0);
 }
-// Verifica se um dia está 100% completo
 function diaConcluido(dados,df){
   return contarDosesDia(dados,df)>=totalDosesDiario();
 }
-// Verifica se um dia específico de uma criança está completo
 function diaCrianaConcluido(dados,df,crianca){
   const feitas=dados.filter(r=>r.data===df&&r.nome===crianca&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
   return feitas>=totalDoses(crianca);
+}
+// Resumo completo de um dia — todas as funções de análise usam isso
+function getResumoDia(dados,df){
+  const esperado=totalDosesDiario();
+  const tomadas=contarDosesDia(dados,df);
+  const naoTomou=dados.filter(r=>r.data===df&&r.nota&&r.nota.startsWith('NAO_TOMOU')).length;
+  const registros=dados.filter(r=>r.data===df);
+  return{
+    df,                                   // "dd/mm/yyyy"
+    esperado,                             // total de doses esperadas
+    tomadas,                              // doses válidas (sem NAO_TOMOU)
+    naoTomou,                             // doses marcadas como não tomadas
+    registros,                            // todos os registros do dia
+    concluido: tomadas>=esperado,         // true = dia 100%
+    temDados:  registros.length>0,        // true = algum dado existe
+    pct: esperado>0?Math.round(tomadas/esperado*100):0
+  };
+}
+// Resumo de um dia para UMA criança específica
+function getResumoDiaCrianca(dados,df,crianca){
+  const esperado=totalDoses(crianca);
+  const tomadas=dados.filter(r=>r.data===df&&r.nome===crianca&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
+  return{df,crianca,esperado,tomadas,concluido:tomadas>=esperado,pct:esperado>0?Math.round(tomadas/esperado*100):0};
+}
+// Converte semana do mês alinhada ao calendário visual
+function getSemanaDoMes(data){
+  const inicio=new Date(data.getFullYear(),data.getMonth(),1);
+  return Math.ceil((data.getDate()+inicio.getDay())/7);
+}
+function getTotalSemanasDoMes(data){
+  const inicio=new Date(data.getFullYear(),data.getMonth(),1);
+  const ultDia=new Date(data.getFullYear(),data.getMonth()+1,0).getDate();
+  return Math.ceil((ultDia+inicio.getDay())/7);
 }
 function parseDate(s){const p=s.split('/');return new Date(+p[2],+p[1]-1,+p[0]);}
 function fmtDate(d){return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();}
@@ -2443,11 +2477,9 @@ function verificarPendencias(){
 }
 function calcStreak(){
   const dados=getHist();if(!dados.length)return 0;
-  const total=totalDosesDiario();
   let s=0;const d=new Date();
-  // Se hoje não está completo, começa a contar de ontem
-  if(contarDosesDia(dados,fmtDate(d))<total) d.setDate(d.getDate()-1);
-  while(true){const k=fmtDate(d);if(contarDosesDia(dados,k)>=total){s++;d.setDate(d.getDate()-1);}else break;}
+  if(!getResumoDia(dados,fmtDate(d)).concluido) d.setDate(d.getDate()-1);
+  while(true){const k=fmtDate(d);if(getResumoDia(dados,k).concluido){s++;d.setDate(d.getDate()-1);}else break;}
   return s;
 }
 function atualizarStreak(){const s=calcStreak();const sv=document.getElementById('sv-streak');const ss=document.getElementById('ss-streak');if(sv)sv.textContent=s;if(ss)ss.textContent=s===0?'comece hoje':s===1?'dia seguido':'dias seguidos';}
@@ -2482,9 +2514,8 @@ function gerarCal(){
     mapa[dk][r.nome]=(mapa[dk][r.nome]||0)+1;
   });
   Object.keys(mapa).forEach(data=>{
-    const info=mapa[data];const key='rm_cal_done_'+data;const atual=JSON.parse(localStorage.getItem(key)||'{}');
-    // Usar totalDoses(crianca) como limiar individual por criança
-    CRIANCAS.forEach(n=>{if((info[n]||0)>=totalDoses(n))atual[n]=true;});
+    const key='rm_cal_done_'+data;const atual=JSON.parse(localStorage.getItem(key)||'{}');
+    CRIANCAS.forEach(n=>{if(getResumoDiaCrianca(dados,data,n).concluido)atual[n]=true;});
     localStorage.setItem(key,JSON.stringify(atual));
   });
   const el=document.getElementById('cal-mes-txt');if(el)el.textContent=MESES[_calMes]+' '+_calAno;
@@ -2495,8 +2526,8 @@ function gerarCal(){
     const df=String(d).padStart(2,'0')+'/'+String(_calMes+1).padStart(2,'0')+'/'+_calAno;
     const isoKey=_calAno+'-'+String(_calMes+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
     const liveInfo=mapa[df]||{};const persisted=JSON.parse(localStorage.getItem('rm_cal_done_'+df)||'{}');
-    const aOk=(liveInfo['Arthur']||0)>=totalDoses('Arthur')||persisted['Arthur'];
-    const bOk=(liveInfo['Alice']||0)>=totalDoses('Alice')||persisted['Alice'];
+    const aOk=getResumoDiaCrianca(dados,df,'Arthur').concluido||persisted['Arthur'];
+    const bOk=getResumoDiaCrianca(dados,df,'Alice').concluido||persisted['Alice'];
     const cell=document.createElement('div');
     const isHj=d===now.getDate()&&_calMes===now.getMonth()&&_calAno===now.getFullYear();
     cell.className='cal-day'+(isHj?' hoje':'');
@@ -2569,19 +2600,20 @@ function atualizarTendencia(){
 
   // Calcular % de adesão para qualquer semana (offset=0 = atual)
   function pctSemana(offset){
-    let n=0;
+    // Usa getResumoDia para cada dia — só conta dias com dados
+    let tomadas=0,esperado=0;
     for(let i=0;i<7;i++){
       const d=new Date(now);d.setDate(d.getDate()-offset*7-i);
       const df=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
-      n+=contarDosesDia(dados,df);
+      const res=getResumoDia(dados,df);
+      if(res.temDados){tomadas+=res.tomadas;esperado+=res.esperado;}
     }
-    return Math.min(100,Math.round(n/espSem*100));
+    return esperado>0?Math.min(100,Math.round(tomadas/esperado*100)):0;
   }
 
-  // Semana do mês usando dia 1 como âncora (igual ao calendário visual)
-  const inicio1=new Date(now.getFullYear(),now.getMonth(),1);
-  const numSemana=Math.ceil((now.getDate()+inicio1.getDay())/7); // 1–5, alinhado ao calendário
-  const totalSemanasDoMes=Math.ceil((new Date(now.getFullYear(),now.getMonth()+1,0).getDate()+inicio1.getDay())/7);
+  // Semanas do mês alinhadas ao calendário visual — usa getSemanaDoMes()
+  const numSemana=getSemanaDoMes(now);
+  const totalSemanasDoMes=getTotalSemanasDoMes(now);
 
   const pctAtual=pctSemana(0);
   const pctAnterior=pctSemana(1);
@@ -2659,10 +2691,10 @@ function atualizarRecordes(){
   const totalD=CRIANCAS.reduce((s,c)=>s+getMeds(c).filter(m=>!m.suspenso).reduce((ss,m)=>ss+getPeriodosMed(m).length,0),0);
 
   // Maior sequência histórica
-  const pd={};dados.forEach(r=>{pd[r.data]=(pd[r.data]||0)+1;});
-  const datas=Object.keys(pd).sort((a,b)=>{try{return parseDate(a)-parseDate(b);}catch(e){return 0;}});
+  // Usar getResumoDia para calcular streak histórico
+  const datasUnicas=[...new Set(dados.map(r=>r.data))].sort((a,b)=>{try{return parseDate(a)-parseDate(b);}catch(e){return 0;}});
   let maxStreak=0,cur=0;
-  datas.forEach(d=>{if((pd[d]||0)>=totalD){cur++;maxStreak=Math.max(maxStreak,cur);}else cur=0;});
+  datasUnicas.forEach(df=>{if(getResumoDia(dados,df).concluido){cur++;maxStreak=Math.max(maxStreak,cur);}else cur=0;});
 
   const streakAtual=calcStreak();
   const totalDoses_=dados.filter(r=>!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
@@ -3039,7 +3071,7 @@ function atualizarDashboardExtra(){
   let diasCompletos=0;
   for(let d=1;d<=diasP;d++){
     const df=String(d).padStart(2,'0')+'/'+String(mes+1).padStart(2,'0')+'/'+ano;
-    if(diaConcluido(dados,df)) diasCompletos++;
+    if(getResumoDia(dados,df).concluido) diasCompletos++;
   }
   const dosesMes=dados.filter(r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes;}).length;
   const contPai=dados.filter(r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes&&r.usuario==='pai';}).length;
@@ -3054,18 +3086,29 @@ function calcPatterns(){
   if(dados.length<14){wrap.innerHTML='<div style="color:var(--muted);font-size:.8rem;text-align:center;padding:14px">Dados insuficientes (2 semanas mínimo).</div>';return;}
   const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];const alertas=[];const CRIANCAS=getCriancas();
   CRIANCAS.forEach(nome=>{getMeds(nome).filter(m=>!m.suspenso).forEach(med=>{getPeriodosMed(med).forEach(per=>{
-    const porDow={0:0,1:0,2:0,3:0,4:0,5:0,6:0},totPorDow={0:0,1:0,2:0,3:0,4:0,5:0,6:0};
-    // Contar quantas vezes CADA dia da semana aparece nos dados (oportunidades)
-    const diasUnicos={};
-    dados.forEach(r=>{
-      const d=parseDate(r.data);const dow=d.getDay();
-      if(!diasUnicos[dow]) diasUnicos[dow]=new Set();
-      diasUnicos[dow].add(r.data);
-      if(r.nome===nome&&r.remedio===med.remedio&&r.periodo===per) porDow[dow]++;
+    // Oportunidades: apenas dias em que ESTA criança tinha ALGUM registro
+    // (indica que o app estava sendo usado naquele dia)
+    const diasComRegistroCrianca=new Set(
+      dados.filter(r=>r.nome===nome).map(r=>r.data)
+    );
+    if(diasComRegistroCrianca.size<4) return; // dados insuficientes para este remédio
+    
+    // Agrupar dias por dia da semana
+    const porDow={},totPorDow={};
+    diasComRegistroCrianca.forEach(df=>{
+      const dow=parseDate(df).getDay();
+      totPorDow[dow]=(totPorDow[dow]||0)+1;
+      // Verificar se houve dose deste remédio+período neste dia
+      const tomou=dados.some(r=>r.data===df&&r.nome===nome&&r.remedio===med.remedio&&r.periodo===per&&!(r.nota&&r.nota.startsWith('NAO_TOMOU')));
+      if(tomou) porDow[dow]=(porDow[dow]||0)+1;
     });
-    Object.keys(diasUnicos).forEach(dow=>{
-      const tot=diasUnicos[dow].size; // número de vezes que esse dia-da-semana apareceu
-      if(tot>=2){const taxa=Math.round((porDow[dow]||0)/tot*100);if(taxa<70)alertas.push({nome,med:med.remedio,per,dow:parseInt(dow),taxa,dias_:tot});}
+    
+    Object.keys(totPorDow).forEach(dow=>{
+      const tot=totPorDow[dow];
+      if(tot>=2){
+        const taxa=Math.round((porDow[dow]||0)/tot*100);
+        if(taxa<70) alertas.push({nome,med:med.remedio,per,dow:parseInt(dow),taxa,dias_:tot});
+      }
     });
   });});});
   if(!alertas.length){wrap.innerHTML='<div style="color:var(--muted);font-size:.8rem;text-align:center;padding:14px">✅ Nenhum padrão de falha. Continue assim!</div>';return;}
@@ -3546,11 +3589,11 @@ function atualizarSemanaResumo(){
     const d=new Date(now);d.setDate(d.getDate()-i);
     const df=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
     const isHoje=i===0;
-    const isFuturo=false; // todos os dias já passaram ou são hoje
-    const dosesFeitas=contarDosesDia(dados,df);
+    const res=getResumoDia(dados,df);        // fonte única
+    const dosesFeitas=res.tomadas;
     const naoTomouList=dados.filter(r=>r.data===df&&r.nota&&r.nota.startsWith('NAO_TOMOU'));
     const horaAtual=now.getHours();
-    const diaCompleto=isHoje?(horaAtual>=22?dosesFeitas>=totalDiario:false):diaConcluido(dados,df);
+    const diaCompleto=isHoje?(horaAtual>=22?res.concluido:false):res.concluido;
     const diaAguardando=isHoje&&!diaCompleto;
     let status,icon,cor,detail='';
     if(diaAguardando&&dosesFeitas===0){
