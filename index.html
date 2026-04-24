@@ -1243,16 +1243,19 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
       <div class="field-row">
         <div class="field">
           <label>Período(s)</label>
-          <select id="nm-per">
-            <option value="manha">Só de manhã</option>
-            <option value="tarde">Só à tarde</option>
-            <option value="noite">Só à noite</option>
-            <option value="ambos">Manhã e noite</option>
+          <select id="nm-per" onchange="atualizarCampoHoraNm()">
+            <option value="manha">☀️ Só de manhã</option>
+            <option value="tarde">🌤️ Só à tarde</option>
+            <option value="noite">🌙 Só à noite</option>
+            <option value="ambos">☀️🌙 Manhã e noite</option>
           </select>
         </div>
-        <div class="field"><label>Horário ideal</label><input id="nm-hora" type="time" placeholder="08:00"></div>
+        <div class="field"><label id="nm-hora-label">Horário manhã</label><input id="nm-hora" type="time"></div>
       </div>
-      <div class="field" id="nm-hora-noite-wrap"><label>Horário noite (só se precisar)</label><input id="nm-hora-noite" type="time"></div>
+      <div class="field" id="nm-hora-noite-wrap" style="display:none">
+        <label>Horário noite</label>
+        <input id="nm-hora-noite" type="time">
+      </div>
     </div>
     <div class="lerr" id="nm-err"></div>
     <div class="mbtns">
@@ -1296,7 +1299,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
       <div id="me-horas-ambos">
         <div class="field-row">
           <div class="field"><label>Horário manhã (ambos)</label><input id="me-hora-m" type="time"></div>
-          <div class="field"><label>Horário noite (ambos)</label><input id="me-hora-n" type="time"></div>
+          <div class="field" id="me-hora-n-wrap"><label>Horário noite</label><input id="me-hora-n" type="time"></div>
         </div>
       </div>
     </div>
@@ -2233,6 +2236,14 @@ function getResumoDiaCrianca(dados,df,crianca){
   const tomadas=dados.filter(r=>r.data===df&&r.nome===crianca&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
   return{df,crianca,esperado,tomadas,concluido:tomadas>=esperado,pct:esperado>0?Math.round(tomadas/esperado*100):0};
 }
+// doseEsperada: retorna true se um remédio+criança+período deveria ser aplicado
+// Baseia-se na configuração ATUAL (remédio ativo, não suspenso)
+// Usado como denominador em calcPatterns
+function doseEsperada(crianca,remedio,periodo){
+  const mc=getMedCfg(crianca,remedio);
+  if(!mc||mc.suspenso) return false;
+  return getPeriodosMed(mc).includes(periodo);
+}
 // Converte semana do mês alinhada ao calendário visual
 function getSemanaDoMes(data){
   const inicio=new Date(data.getFullYear(),data.getMonth(),1);
@@ -2515,7 +2526,10 @@ function gerarCal(){
   });
   Object.keys(mapa).forEach(data=>{
     const key='rm_cal_done_'+data;const atual=JSON.parse(localStorage.getItem(key)||'{}');
-    CRIANCAS.forEach(n=>{if(getResumoDiaCrianca(dados,data,n).concluido)atual[n]=true;});
+    CRIANCAS.forEach(n=>{
+      const rc=getResumoDiaCrianca(dados,data,n);
+      if(rc.tomadas>0&&rc.concluido) atual[n]=true;
+    });
     localStorage.setItem(key,JSON.stringify(atual));
   });
   const el=document.getElementById('cal-mes-txt');if(el)el.textContent=MESES[_calMes]+' '+_calAno;
@@ -2526,8 +2540,10 @@ function gerarCal(){
     const df=String(d).padStart(2,'0')+'/'+String(_calMes+1).padStart(2,'0')+'/'+_calAno;
     const isoKey=_calAno+'-'+String(_calMes+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
     const liveInfo=mapa[df]||{};const persisted=JSON.parse(localStorage.getItem('rm_cal_done_'+df)||'{}');
-    const aOk=getResumoDiaCrianca(dados,df,'Arthur').concluido||persisted['Arthur'];
-    const bOk=getResumoDiaCrianca(dados,df,'Alice').concluido||persisted['Alice'];
+    const _rA=getResumoDiaCrianca(dados,df,'Arthur');
+    const _rB=getResumoDiaCrianca(dados,df,'Alice');
+    const aOk=(_rA.tomadas>0&&_rA.concluido)||persisted['Arthur'];
+    const bOk=(_rB.tomadas>0&&_rB.concluido)||persisted['Alice'];
     const cell=document.createElement('div');
     const isHj=d===now.getDate()&&_calMes===now.getMonth()&&_calAno===now.getFullYear();
     cell.className='cal-day'+(isHj?' hoje':'');
@@ -2600,15 +2616,15 @@ function atualizarTendencia(){
 
   // Calcular % de adesão para qualquer semana (offset=0 = atual)
   function pctSemana(offset){
-    // Usa getResumoDia para cada dia — só conta dias com dados
-    let tomadas=0,esperado=0;
+    // Denominador fixo: 7 dias × doses esperadas por dia
+    // Não filtra por temDados — dias sem registro = falha
+    let tomadas=0;
     for(let i=0;i<7;i++){
       const d=new Date(now);d.setDate(d.getDate()-offset*7-i);
       const df=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
-      const res=getResumoDia(dados,df);
-      if(res.temDados){tomadas+=res.tomadas;esperado+=res.esperado;}
+      tomadas+=getResumoDia(dados,df).tomadas;
     }
-    return esperado>0?Math.min(100,Math.round(tomadas/esperado*100)):0;
+    return Math.min(100,Math.round(tomadas/espSem*100));
   }
 
   // Semanas do mês alinhadas ao calendário visual — usa getSemanaDoMes()
@@ -2687,9 +2703,6 @@ function atualizarRecordes(){
     </div>`;
     return;
   }
-  const CRIANCAS=getCriancas();
-  const totalD=CRIANCAS.reduce((s,c)=>s+getMeds(c).filter(m=>!m.suspenso).reduce((ss,m)=>ss+getPeriodosMed(m).length,0),0);
-
   // Maior sequência histórica
   // Usar getResumoDia para calcular streak histórico
   const datasUnicas=[...new Set(dados.map(r=>r.data))].sort((a,b)=>{try{return parseDate(a)-parseDate(b);}catch(e){return 0;}});
@@ -2705,9 +2718,10 @@ function atualizarRecordes(){
   let melhorMes='—',melhorMesVal=0;
   Object.entries(mesesMap).forEach(([k,v])=>{if(v>melhorMesVal){melhorMesVal=v;const[y,m]=k.split('-');melhorMes=(MESES[+m-1]||'?')+'/'+y;}});
 
-  // Adesão geral histórica
-  const diasComDados=Object.keys(pd).length;
-  const diasCompletos=Object.keys(pd).filter(d=>(pd[d]||0)>=totalD).length;
+  // Adesão geral histórica — usa getResumoDia como fonte única
+  const datasParaTaxa=[...new Set(dados.map(r=>r.data))];
+  const diasComDados=datasParaTaxa.length;
+  const diasCompletos=datasParaTaxa.filter(df=>getResumoDia(dados,df).concluido).length;
   const taxaGeral=diasComDados>0?Math.round(diasCompletos/diasComDados*100):0;
 
   // Visual do streak atual com progresso até o recorde
@@ -3061,17 +3075,18 @@ function atualizarDashboardExtra(){
   const riskWrap=document.getElementById('streak-risk-wrap');
   if(riskWrap){
     const streak=calcStreak();const dHj=fmtDate(now);const CRIANCAS=getCriancas();
-    const dHjFeitas=contarDosesDia(dados,dHj);const totalHj=totalDosesDiario();
-    const risco=streak>0&&dHjFeitas<totalHj;
-    if(risco){const faltam=totalHj-dHjFeitas;riskWrap.innerHTML=`<div class="streak-risk"><div class="sr-icon">⚡</div><div><div class="sr-txt">Sequência em risco! 🔥${streak} dias</div><div class="sr-sub">Falta${faltam>1?'m':''} ${faltam} dose${faltam>1?'s':''} para hoje</div></div></div>`;}
+    const resHj=getResumoDia(dados,dHj);
+    const risco=streak>0&&!resHj.concluido;
+    if(risco){const faltam=resHj.esperado-resHj.tomadas;riskWrap.innerHTML=`<div class="streak-risk"><div class="sr-icon">⚡</div><div><div class="sr-txt">Sequência em risco! 🔥${streak} dias</div><div class="sr-sub">Falta${faltam>1?'m':''} ${faltam} dose${faltam>1?'s':''} para hoje</div></div></div>`;}
     else riskWrap.innerHTML='';
   }
   const grid=document.getElementById('mes-resumo-grid');if(!grid)return;
-  const CRIANCAS=getCriancas();const totalDiario=CRIANCAS.reduce((s,c)=>s+totalDoses(c),0);
+  const CRIANCAS=getCriancas();
   let diasCompletos=0;
   for(let d=1;d<=diasP;d++){
     const df=String(d).padStart(2,'0')+'/'+String(mes+1).padStart(2,'0')+'/'+ano;
-    if(getResumoDia(dados,df).concluido) diasCompletos++;
+    const r=getResumoDia(dados,df);
+    if(r.temDados&&r.concluido) diasCompletos++; // só conta dias onde o app foi usado E está completo
   }
   const dosesMes=dados.filter(r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes;}).length;
   const contPai=dados.filter(r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes&&r.usuario==='pai';}).length;
@@ -3086,19 +3101,17 @@ function calcPatterns(){
   if(dados.length<14){wrap.innerHTML='<div style="color:var(--muted);font-size:.8rem;text-align:center;padding:14px">Dados insuficientes (2 semanas mínimo).</div>';return;}
   const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];const alertas=[];const CRIANCAS=getCriancas();
   CRIANCAS.forEach(nome=>{getMeds(nome).filter(m=>!m.suspenso).forEach(med=>{getPeriodosMed(med).forEach(per=>{
-    // Oportunidades: apenas dias em que ESTA criança tinha ALGUM registro
-    // (indica que o app estava sendo usado naquele dia)
-    const diasComRegistroCrianca=new Set(
-      dados.filter(r=>r.nome===nome).map(r=>r.data)
-    );
-    if(diasComRegistroCrianca.size<4) return; // dados insuficientes para este remédio
+    if(!doseEsperada(nome,med.remedio,per)) return;
     
-    // Agrupar dias por dia da semana
+    // Denominador: dias em que o app foi usado para esta criança (qualquer dose registrada)
+    // Numerador: dias em que este remédio+período foi marcado como tomado
+    const diasAppUsado=new Set(dados.filter(r=>r.nome===nome).map(r=>r.data));
+    if(diasAppUsado.size<7) return; // mínimo 7 dias de dados
+    
     const porDow={},totPorDow={};
-    diasComRegistroCrianca.forEach(df=>{
+    diasAppUsado.forEach(df=>{
       const dow=parseDate(df).getDay();
       totPorDow[dow]=(totPorDow[dow]||0)+1;
-      // Verificar se houve dose deste remédio+período neste dia
       const tomou=dados.some(r=>r.data===df&&r.nome===nome&&r.remedio===med.remedio&&r.periodo===per&&!(r.nota&&r.nota.startsWith('NAO_TOMOU')));
       if(tomou) porDow[dow]=(porDow[dow]||0)+1;
     });
@@ -3799,7 +3812,7 @@ function atualizarRelPreview(){
   const dados=getHist();const now=new Date();const inicio=new Date(now);inicio.setDate(inicio.getDate()-_relPeriodo);
   const fil=dados.filter(r=>{const d=parseDate(r.data);return r.remedio===_relMed&&d>=inicio&&d<=now&&(_relCrianca==='Ambos'||r.nome===_relCrianca);});
   const med=getMedsNomes().find(m=>m.nome===_relMed);const criancas=_relCrianca==='Ambos'?getCriancas().length:1;
-  const criancasList=_relCrianca==='Ambos'?getCriancas():[_relCrianca];const totalEsp=criancasList.reduce((s,c)=>{const mc=getMedCfg(c,_relMed||'');return s+(mc?getPeriodosMed(mc).length*_relPeriodo:0);},0)||_relPeriodo;const pct=totalEsp>0?Math.round(fil.length/totalEsp*100):0;
+  const criancasList=_relCrianca==='Ambos'?getCriancas():[_relCrianca];const totalEsp=criancasList.reduce((s,c)=>{const mc=getMedCfg(c,_relMed||'');return s+(mc&&!mc.suspenso?getPeriodosMed(mc).length*_relPeriodo:0);},0)||_relPeriodo;const pct=totalEsp>0?Math.round(fil.length/totalEsp*100):0;
   prev.innerHTML='<div style="display:flex;gap:16px;flex-wrap:wrap">'
     +'<div><span style="font-family:\'Nunito\',sans-serif;font-size:1.4rem;font-weight:900;color:var(--ind)">'+pct+'%</span><br><span style="font-size:.7rem;color:var(--muted)">adesão</span></div>'
     +'<div><span style="font-family:\'Nunito\',sans-serif;font-size:1.4rem;font-weight:900;color:var(--green)">'+fil.length+'</span><br><span style="font-size:.7rem;color:var(--muted)">tomadas</span></div>'
@@ -3865,7 +3878,7 @@ function renderMedsAdmin(){
     let metaHtml=CRIANCAS.map(c=>{
       const mc=getMedCfg(c,nome);if(!mc)return '';
       const cfg=getCriancaConfig(c);
-      return mc.periodos.map(p=>(p==='manha'?'☀️':'🌙')+' '+cfg.emoji+' '+(p==='manha'?mc.horaManha:mc.horaNoite)).join(' ');
+      return getPeriodosMed(mc).map(p=>PERIODO_ICON[p]+' '+cfg.emoji+' '+getMedHorario(mc,p)).join(' ');
     }).filter(Boolean).join(' · ');
     const suspensoAlgum=CRIANCAS.some(c=>{const mc=getMedCfg(c,nome);return mc&&mc.suspenso;});
     return '<div class="med-admin-item'+(suspensoAlgum?' suspenso':'')+'"><div class="mai-left">'
@@ -3889,6 +3902,12 @@ function atualizarCamposHorario(){
     const rFr2=document.getElementById('me-secao-frasco');if(rFr2)rFr2.style.display='block';
     if(secGlobal)secGlobal.style.display='block';
     if(divAmbos)divAmbos.style.display='block';
+    // Mostrar/ocultar campo noite baseado no período selecionado
+    const perVal2=document.getElementById('me-per')?.value||'manha';
+    const noiteWrap=document.getElementById('me-hora-n-wrap');
+    const mLabel=document.getElementById('me-hora-m-lbl');
+    if(noiteWrap) noiteWrap.style.display=(perVal2==='ambos')?'block':'none';
+    if(mLabel) mLabel.textContent=perVal2==='noite'?'Horário noite':perVal2==='tarde'?'Horário tarde':'Horário manhã';
     if(divInd)divInd.style.display='none';
   } else {
     // Modo individual: esconde ícone/nome, mostra só horários da criança
@@ -4000,6 +4019,13 @@ function deletarMed(){
   const CRIANCAS=getCriancas();
   CRIANCAS.forEach(function(c){deletarMedCfg(c,nomeRemedio);});
   fecharMo('mo-med-edit');renderMedsAdmin();atualizarTudo();
+}
+function atualizarCampoHoraNm(){
+  const per=document.getElementById('nm-per')?.value||'manha';
+  const wrap=document.getElementById('nm-hora-noite-wrap');
+  const lbl=document.getElementById('nm-hora-label');
+  if(wrap) wrap.style.display=per==='ambos'?'block':'none';
+  if(lbl) lbl.textContent=per==='noite'?'Horário noite':per==='tarde'?'Horário tarde':'Horário manhã';
 }
 function adicionarMed(){
   const err=document.getElementById('nm-err');const nome=document.getElementById('nm-nome')?.value.trim();
@@ -4200,7 +4226,7 @@ window.abrirTodosEventos=abrirTodosEventos; window.renderTodosEventos=renderTodo
 window.abrirNovoEvento=abrirNovoEvento; window.abrirEditEvento=abrirEditEvento;
 window.salvarEvento=salvarEvento; window.deletarEvento=deletarEvento;
 window.abrirEditMed=abrirEditMed; window.salvarMedEdit=salvarMedEdit;
-window.deletarMed=deletarMed; window.adicionarMed=adicionarMed;
+window.deletarMed=deletarMed; window.adicionarMed=adicionarMed; window.atualizarCampoHoraNm=atualizarCampoHoraNm;
 window.abrirSuspender=abrirSuspender; window.confirmarSuspensao=confirmarSuspensao;
 window.atualizarCamposHorario=atualizarCamposHorario; window.sincronizarQuem=sincronizarQuem;
 window.paStep=paStep; window.paCheckStrength=paCheckStrength; window.paConfirmarSenha=paConfirmarSenha;
