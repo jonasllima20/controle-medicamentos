@@ -1252,10 +1252,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
         </div>
         <div class="field"><label id="nm-hora-label">Horário manhã</label><input id="nm-hora" type="time"></div>
       </div>
-      <div class="field" id="nm-hora-noite-wrap" style="display:none">
-        <label>Horário noite</label>
-        <input id="nm-hora-noite" type="time">
-      </div>
+      <!-- Campo noite removido: apenas 1 horário por remédio, período define turno -->
     </div>
     <div class="lerr" id="nm-err"></div>
     <div class="mbtns">
@@ -1274,36 +1271,35 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
       <div class="field"><label>Ícone</label><input id="me-icon" type="text" maxlength="4"></div>
       <div class="field"><label>Nome</label><input id="me-nome" type="text"></div>
     </div>
-    <!-- Seção global (visível só no modo "Ambos") -->
+    <!-- Seção global (visível no modo "Ambos") -->
     <div id="me-secao-global">
       <div class="field-row">
         <div class="field">
-          <label>Período(s)</label>
-          <select id="me-per">
-            <option value="manha">Só de manhã</option>
-            <option value="tarde">Só à tarde</option>
-            <option value="noite">Só à noite</option>
-            <option value="ambos">Manhã e noite</option>
+          <label>Período</label>
+          <select id="me-per" onchange="atualizarCamposHorario()">
+            <option value="manha">☀️ Manhã (06–12h)</option>
+            <option value="tarde">🌤️ Tarde (13–17h)</option>
+            <option value="noite">🌙 Noite (18–23h)</option>
           </select>
         </div>
         <div class="field">
-          <label>Editar horários de</label>
+          <label>Aplicar para</label>
           <select id="me-quem" onchange="atualizarCamposHorario()">
-            <option value="Ambos">👫 Ambos (geral)</option>
-            <option value="Arthur">🧒 Arthur (individual)</option>
-            <option value="Alice">👧 Alice (individual)</option>
+            <option value="Ambos">👫 Ambos</option>
+            <option value="Arthur">🧒 Arthur</option>
+            <option value="Alice">👧 Alice</option>
           </select>
         </div>
       </div>
-      <!-- Horários globais -->
+      <!-- 1 único campo de horário por remédio -->
       <div id="me-horas-ambos">
-        <div class="field-row">
-          <div class="field"><label>Horário manhã (ambos)</label><input id="me-hora-m" type="time"></div>
-          <div class="field" id="me-hora-n-wrap"><label>Horário noite</label><input id="me-hora-n" type="time"></div>
+        <div class="field">
+          <label>Horário</label>
+          <input id="me-hora-m" type="time">
         </div>
       </div>
     </div>
-    <!-- Horários individuais (quando escolher uma criança específica) -->
+        <!-- Horários individuais (quando escolher uma criança específica) -->
     <div id="me-horas-individual" style="display:none">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
         <div style="font-size:.72rem;font-weight:700;color:var(--ind);text-transform:uppercase;letter-spacing:.4px" id="me-horas-individual-titulo">Horário específico</div>
@@ -1312,12 +1308,16 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
           <option value="Alice">👧 Alice</option>
         </select>
       </div>
-      <div class="field-row">
-        <div class="field"><label>Horário manhã</label><input id="me-hora-m-ind" type="time"></div>
-        <div class="field"><label>Horário noite</label><input id="me-hora-n-ind" type="time"></div>
+      <div class="field">
+        <label id="me-hora-m-ind-lbl">Horário</label>
+        <input id="me-hora-m-ind" type="time">
+      </div>
+      <div class="field" id="me-hora-n-ind-wrap" style="display:none;margin-top:8px">
+        <label>Horário noite (individual)</label>
+        <input id="me-hora-n-ind" type="time">
       </div>
       <div style="font-size:.72rem;color:#92400E;margin-top:6px;padding:8px 10px;background:var(--warnl);border-radius:8px;border:1px solid var(--mnb)">
-        ⚡ Apenas os horários desta criança serão alterados. Nome, períodos e frasco não são afetados.
+        ⚡ Apenas os horários desta criança serão alterados.
       </div>
     </div>
     <!-- CONTROLE DE PERÍODO DO FRASCO/CARTUCHO -->
@@ -2074,7 +2074,16 @@ function getMedCfg(crianca,remedio){
 function setMedCfg(crianca,remedio,dados){
   const cfg=getMedsCfg();
   const entry=Object.assign({crianca:crianca,remedio:remedio},dados);
-  // Periodos sempre derivado dos horários — elimina inconsistência
+  // Se vier campo 'horario' (modelo novo simplificado),
+  // mapear para horaManha/horaNoite baseado no período derivado
+  if(entry.horario!==undefined){
+    const p=getPeriodoFromHora(entry.horario);
+    if(p==='noite'){entry.horaNoite=entry.horario;entry.horaManha=entry.horaManha||'';}
+    else if(p==='tarde'){entry.horaManha=entry.horario;entry.horaNoite='';}
+    else{entry.horaManha=entry.horario;entry.horaNoite='';}
+    delete entry.horario; // normalizar: armazenar apenas horaManha/horaNoite
+  }
+  // periodos sempre derivado dos horários
   entry.periodos=getPeriodosMed(entry);
   cfg[crianca+'_'+remedio]=entry;
   setMedsCfg(cfg);
@@ -3100,30 +3109,36 @@ function calcPatterns(){
   const dados=getHist();const wrap=document.getElementById('patterns-wrap');if(!wrap)return;
   if(dados.length<14){wrap.innerHTML='<div style="color:var(--muted);font-size:.8rem;text-align:center;padding:14px">Dados insuficientes (2 semanas mínimo).</div>';return;}
   const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];const alertas=[];const CRIANCAS=getCriancas();
-  CRIANCAS.forEach(nome=>{getMeds(nome).filter(m=>!m.suspenso).forEach(med=>{getPeriodosMed(med).forEach(per=>{
-    if(!doseEsperada(nome,med.remedio,per)) return;
-    
-    // Denominador: dias em que o app foi usado para esta criança (qualquer dose registrada)
-    // Numerador: dias em que este remédio+período foi marcado como tomado
-    const diasAppUsado=new Set(dados.filter(r=>r.nome===nome).map(r=>r.data));
-    if(diasAppUsado.size<7) return; // mínimo 7 dias de dados
-    
+  // Agrupar histórico por (crianca, remedio, periodo) — usa periodos DO HISTÓRICO,
+  // não da config atual. Isso evita 0% falso após editar o período de um remédio.
+  const grupos=new Map();
+  dados.forEach(r=>{
+    if(!r.nome||!r.remedio||!r.periodo) return;
+    const mc=getMedCfg(r.nome,r.remedio);
+    if(mc&&mc.suspenso) return; // ignorar remédios suspensos
+    const k=r.nome+'|'+r.remedio+'|'+r.periodo;
+    if(!grupos.has(k)) grupos.set(k,{nome:r.nome,remedio:r.remedio,per:r.periodo,dias:new Map()});
+    const g=grupos.get(k);
+    if(!g.dias.has(r.data)) g.dias.set(r.data,false);
+    if(!(r.nota&&r.nota.startsWith('NAO_TOMOU'))) g.dias.set(r.data,true);
+  });
+
+  grupos.forEach(({nome,remedio,per,dias})=>{
+    if(dias.size<4) return; // dados insuficientes
     const porDow={},totPorDow={};
-    diasAppUsado.forEach(df=>{
+    dias.forEach((tomou,df)=>{
       const dow=parseDate(df).getDay();
       totPorDow[dow]=(totPorDow[dow]||0)+1;
-      const tomou=dados.some(r=>r.data===df&&r.nome===nome&&r.remedio===med.remedio&&r.periodo===per&&!(r.nota&&r.nota.startsWith('NAO_TOMOU')));
       if(tomou) porDow[dow]=(porDow[dow]||0)+1;
     });
-    
     Object.keys(totPorDow).forEach(dow=>{
       const tot=totPorDow[dow];
       if(tot>=2){
         const taxa=Math.round((porDow[dow]||0)/tot*100);
-        if(taxa<70) alertas.push({nome,med:med.remedio,per,dow:parseInt(dow),taxa,dias_:tot});
+        if(taxa<70) alertas.push({nome,med:remedio,per,dow:parseInt(dow),taxa,dias_:tot});
       }
     });
-  });});});
+  });
   if(!alertas.length){wrap.innerHTML='<div style="color:var(--muted);font-size:.8rem;text-align:center;padding:14px">✅ Nenhum padrão de falha. Continue assim!</div>';return;}
   wrap.innerHTML=alertas.sort((a,b)=>a.taxa-b.taxa).slice(0,6).map(p=>'<div class="pattern-item"><div class="pat-icon">'+(p.taxa<40?'🚨':p.taxa<60?'⚠️':'📊')+'</div><div class="pat-body"><div class="pat-title">'+p.nome+' · '+p.med+' ('+(p.per==='noite'?'noite':'manhã')+') nas '+dias[p.dow]+'s</div><div class="pat-desc">Em '+p.dias_+' '+dias[p.dow]+(p.dias_>1?'s':'')+' registradas, aplicado em apenas <strong>'+p.taxa+'%</strong> das vezes.</div><span class="pat-miss">'+(100-p.taxa)+'% de falha</span></div></div>').join('');
 }
@@ -3896,18 +3911,30 @@ function atualizarCamposHorario(){
   const secGlobal=document.getElementById('me-secao-global');
   const divAmbos=document.getElementById('me-horas-ambos');
   const divInd=document.getElementById('me-horas-individual');
+  const horaN=document.getElementById('me-hora-n');if(horaN)horaN.value=''; // campo removido
   if(quem==='Ambos'){
     // Modo global: mostra todos os campos de edição geral
     const rIn2=document.getElementById('me-row-icone-nome');if(rIn2)rIn2.style.display='grid';
     const rFr2=document.getElementById('me-secao-frasco');if(rFr2)rFr2.style.display='block';
     if(secGlobal)secGlobal.style.display='block';
     if(divAmbos)divAmbos.style.display='block';
-    // Mostrar/ocultar campo noite baseado no período selecionado
+    // Horário único: label e visibilidade do campo noite conforme período
     const perVal2=document.getElementById('me-per')?.value||'manha';
     const noiteWrap=document.getElementById('me-hora-n-wrap');
     const mLabel=document.getElementById('me-hora-m-lbl');
-    if(noiteWrap) noiteWrap.style.display=(perVal2==='ambos')?'block':'none';
-    if(mLabel) mLabel.textContent=perVal2==='noite'?'Horário noite':perVal2==='tarde'?'Horário tarde':'Horário manhã';
+    if(noiteWrap) noiteWrap.style.display=perVal2==='ambos'?'block':'none';
+    if(mLabel){
+      const lbMap={'manha':'☀️ Horário manhã','tarde':'🌤️ Horário tarde','noite':'🌙 Horário noite','ambos':'☀️ Horário manhã'};
+      mLabel.textContent=lbMap[perVal2]||'Horário';
+    }
+    // Individual: mesma lógica
+    const noiteIndWrap=document.getElementById('me-hora-n-ind-wrap');
+    const indLabel=document.getElementById('me-hora-m-ind-lbl');
+    if(noiteIndWrap) noiteIndWrap.style.display=perVal2==='ambos'?'block':'none';
+    if(indLabel){
+      const lbMap2={'manha':'☀️ Horário manhã','tarde':'🌤️ Horário tarde','noite':'🌙 Horário noite','ambos':'☀️ Horário manhã'};
+      indLabel.textContent=lbMap2[perVal2]||'Horário';
+    }
     if(divInd)divInd.style.display='none';
   } else {
     // Modo individual: esconde ícone/nome, mostra só horários da criança
@@ -3923,10 +3950,16 @@ function atualizarCamposHorario(){
     const nR=document.getElementById('me-idx')?.value||'';
     const m=getMedCfg(getCriancas()[0]||'Arthur',nR)||{};
     if(m){
-      const hm=document.getElementById('me-hora-m-ind');
-      const hn=document.getElementById('me-hora-n-ind');
-      if(hm)hm.value=m['horaManha_'+quem]||m.horaManha||'';
-      if(hn)hn.value=m['horaNoite_'+quem]||m.horaNoite||'';
+      const perInd=document.getElementById('me-per')?.value||'manha';
+      const hmInd=document.getElementById('me-hora-m-ind');
+      const hnInd=document.getElementById('me-hora-n-ind');
+      // Campo principal: horário do período ativo
+      const horaAtiva=perInd==='noite'?(m.horaNoite||''):perInd==='tarde'?(m.horaManha||''):(m.horaManha||'');
+      if(hmInd) hmInd.value=horaAtiva;
+      if(hnInd) hnInd.value=m.horaNoite||'';
+      // Mostrar/ocultar campo noite individual
+      const nWrapInd=document.getElementById('me-hora-n-ind-wrap');
+      if(nWrapInd) nWrapInd.style.display=perInd==='ambos'?'block':'none';
     }
     const titulo=document.getElementById('me-horas-individual-titulo');
     if(titulo){const cfg=getCriancaConfig(quem);titulo.textContent=cfg.emoji+' Horário específico — '+cfg.nome;}
@@ -3954,8 +3987,12 @@ function abrirEditMed(nomeRemedio){
   const perVal=pm0&&pn0&&pm0!==pn0?'ambos':(pn0||pm0||'manha');
   document.getElementById('me-per').value=perVal;
   // Horários do modo "Ambos": médio entre crianças (ou da primeira criança)
-  document.getElementById('me-hora-m').value=m0.horaManha||'';
-  document.getElementById('me-hora-n').value=m0.horaNoite||'';
+  // Determinar qual horário mostrar no campo principal baseado no período
+  const _perValAbrir=perVal;
+  const _horaM=m0.horaManha||'';
+  const _horaN=m0.horaNoite||'';
+   // 1 único campo de horário — mostra o horário do período ativo
+   document.getElementById('me-hora-m').value=_perValAbrir==='noite'?_horaN:_horaM;
   document.getElementById('me-periodo-inicio').value=m0.periodoInicio||'';
   document.getElementById('me-periodo-fim').value=m0.periodoFim||'';
   // Sempre abrir em modo "Ambos"
@@ -3981,35 +4018,33 @@ function _renderHorariosIndividuais(m, idx){
   wrap.innerHTML='<div style="background:var(--indl);border:1.5px solid var(--ind);border-radius:10px;padding:9px 12px;margin-bottom:10px;font-size:.75rem;color:var(--ind)">'    +'<div style="font-weight:700;margin-bottom:5px">⚡ Horários individuais configurados:</div>'    +CRIANCAS.filter(n=>m["horaManha_"+n]||m["horaNoite_"+n]).map(n=>{      const cfg=getCriancaConfig(n);      const hm=m["horaManha_"+n]||m.horaManha||"";      const hn=m["horaNoite_"+n]||m.horaNoite||"";      return cfg.emoji+" "+cfg.nome+": "+(hm?"☀️ "+hm:"")+(hm&&hn?" · ":"")+(hn?"🌙 "+hn:"");    }).join("<br>")    +"</div>";}
 
 function salvarMedEdit(){
-  const nomeRemedio=document.getElementById('me-idx').value; // agora é string
+  const nomeRemedio=document.getElementById('me-idx').value;
   const quem=document.getElementById('me-quem')?.value||'Ambos';
   const CRIANCAS=getCriancas();
   const icon=document.getElementById('me-icon').value||'💊';
   const novoNome=document.getElementById('me-nome').value||nomeRemedio;
-  // periodos será recalculado automaticamente por setMedCfg via getPeriodosMed
   const periodoInicio=document.getElementById('me-periodo-inicio').value||'';
   const periodoFim=document.getElementById('me-periodo-fim').value||'';
+  // 1 único campo de horário — período determina onde armazenar
+  const horario=document.getElementById('me-hora-m').value||'';
+  const perSel=document.getElementById('me-per')?.value||'manha';
+  const horaManhaSave=perSel==='noite'?'':horario;
+  const horaNoiteSave=perSel==='noite'?horario:'';
 
   if(quem==='Ambos'){
-    // Edição global: atualiza CADA criança de forma independente
-    const horaManha=document.getElementById('me-hora-m').value;
-    const horaNoite=document.getElementById('me-hora-n').value;
     CRIANCAS.forEach(function(c){
       const atual=getMedCfg(c,nomeRemedio)||{suspenso:false,suspHist:[],motivoSuspensao:''};
       setMedCfg(c,novoNome,Object.assign({},atual,{
-        crianca:c, remedio:novoNome, icon:icon,
-        horaManha:horaManha, horaNoite:horaNoite,
-        periodoInicio:periodoInicio, periodoFim:periodoFim
+        crianca:c,remedio:novoNome,icon:icon,
+        horaManha:horaManhaSave,horaNoite:horaNoiteSave,
+        periodoInicio:periodoInicio,periodoFim:periodoFim
       }));
-      // Se nome mudou, remover entrada antiga
       if(novoNome!==nomeRemedio) deletarMedCfg(c,nomeRemedio);
     });
   } else {
-    // Edição individual: apenas horários desta criança — nada mais muda
-    const horaManha=document.getElementById('me-hora-m-ind')?.value||'';
-    const horaNoite=document.getElementById('me-hora-n-ind')?.value||'';
-    const atual=getMedCfg(quem,nomeRemedio)||{suspenso:false,suspHist:[],motivoSuspensao:'',periodos:periodos,icon:icon,periodoInicio:'',periodoFim:''};
-    setMedCfg(quem,nomeRemedio,Object.assign({},atual,{horaManha:horaManha,horaNoite:horaNoite}));
+    // Individual: mesmo horário único para esta criança
+    const atual=getMedCfg(quem,nomeRemedio)||{suspenso:false,suspHist:[],motivoSuspensao:'',icon:icon,periodoInicio:'',periodoFim:''};
+    setMedCfg(quem,nomeRemedio,Object.assign({},atual,{horaManha:horaManhaSave,horaNoite:horaNoiteSave}));
   }
   fecharMo('mo-med-edit');renderMedsAdmin();atualizarTudo();
 }
@@ -4031,11 +4066,11 @@ function adicionarMed(){
   const err=document.getElementById('nm-err');const nome=document.getElementById('nm-nome')?.value.trim();
   if(!nome){if(err){err.style.display='block';err.textContent='❌ Digite o nome.';}return;}
   const icon=document.getElementById('nm-icon')?.value||'💊';
-  const horaManha=document.getElementById('nm-hora')?.value||'08:00';
-  // horaNoite só usada se período = noite ou ambos
+  const horario=document.getElementById('nm-hora')?.value||'08:00';
   const perVal=document.getElementById('nm-per')?.value||'manha';
-  const horaNoite=(perVal==='noite'||perVal==='ambos')?(document.getElementById('nm-hora-noite')?.value||'20:00'):'';
-  // periodos é calculado automaticamente por setMedCfg via getPeriodosMed
+  // 1 horário → mapear para campo correto baseado no período
+  const horaManha=perVal==='noite'?'':horario;
+  const horaNoite=perVal==='noite'?horario:'';
   getCriancas().forEach(function(c){
     setMedCfg(c,nome,{crianca:c,remedio:nome,icon:icon,horaManha:horaManha,horaNoite:horaNoite,suspenso:false,suspHist:[],motivoSuspensao:'',periodoInicio:'',periodoFim:''});
   });
