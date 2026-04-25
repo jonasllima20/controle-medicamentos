@@ -1326,7 +1326,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
         🗓️ Controle de período (frasco/cartucho)
       </div>
       <div style="font-size:.75rem;color:var(--muted);margin-bottom:10px">
-        Defina quando o frasco atual começa e termina. Você será avisado 3 dias antes do fim.
+        Defina quando o tratamento começa e termina. No modo "Ambos", aplica para as duas crianças.
       </div>
       <div class="field-row">
         <div class="field"><label>Data de início</label><input type="date" id="me-periodo-inicio"></div>
@@ -2105,7 +2105,12 @@ function migrarMedsAntigos(arr){
         horaNoite:m['horaNoite_'+c]||m.horaNoite||'',
         suspenso:!!m.suspenso, suspHist:m.suspHist||[],
         motivoSuspensao:m.motivoSuspensao||'',
-        periodoInicio:m.periodoInicio||'', periodoFim:m.periodoFim||''
+        periodoInicio:m.periodoInicio||'', periodoFim:m.periodoFim||'', // compat
+        // Modelo novo: periodo estruturado
+        periodo:{
+          geral:{inicio:m.periodoInicio||null,fim:m.periodoFim||null},
+          criancas:{}
+        }
       };
     });
   });
@@ -2159,6 +2164,37 @@ function getPeriodosMed(med){
   if(pn&&pn!==pm&&!ps.includes(pn)) ps.push(pn);
   return ps.length?ps:['manha'];
 }
+// ── Período de tratamento (frasco/cartucho) ─────────────
+// Verifica se uma data (yyyy-mm-dd ou dd/mm/yyyy) está dentro de um range
+function dentroDoPeriodo(dataISO, pRange){
+  if(!pRange) return true;
+  const {inicio,fim}=pRange;
+  if(!inicio&&!fim) return true;
+  // Normalizar para ISO se vier em dd/mm/yyyy
+  function toISO(s){if(!s)return null;if(/\d{4}-\d{2}-\d{2}/.test(s))return s;const[d,m,y]=s.split('/');return y+'-'+m.padStart(2,'0')+'-'+d.padStart(2,'0');}
+  const dISO=toISO(dataISO)||dataISO;
+  if(inicio&&dISO<toISO(inicio)) return false;
+  if(fim&&dISO>toISO(fim)) return false;
+  return true;
+}
+// Verifica se um remédio está ativo para uma criança em uma data
+// Prioridade: periodo.criancas[crianca] > periodo.geral > sem restrição (sempre ativo)
+function estaAtivo(med,crianca,dataISO){
+  if(!med) return false;
+  if(med.suspenso) return false;
+  // Compatibilidade com modelo antigo: periodoInicio/periodoFim no topo
+  const p=med.periodo||{};
+  const pCrianca=p.criancas?.[crianca?.toLowerCase()]||null;
+  if(pCrianca&&(pCrianca.inicio||pCrianca.fim)){
+    return dentroDoPeriodo(dataISO,pCrianca);
+  }
+  const pGeral=p.geral||null;
+  // Compatibilidade: modelo antigo usava periodoInicio/periodoFim direto no med
+  const pGeralFallback=(!pGeral&&(med.periodoInicio||med.periodoFim))
+    ?{inicio:med.periodoInicio||null,fim:med.periodoFim||null}:pGeral;
+  return dentroDoPeriodo(dataISO,pGeralFallback);
+}
+
 // Retorna o horário do remédio para um dado período (única fonte de verdade)
 function getMedHorario(med,periodo){
   if(!med) return null;
@@ -2170,10 +2206,11 @@ function getMedHorario(med,periodo){
 // Ícone de período
 const PERIODO_ICON={'manha':'☀️','tarde':'🌤️','noite':'🌙'};
 const PERIODO_LABEL={'manha':'manhã','tarde':'tarde','noite':'noite'};
-function totalDoses(crianca){
+function totalDoses(crianca,dataISO){
   const criancas=getCriancas();
   const c=crianca||criancas[0]||'Arthur';
-  return getMeds(c).filter(function(m){return!m.suspenso;}).reduce(function(s,m){return s+getPeriodosMed(m).length;},0);
+  const d=dataISO||hojeISO();
+  return getMeds(c).filter(function(m){return estaAtivo(m,c,d);}).reduce(function(s,m){return s+getPeriodosMed(m).length;},0);
 }
 // fbLoadMedsCfg — carrega do Firestore
 window.fbLoadMedsCfg=function(){
@@ -2209,11 +2246,14 @@ function getIconRemedio(nome){return (getMedsNomes().find(m=>m.nome===nome)||{})
 // getResumoDia: todos os módulos derivam daqui — calendário,
 // semana, mês, tendência, streak, padrões.
 
+// Converte dd/mm/yyyy → yyyy-mm-dd (para passar para estaAtivo)
+function _dfToISO(df){if(!df)return'';const p=df.split('/');return p.length===3?p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0'):df;}
 function contarDosesDia(dados,df){
   return dados.filter(r=>r.data===df&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
 }
-function totalDosesDiario(){
-  return getCriancas().reduce((s,c)=>s+totalDoses(c),0);
+function totalDosesDiario(dataISO){
+  const d=dataISO||hojeISO();
+  return getCriancas().reduce((s,c)=>s+totalDoses(c,d),0);
 }
 function diaConcluido(dados,df){
   return contarDosesDia(dados,df)>=totalDosesDiario();
@@ -2224,7 +2264,7 @@ function diaCrianaConcluido(dados,df,crianca){
 }
 // Resumo completo de um dia — todas as funções de análise usam isso
 function getResumoDia(dados,df){
-  const esperado=totalDosesDiario();
+  const esperado=totalDosesDiario(df.includes('/')?_dfToISO(df):df);
   const tomadas=contarDosesDia(dados,df);
   const naoTomou=dados.filter(r=>r.data===df&&r.nota&&r.nota.startsWith('NAO_TOMOU')).length;
   const registros=dados.filter(r=>r.data===df);
@@ -2241,7 +2281,8 @@ function getResumoDia(dados,df){
 }
 // Resumo de um dia para UMA criança específica
 function getResumoDiaCrianca(dados,df,crianca){
-  const esperado=totalDoses(crianca);
+  const dISO=df.includes('/')?_dfToISO(df):df;
+  const esperado=totalDoses(crianca,dISO);
   const tomadas=dados.filter(r=>r.data===df&&r.nome===crianca&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
   const temDados=dados.some(r=>r.data===df&&r.nome===crianca);
   return{df,crianca,esperado,tomadas,temDados,concluido:esperado>0&&tomadas>=esperado,pct:esperado>0?Math.round(tomadas/esperado*100):0};
@@ -2388,9 +2429,9 @@ function renderCards(){
     const cls=idx===0?'a':'b';const per=getPer(nome);
     // Usar remédios específicos desta criança (novo modelo)
     const meds=getMeds(nome);
-    const lista=meds.filter(m=>getPeriodosMed(m).includes(per));
+    const dHjISO2=hojeISO();const lista=meds.filter(m=>estaAtivo(m,nome,dHjISO2)&&getPeriodosMed(m).includes(per));
     const total=totalDoses(nome);
-    const feitasHj=dados.filter(r=>r.data===dHj&&r.nome===nome&&!meds.find(mm=>mm.remedio===r.remedio&&mm.suspenso)).length;
+    const dHjISO3=hojeISO();const feitasHj=dados.filter(r=>r.data===dHj&&r.nome===nome&&!meds.find(mm=>mm.remedio===r.remedio&&!estaAtivo(mm,nome,dHjISO3))).length;
     const cont=document.getElementById('ml-'+nome);if(!cont)return;cont.innerHTML='';
     lista.forEach(med=>{
       const suspenso=!!med.suspenso;
@@ -2445,31 +2486,53 @@ function marcarDose(nome,remedio,periodo,btn,nota){
   }
   const data=hoje();const hora=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   const reg={data,dataISO:hojeISO(),nome,remedio,periodo,hora,usuario:activeUser,nota:nota||null};
-  window._fbHist=[...(window._fbHist||[]),reg];if(window.fbAddDose)window.fbAddDose(reg);
+  // Adicionar dose localmente primeiro — _fbHist já reflete o estado atual
+  window._fbHist=[...(window._fbHist||[]),reg];
+  if(window.fbAddDose)window.fbAddDose(reg);
   const logEntry={ts:Date.now(),data,hora,usuario:activeUser,acao:'Marcou '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo)+') para '+nome+(nota?' — "'+nota+'"':'')};
   window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);
   btn.classList.add('pop');setTimeout(()=>btn.classList.remove('pop'),300);
+  // Verificar celebração com os dados já atualizados em memória (sem setTimeout)
+  verificarCelebracao(window._fbHist);
   atualizarTudo();
-  // Celebração: verificar após UI atualizar (500ms para getHist() ter o novo dado)
-  setTimeout(verificarCelebracao, 500);
 }
 
 // ═══════════════ CELEBRAÇÃO ═══════════════
-function verificarCelebracao(){
-  // Fonte única: getResumoDia — mesma lógica do calendário e resumo do mês
-  const dados=getHist();const dHj=hoje();
+// Lock em memória para evitar race condition se chamado múltiplas vezes em sequência
+let _celebrandoAgora=false;
+
+function verificarCelebracao(dadosOpt){
+  if(_celebrandoAgora) return; // race condition guard
+  const dados=dadosOpt||getHist();
+  const dHj=hoje();
   const r=getResumoDia(dados,dHj);
   if(!r.temDados||!r.esperado||!r.concluido) return;
-  // Garantia: dispara apenas 1x por dia por sessão
-  const key='rm_celebrado_'+dHj;
-  if(sessionStorage.getItem(key)) return;
-  sessionStorage.setItem(key,'1');
-  // Confetti visual
+
+  // Chave com data ISO para consistência entre locales e sessões
+  const chaveISO=hojeISO(); // "2026-04-24"
+  const key='rm_celebrado_'+chaveISO;
+
+  // Verificar se esperado mudou desde a última celebração (reconfiguração de remédios)
+  const celebradoAntes=localStorage.getItem(key);
+  if(celebradoAntes){
+    try{
+      const prev=JSON.parse(celebradoAntes);
+      // Só re-dispara se o total esperado aumentou (novo remédio adicionado)
+      if(prev.esperado>=r.esperado) return;
+    }catch(e){return;}
+  }
+
+  // Registrar em localStorage (persiste entre sessões no mesmo dia)
+  _celebrandoAgora=true;
+  localStorage.setItem(key,JSON.stringify({concluido:true,esperado:r.esperado}));
+  // Liberar lock após animação terminar (~3s)
+  setTimeout(()=>{_celebrandoAgora=false;},3000);
+
   confetti();
-  // Áudio: tenta trombetas.mp3, cai para fanfarra sintética
   const audio=document.getElementById('audio-celebracao');
   if(audio){
-    audio.volume=0.5;audio.currentTime=0;
+    audio.currentTime=0;
+    audio.volume=0.5;
     audio.play().catch(()=>tocarFanfarra());
   } else {
     tocarFanfarra();
@@ -2500,7 +2563,7 @@ function atualizarWidget(){const dados=getHist();const dHj=hoje();const CRIANCAS
 function atualizarStatHoje(){const dados=getHist();const dHj=hoje();const CRIANS_=getCriancas();const total=CRIANS_.reduce((s,c)=>s+totalDoses(c),0);const el=document.getElementById('sv-hoje');if(el)el.textContent=dados.filter(r=>r.data===dHj).length+'/'+total;}
 function verificarPendencias(){
   const dados=getHist();const dHj=hoje();const falta=[];const CRIANCAS=getCriancas();
-  CRIANCAS.forEach(n=>{const medsN=getMeds(n).filter(m=>!m.suspenso);medsN.forEach(m=>{getPeriodosMed(m).forEach(p=>{if(!dados.some(r=>r.data===dHj&&r.nome===n&&r.remedio===m.remedio&&r.periodo===p))falta.push(n+': '+m.remedio+(getPeriodosMed(m).length>1?' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[p]||p)+')':''));});});});
+  const _dHjISO=hojeISO();CRIANCAS.forEach(n=>{const medsN=getMeds(n).filter(m=>estaAtivo(m,n,_dHjISO));medsN.forEach(m=>{getPeriodosMed(m).forEach(p=>{if(!dados.some(r=>r.data===dHj&&r.nome===n&&r.remedio===m.remedio&&r.periodo===p))falta.push(n+': '+m.remedio+(getPeriodosMed(m).length>1?' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[p]||p)+')':''));});});});
   const div=document.getElementById('alerta');if(div){if(!falta.length){div.className='alerta-ok';div.innerHTML='✅ Tudo administrado hoje! 🎉';}else{div.className='alerta-warn';div.innerHTML='⚠️ Faltando: '+falta.join(' · ');}}
   if('setAppBadge' in navigator){if(falta.length>0)navigator.setAppBadge(falta.length).catch(()=>{});else navigator.clearAppBadge().catch(()=>{});}
 }
@@ -3945,7 +4008,18 @@ function atualizarCamposHorario(){
   } else {
     // Modo individual: esconde ícone/nome, mostra só horários da criança
     const rIn=document.getElementById('me-row-icone-nome');if(rIn)rIn.style.display='none';
-    const rFr=document.getElementById('me-secao-frasco');if(rFr)rFr.style.display='none';
+    const rFr=document.getElementById('me-secao-frasco');if(rFr)rFr.style.display='block'; // mostrar datas individuais
+    // Carregar datas do periodo individual desta criança
+    const _nomeMedInd=document.getElementById('me-idx')?.value||'';
+    const _medIndCfg=_nomeMedInd?getMedCfg(quem,_nomeMedInd):null;
+    if(_medIndCfg){
+      const _pChave=quem.toLowerCase();
+      const _pCrianca=(_medIndCfg.periodo?.criancas||{})[_pChave]||{};
+      const _pI=document.getElementById('me-periodo-inicio');
+      const _pF=document.getElementById('me-periodo-fim');
+      if(_pI) _pI.value=_pCrianca.inicio||'';
+      if(_pF) _pF.value=_pCrianca.fim||'';
+    }
     if(secGlobal)secGlobal.style.display='block'; // mantém select "Editar horários de"
     if(divAmbos)divAmbos.style.display='none';
     if(divInd)divInd.style.display='block';
@@ -3999,8 +4073,20 @@ function abrirEditMed(nomeRemedio){
   const _horaN=m0.horaNoite||'';
    // 1 único campo de horário — mostra o horário do período ativo
    document.getElementById('me-hora-m').value=_perValAbrir==='noite'?_horaN:_horaM;
-  document.getElementById('me-periodo-inicio').value=m0.periodoInicio||'';
-  document.getElementById('me-periodo-fim').value=m0.periodoFim||'';
+  // Carregar datas do novo modelo periodo (com fallback para modelo antigo)
+  function _getPeriodoParaUI(med,chave){
+    const p=med.periodo||{};
+    if(chave==='geral'){
+      const g=p.geral||{};
+      // fallback modelo antigo
+      return {inicio:g.inicio||med.periodoInicio||'',fim:g.fim||med.periodoFim||''};
+    }
+    const c=p.criancas?.[chave.toLowerCase()]||{};
+    return {inicio:c.inicio||'',fim:c.fim||''};
+  }
+  const _perUI=_getPeriodoParaUI(m0,'geral');
+  document.getElementById('me-periodo-inicio').value=_perUI.inicio||'';
+  document.getElementById('me-periodo-fim').value=_perUI.fim||'';
   // Sempre abrir em modo "Ambos"
   const quemEl=document.getElementById('me-quem');if(quemEl)quemEl.value='Ambos';
   const rIn=document.getElementById('me-row-icone-nome');if(rIn)rIn.style.display='grid';
@@ -4031,6 +4117,14 @@ function salvarMedEdit(){
   const novoNome=document.getElementById('me-nome').value||nomeRemedio;
   const periodoInicio=document.getElementById('me-periodo-inicio').value||'';
   const periodoFim=document.getElementById('me-periodo-fim').value||'';
+  // Montar objeto periodo estruturado
+  function _buildPeriodo(existente,chave,ini,fim){
+    const p=JSON.parse(JSON.stringify(existente||{geral:{inicio:null,fim:null},criancas:{}}));
+    if(!p.criancas) p.criancas={};
+    if(chave==='geral'){p.geral={inicio:ini||null,fim:fim||null};}
+    else{p.criancas[chave]={inicio:ini||null,fim:fim||null};}
+    return p;
+  }
   // 1 único campo de horário — período determina onde armazenar
   const horario=document.getElementById('me-hora-m').value||'';
   const perSel=document.getElementById('me-per')?.value||'manha';
@@ -4040,17 +4134,31 @@ function salvarMedEdit(){
   if(quem==='Ambos'){
     CRIANCAS.forEach(function(c){
       const atual=getMedCfg(c,nomeRemedio)||{suspenso:false,suspHist:[],motivoSuspensao:''};
+      const periodoAtual=atual.periodo||{geral:{inicio:null,fim:null},criancas:{}};
+      // Migrar modelo antigo: periodoInicio/periodoFim → periodo.geral
+      if(!periodoAtual.geral&&(atual.periodoInicio||atual.periodoFim))
+        periodoAtual.geral={inicio:atual.periodoInicio||null,fim:atual.periodoFim||null};
+      const novoPeriodo=_buildPeriodo(periodoAtual,'geral',periodoInicio,periodoFim);
       setMedCfg(c,novoNome,Object.assign({},atual,{
         crianca:c,remedio:novoNome,icon:icon,
         horaManha:horaManhaSave,horaNoite:horaNoiteSave,
-        periodoInicio:periodoInicio,periodoFim:periodoFim
+        periodo:novoPeriodo
       }));
       if(novoNome!==nomeRemedio) deletarMedCfg(c,nomeRemedio);
     });
   } else {
     // Individual: mesmo horário único para esta criança
-    const atual=getMedCfg(quem,nomeRemedio)||{suspenso:false,suspHist:[],motivoSuspensao:'',icon:icon,periodoInicio:'',periodoFim:''};
-    setMedCfg(quem,nomeRemedio,Object.assign({},atual,{horaManha:horaManhaSave,horaNoite:horaNoiteSave}));
+    const atual=getMedCfg(quem,nomeRemedio)||{suspenso:false,suspHist:[],motivoSuspensao:'',icon:icon};
+    const periodoIndAtual=atual.periodo||{geral:{inicio:null,fim:null},criancas:{}};
+    if(!periodoIndAtual.criancas) periodoIndAtual.criancas={};
+    if(!periodoIndAtual.geral&&(atual.periodoInicio||atual.periodoFim))
+      periodoIndAtual.geral={inicio:atual.periodoInicio||null,fim:atual.periodoFim||null};
+    const chave=quem.toLowerCase();
+    const novoPeriodoInd=_buildPeriodo(periodoIndAtual,chave,periodoInicio,periodoFim);
+    setMedCfg(quem,nomeRemedio,Object.assign({},atual,{
+      horaManha:horaManhaSave,horaNoite:horaNoiteSave,
+      periodo:novoPeriodoInd
+    }));
   }
   fecharMo('mo-med-edit');renderMedsAdmin();atualizarTudo();
 }
