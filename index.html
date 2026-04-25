@@ -2449,23 +2449,30 @@ function marcarDose(nome,remedio,periodo,btn,nota){
   const logEntry={ts:Date.now(),data,hora,usuario:activeUser,acao:'Marcou '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo)+') para '+nome+(nota?' — "'+nota+'"':'')};
   window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);
   btn.classList.add('pop');setTimeout(()=>btn.classList.remove('pop'),300);
-  atualizarTudo();verificarCelebracao();
-  setTimeout(()=>{if(typeof verificarCelebracaoPos==='function')verificarCelebracaoPos(getHist());},600);
+  atualizarTudo();
+  // Celebração: verificar após UI atualizar (500ms para getHist() ter o novo dado)
+  setTimeout(verificarCelebracao, 500);
 }
 
 // ═══════════════ CELEBRAÇÃO ═══════════════
 function verificarCelebracao(){
+  // Fonte única: getResumoDia — mesma lógica do calendário e resumo do mês
   const dados=getHist();const dHj=hoje();
-  const CRIANCAS=getCriancas();
-  const meds=getMeds(CRIANCAS[0]).filter(m=>!m.suspenso);
-  const total=CRIANCAS.reduce((s,c)=>s+getMeds(c).filter(m=>!m.suspenso).reduce((ss,m)=>ss+getPeriodosMed(m).length,0),0);
-  if(total===0)return;
-  const feitas=dados.filter(r=>r.data===dHj&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
-  if(feitas>=total){
-    const key='rm_celebrado_'+dHj;
-    if(sessionStorage.getItem(key))return;
-    sessionStorage.setItem(key,'1');
-    confetti();tocarFanfarra();
+  const r=getResumoDia(dados,dHj);
+  if(!r.temDados||!r.esperado||!r.concluido) return;
+  // Garantia: dispara apenas 1x por dia por sessão
+  const key='rm_celebrado_'+dHj;
+  if(sessionStorage.getItem(key)) return;
+  sessionStorage.setItem(key,'1');
+  // Confetti visual
+  confetti();
+  // Áudio: tenta trombetas.mp3, cai para fanfarra sintética
+  const audio=document.getElementById('audio-celebracao');
+  if(audio){
+    audio.volume=0.5;audio.currentTime=0;
+    audio.play().catch(()=>tocarFanfarra());
+  } else {
+    tocarFanfarra();
   }
 }
 function confetti(){
@@ -4242,23 +4249,7 @@ function renderSusHistorico(med){
 }
 
 // ═══════════════ CELEBRAÇÃO ═══════════════
-function executarCelebracao(){
-  try{
-    // Confetti
-    if(typeof confetti==='function'){
-      confetti({particleCount:120,spread:80,origin:{y:0.6},colors:['#3B82F6','#EC4899','#10B981','#F59E0B','#8B5CF6']});
-    }
-    // Áudio trombetas
-    const audio=document.getElementById('audio-celebracao');
-    if(audio){audio.volume=0.5;audio.currentTime=0;audio.play().catch(()=>{});}
-  }catch(e){console.warn('Celebração:',e);}
-}
-// Verificar se hoje ficou 100% após marcar dose
-function verificarCelebracaoPos(dados){
-  const dHj=hoje();
-  const r=getResumoDia(dados,dHj);
-  if(r.temDados&&r.esperado>0&&r.concluido) executarCelebracao();
-}
+// celebração unificada em verificarCelebracao()
 
 // ═══════════════ INIT ═══════════════
 // Expor funções usadas em onclick como window.* para garantir acesso global
@@ -4298,7 +4289,6 @@ window.agendarTodasNotificacoes=agendarTodasNotificacoes;
 window.enviarNotifTeste=enviarNotifTeste; window.dispensarBannerNotif=dispensarBannerNotif;
 window.solicitarPermissaoPush=solicitarPermissaoPush;
 window.marcarRecuperacao=marcarRecuperacao; window.aplicarNomesCriancas=aplicarNomesCriancas;
-window.executarCelebracao=executarCelebracao;
 
 document.querySelector('.agenda-fab').style.display='none';
 mostrarSplash();
