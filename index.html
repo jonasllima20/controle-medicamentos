@@ -2234,7 +2234,7 @@ function getResumoDia(dados,df){
     tomadas,                              // doses válidas (sem NAO_TOMOU)
     naoTomou,                             // doses marcadas como não tomadas
     registros,                            // todos os registros do dia
-    concluido: tomadas>=esperado,         // true = dia 100%
+    concluido: esperado>0&&tomadas>=esperado, // true = dia 100% (exige esperado>0)
     temDados:  registros.length>0,        // true = algum dado existe
     pct: esperado>0?Math.round(tomadas/esperado*100):0
   };
@@ -2243,7 +2243,8 @@ function getResumoDia(dados,df){
 function getResumoDiaCrianca(dados,df,crianca){
   const esperado=totalDoses(crianca);
   const tomadas=dados.filter(r=>r.data===df&&r.nome===crianca&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
-  return{df,crianca,esperado,tomadas,concluido:tomadas>=esperado,pct:esperado>0?Math.round(tomadas/esperado*100):0};
+  const temDados=dados.some(r=>r.data===df&&r.nome===crianca);
+  return{df,crianca,esperado,tomadas,temDados,concluido:esperado>0&&tomadas>=esperado,pct:esperado>0?Math.round(tomadas/esperado*100):0};
 }
 // doseEsperada: retorna true se um remédio+criança+período deveria ser aplicado
 // Baseia-se na configuração ATUAL (remédio ativo, não suspenso)
@@ -2449,6 +2450,7 @@ function marcarDose(nome,remedio,periodo,btn,nota){
   window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);
   btn.classList.add('pop');setTimeout(()=>btn.classList.remove('pop'),300);
   atualizarTudo();verificarCelebracao();
+  setTimeout(()=>{if(typeof verificarCelebracaoPos==='function')verificarCelebracaoPos(getHist());},600);
 }
 
 // ═══════════════ CELEBRAÇÃO ═══════════════
@@ -2537,7 +2539,7 @@ function gerarCal(){
     const key='rm_cal_done_'+data;const atual=JSON.parse(localStorage.getItem(key)||'{}');
     CRIANCAS.forEach(n=>{
       const rc=getResumoDiaCrianca(dados,data,n);
-      if(rc.tomadas>0&&rc.concluido) atual[n]=true;
+      if(rc.tomadas>0&&rc.esperado>0&&rc.concluido) atual[n]=true;
     });
     localStorage.setItem(key,JSON.stringify(atual));
   });
@@ -2551,8 +2553,8 @@ function gerarCal(){
     const liveInfo=mapa[df]||{};const persisted=JSON.parse(localStorage.getItem('rm_cal_done_'+df)||'{}');
     const _rA=getResumoDiaCrianca(dados,df,'Arthur');
     const _rB=getResumoDiaCrianca(dados,df,'Alice');
-    const aOk=(_rA.tomadas>0&&_rA.concluido)||persisted['Arthur'];
-    const bOk=(_rB.tomadas>0&&_rB.concluido)||persisted['Alice'];
+    const aOk=(_rA.tomadas>0&&_rA.esperado>0&&_rA.concluido)||persisted['Arthur'];
+    const bOk=(_rB.tomadas>0&&_rB.esperado>0&&_rB.concluido)||persisted['Alice'];
     const cell=document.createElement('div');
     const isHj=d===now.getDate()&&_calMes===now.getMonth()&&_calAno===now.getFullYear();
     cell.className='cal-day'+(isHj?' hoje':'');
@@ -3095,7 +3097,7 @@ function atualizarDashboardExtra(){
   for(let d=1;d<=diasP;d++){
     const df=String(d).padStart(2,'0')+'/'+String(mes+1).padStart(2,'0')+'/'+ano;
     const r=getResumoDia(dados,df);
-    if(r.temDados&&r.concluido) diasCompletos++; // só conta dias onde o app foi usado E está completo
+    if(r.temDados&&r.esperado>0&&r.concluido) diasCompletos++; // igual ao calendário: dados + esperado + completo
   }
   const dosesMes=dados.filter(r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes;}).length;
   const contPai=dados.filter(r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes&&r.usuario==='pai';}).length;
@@ -3606,49 +3608,46 @@ function atualizarSemanaResumo(){
   }
   const dados=window._fbHist||[];
   const now=new Date();const CRIANCAS=getCriancas();
-  const totalDiario=CRIANCAS.reduce((s,c)=>s+getMeds(c).filter(m=>!m.suspenso).reduce((ss,m)=>ss+getPeriodosMed(m).length,0),0);
-  const meds=getMeds(CRIANCAS[0]).filter(m=>!m.suspenso); // para referência de remédios
   const DIAS_PT=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
 
-  // Construir os 7 dias (hoje = i=0, ontem = i=1, ... 6 dias atrás = i=6)
-  // Exibir em ordem cronológica (mais antigo primeiro)
+  // Construir os 7 dias usando EXCLUSIVAMENTE getResumoDia — mesma fonte do calendário
   const diasInfo=[];
   for(let i=6;i>=0;i--){
     const d=new Date(now);d.setDate(d.getDate()-i);
     const df=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
     const isHoje=i===0;
-    const res=getResumoDia(dados,df);        // fonte única
-    const dosesFeitas=res.tomadas;
+    const res=getResumoDia(dados,df); // ÚNICA fonte — igual ao calendário
     const naoTomouList=dados.filter(r=>r.data===df&&r.nota&&r.nota.startsWith('NAO_TOMOU'));
     const horaAtual=now.getHours();
-    const diaCompleto=isHoje?(horaAtual>=22?res.concluido:false):res.concluido;
+    // diaCompleto: usa res.concluido (getResumoDia). Para hoje, só marca completo após 22h.
+    const diaCompleto=isHoje?(horaAtual>=22&&res.concluido):res.concluido;
     const diaAguardando=isHoje&&!diaCompleto;
     let status,icon,cor,detail='';
-    if(diaAguardando&&dosesFeitas===0){
+    if(diaAguardando&&res.tomadas===0){
       status='Aguardando…';icon='⌛';cor='var(--muted)';
-    } else if(diaCompleto||(dosesFeitas>=totalDiario)){
+    } else if(diaCompleto){
+      // Mesmo critério do calendário: temDados && concluido
       status='Concluído';icon='✅';cor='var(--green)';
     } else if(naoTomouList.length>0){
       const remedios=[...new Set(naoTomouList.map(r=>r.remedio||'?'))];
       status='Não tomou';icon='🚫';cor='var(--red)';
       detail=remedios.slice(0,2).join(', ')+(remedios.length>2?'…':'');
-    } else if(dosesFeitas>0&&dosesFeitas<totalDiario){
-      const faltam=totalDiario-dosesFeitas;
+    } else if(res.temDados&&!res.concluido){
+      const faltam=res.esperado-res.tomadas;
       status='Atenção';icon='⚠️';cor='var(--warn)';
       detail='Faltou '+(faltam===1?'1 dose':faltam+' doses');
     } else {
-      // Dia passado sem nenhum registro
       status=isHoje?'Aguardando…':'Sem registro';
       icon=isHoje?'⌛':'—';
       cor='var(--muted)';
     }
-    diasInfo.push({df,dow:DIAS_PT[d.getDay()],isHoje,status,icon,cor,detail,dosesFeitas,totalDiario});
+    diasInfo.push({df,dow:DIAS_PT[d.getDay()],isHoje,status,icon,cor,detail,res});
   }
 
-  // Calcular veredito da semana
+  // Calcular veredito da semana — usa res.concluido de cada dia
   const diasPassados=diasInfo.filter(d=>!d.isHoje);
-  const diasOk=diasPassados.filter(d=>d.dosesFeitas>=d.totalDiario).length;
-  const diasFalha=diasPassados.filter(d=>d.status==='Atenção'||d.status==='Não tomou'||d.status==='Sem registro');
+  const diasOk=diasPassados.filter(d=>d.res.concluido&&d.res.temDados).length;
+  const diasFalha=diasPassados.filter(d=>d.res.temDados&&!d.res.concluido||d.status==='Não tomou'||d.status==='Sem registro');
   let veredito='',vCorFundo='',vCorTexto='';
   if(!diasPassados.length){
     veredito='📅 Início de semana — registros aparecerão aqui.';
@@ -4242,6 +4241,25 @@ function renderSusHistorico(med){
     +'</div>';
 }
 
+// ═══════════════ CELEBRAÇÃO ═══════════════
+function executarCelebracao(){
+  try{
+    // Confetti
+    if(typeof confetti==='function'){
+      confetti({particleCount:120,spread:80,origin:{y:0.6},colors:['#3B82F6','#EC4899','#10B981','#F59E0B','#8B5CF6']});
+    }
+    // Áudio trombetas
+    const audio=document.getElementById('audio-celebracao');
+    if(audio){audio.volume=0.5;audio.currentTime=0;audio.play().catch(()=>{});}
+  }catch(e){console.warn('Celebração:',e);}
+}
+// Verificar se hoje ficou 100% após marcar dose
+function verificarCelebracaoPos(dados){
+  const dHj=hoje();
+  const r=getResumoDia(dados,dHj);
+  if(r.temDados&&r.esperado>0&&r.concluido) executarCelebracao();
+}
+
 // ═══════════════ INIT ═══════════════
 // Expor funções usadas em onclick como window.* para garantir acesso global
 // (necessário em alguns browsers com scripts grandes)
@@ -4280,6 +4298,7 @@ window.agendarTodasNotificacoes=agendarTodasNotificacoes;
 window.enviarNotifTeste=enviarNotifTeste; window.dispensarBannerNotif=dispensarBannerNotif;
 window.solicitarPermissaoPush=solicitarPermissaoPush;
 window.marcarRecuperacao=marcarRecuperacao; window.aplicarNomesCriancas=aplicarNomesCriancas;
+window.executarCelebracao=executarCelebracao;
 
 document.querySelector('.agenda-fab').style.display='none';
 mostrarSplash();
@@ -4287,5 +4306,6 @@ initAuth();
 initDark();
 if('serviceWorker' in navigator) initServiceWorker();
 </script>
+<audio id="audio-celebracao" src="trombetas.mp3" preload="auto"></audio>
 </body>
 </html>
