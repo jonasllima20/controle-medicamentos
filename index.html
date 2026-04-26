@@ -1271,54 +1271,25 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
       <div class="field"><label>Ícone</label><input id="me-icon" type="text" maxlength="4"></div>
       <div class="field"><label>Nome</label><input id="me-nome" type="text"></div>
     </div>
-    <!-- Seção global (visível no modo "Ambos") -->
-    <div id="me-secao-global">
-      <div class="field-row">
-        <div class="field">
-          <label>Período</label>
-          <select id="me-per" onchange="atualizarCamposHorario()">
-            <option value="manha">☀️ Manhã (06–12h)</option>
-            <option value="tarde">🌤️ Tarde (13–17h)</option>
-            <option value="noite">🌙 Noite (18–23h)</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Aplicar para</label>
-          <select id="me-quem" onchange="atualizarCamposHorario()">
-            <option value="Ambos">👫 Ambos</option>
-            <option value="Arthur">🧒 Arthur</option>
-            <option value="Alice">👧 Alice</option>
-          </select>
-        </div>
-      </div>
-      <!-- 1 único campo de horário por remédio -->
-      <div id="me-horas-ambos">
-        <div class="field">
-          <label>Horário</label>
-          <input id="me-hora-m" type="time">
-        </div>
-      </div>
-    </div>
-        <!-- Horários individuais (quando escolher uma criança específica) -->
-    <div id="me-horas-individual" style="display:none">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
-        <div style="font-size:.72rem;font-weight:700;color:var(--ind);text-transform:uppercase;letter-spacing:.4px" id="me-horas-individual-titulo">Horário específico</div>
-        <select id="me-quem-ind" onchange="sincronizarQuem()" style="font-size:.75rem;border:1.5px solid var(--border);border-radius:8px;padding:4px 8px;background:var(--bg);color:var(--text);outline:none">
+    <!-- Aplicar para -->
+    <div class="field-row" style="margin-bottom:10px">
+      <div class="field" style="flex:1">
+        <label>Aplicar para</label>
+        <select id="me-quem" onchange="atualizarCamposHorario()">
+          <option value="Ambos">👫 Ambos</option>
           <option value="Arthur">🧒 Arthur</option>
           <option value="Alice">👧 Alice</option>
         </select>
       </div>
-      <div class="field">
-        <label id="me-hora-m-ind-lbl">Horário</label>
-        <input id="me-hora-m-ind" type="time">
-      </div>
-      <div class="field" id="me-hora-n-ind-wrap" style="display:none;margin-top:8px">
-        <label>Horário noite (individual)</label>
-        <input id="me-hora-n-ind" type="time">
-      </div>
-      <div style="font-size:.72rem;color:#92400E;margin-top:6px;padding:8px 10px;background:var(--warnl);border-radius:8px;border:1px solid var(--mnb)">
-        ⚡ Apenas os horários desta criança serão alterados.
-      </div>
+    </div>
+    <!-- Lista dinâmica de doses -->
+    <div id="me-doses-wrap">
+      <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:8px">DOSES / HORÁRIOS</div>
+      <div id="me-doses-lista"></div>
+      <button type="button" onclick="adicionarDoseLinha()" style="margin-top:6px;font-size:.8rem;color:var(--pri);background:none;border:1.5px dashed var(--pri);border-radius:8px;padding:5px 14px;cursor:pointer;width:100%">+ Adicionar horário</button>
+    </div>
+    <div id="me-aviso-individual" style="display:none;font-size:.72rem;color:#92400E;margin-top:6px;padding:8px 10px;background:var(--warnl);border-radius:8px;border:1px solid var(--mnb)">
+      ⚡ Apenas os horários desta criança serão alterados. Nome e ícone não são afetados.
     </div>
     <!-- CONTROLE DE PERÍODO DO FRASCO/CARTUCHO -->
     <div id="me-secao-frasco" style="border-top:1px solid var(--border);padding-top:12px;margin-top:10px">
@@ -2022,8 +1993,12 @@ function gerarDefaultMedsCfg(){
   DEFAULT_MEDS_BASE.forEach(function(m){
     criancas.forEach(function(c){
       // periodos será calculado por getPeriodosMed quando usado
-      const entry={crianca:c,remedio:m.nome,icon:m.icon,horaManha:m.horaManha,horaNoite:m.horaNoite,suspenso:false,suspHist:[],periodoInicio:'',periodoFim:'',motivoSuspensao:''};
-      entry.periodos=getPeriodosMed(entry);
+      const doses=[];
+      if(m.horaManha){const p=getPeriodoFromHora(m.horaManha);if(p)doses.push({periodo:p,hora:m.horaManha});}
+      if(m.horaNoite){const p2=getPeriodoFromHora(m.horaNoite);if(p2&&!doses.find(d=>d.periodo===p2))doses.push({periodo:p2,hora:m.horaNoite});}
+      if(!doses.length)doses.push({periodo:'manha',hora:'08:00'});
+      const entry={crianca:c,remedio:m.nome,icon:m.icon,doses:doses,suspenso:false,suspHist:[],periodoInicio:'',periodoFim:'',motivoSuspensao:'',periodo:{geral:{inicio:null,fim:null},criancas:{}}};
+      entry.periodos=entry.doses.map(d=>d.periodo).filter((p,i,a)=>a.indexOf(p)===i);
       cfg[c+'_'+m.nome]=entry;
     });
   });
@@ -2052,7 +2027,22 @@ function fbLoadSaude(){_db.collection('config').doc('saude').get().then(function
 
 function getMedsCfg(){
   const raw=localStorage.getItem('rm_meds_cfg');
-  if(raw){try{return JSON.parse(raw);}catch(e){}}
+  if(raw){
+    try{
+      const cfg=JSON.parse(raw);
+      // Migrar cada entrada para doses[] se necessário (lazy migration)
+      let dirty=false;
+      Object.keys(cfg).forEach(function(k){
+        if(!cfg[k].doses||!cfg[k].doses.length){
+          cfg[k]=migrarParaDoses(cfg[k]);
+          cfg[k].periodos=cfg[k].doses.map(d=>d.periodo).filter((p,i,a)=>a.indexOf(p)===i);
+          dirty=true;
+        }
+      });
+      if(dirty){localStorage.setItem('rm_meds_cfg',JSON.stringify(cfg));}
+      return cfg;
+    }catch(e){}
+  }
   // Migração: se existir o modelo antigo, converter
   const old=localStorage.getItem('rm_meds');
   if(old){
@@ -2074,18 +2064,12 @@ function getMedCfg(crianca,remedio){
 function setMedCfg(crianca,remedio,dados){
   const cfg=getMedsCfg();
   const entry=Object.assign({crianca:crianca,remedio:remedio},dados);
-  // Se vier campo 'horario' (modelo novo simplificado),
-  // mapear para horaManha/horaNoite baseado no período derivado
-  if(entry.horario!==undefined){
-    const p=getPeriodoFromHora(entry.horario);
-    if(p==='noite'){entry.horaNoite=entry.horario;entry.horaManha=entry.horaManha||'';}
-    else if(p==='tarde'){entry.horaManha=entry.horario;entry.horaNoite='';}
-    else{entry.horaManha=entry.horario;entry.horaNoite='';}
-    delete entry.horario; // normalizar: armazenar apenas horaManha/horaNoite
-  }
-  // periodos sempre derivado dos horários
-  entry.periodos=getPeriodosMed(entry);
-  cfg[crianca+'_'+remedio]=entry;
+  // Migrar para doses[] se necessário
+  const migrated=migrarParaDoses(entry);
+  migrated.doses=migrated.doses||[];
+  // Garantir periodos[] derivado (compat para funções antigas)
+  migrated.periodos=migrated.doses.map(d=>d.periodo).filter((p,i,a)=>a.indexOf(p)===i);
+  cfg[crianca+'_'+remedio]=migrated;
   setMedsCfg(cfg);
 }
 function deletarMedCfg(crianca,remedio){
@@ -2155,14 +2139,19 @@ function getPeriodoFromHora(hora){
   if(h>=0&&h<6)   return 'noite'; // madrugada = noite
   return 'manha';
 }
-// Retorna lista de períodos de um med baseado nos horários reais
+// Migra med para modelo doses[] se ainda usar horaManha/horaNoite
+function migrarParaDoses(med){
+  if(med.doses&&med.doses.length) return med; // já migrado
+  const doses=[];
+  if(med.horaManha){const p=getPeriodoFromHora(med.horaManha);if(p)doses.push({periodo:p,hora:med.horaManha});}
+  if(med.horaNoite){const p=getPeriodoFromHora(med.horaNoite);if(p&&!doses.find(d=>d.periodo===p))doses.push({periodo:p,hora:med.horaNoite});}
+  if(!doses.length) doses.push({periodo:'manha',hora:'08:00'});
+  return Object.assign({},med,{doses});
+}
+// Retorna lista de períodos de um med — lê de doses[] (com fallback para horaManha/horaNoite)
 function getPeriodosMed(med){
-  const ps=[];
-  const pm=getPeriodoFromHora(med.horaManha);
-  const pn=getPeriodoFromHora(med.horaNoite);
-  if(pm&&!ps.includes(pm)) ps.push(pm);
-  if(pn&&pn!==pm&&!ps.includes(pn)) ps.push(pn);
-  return ps.length?ps:['manha'];
+  const m=migrarParaDoses(med);
+  return m.doses.map(d=>d.periodo).filter((p,i,a)=>a.indexOf(p)===i);
 }
 // ── Período de tratamento (frasco/cartucho) ─────────────
 // Verifica se uma data (yyyy-mm-dd ou dd/mm/yyyy) está dentro de um range
@@ -2195,13 +2184,12 @@ function estaAtivo(med,crianca,dataISO){
   return dentroDoPeriodo(dataISO,pGeralFallback);
 }
 
-// Retorna o horário do remédio para um dado período (única fonte de verdade)
+// Retorna o horário do remédio para um dado período — lê de doses[]
 function getMedHorario(med,periodo){
   if(!med) return null;
-  for(const h of [med.horaManha,med.horaNoite]){
-    if(h&&getPeriodoFromHora(h)===periodo) return h;
-  }
-  return null;
+  const m=migrarParaDoses(med);
+  const dose=m.doses.find(d=>d.periodo===periodo);
+  return dose?dose.hora:null;
 }
 // Ícone de período
 const PERIODO_ICON={'manha':'☀️','tarde':'🌤️','noite':'🌙'};
@@ -2210,7 +2198,7 @@ function totalDoses(crianca,dataISO){
   const criancas=getCriancas();
   const c=crianca||criancas[0]||'Arthur';
   const d=dataISO||hojeISO();
-  return getMeds(c).filter(function(m){return estaAtivo(m,c,d);}).reduce(function(s,m){return s+getPeriodosMed(m).length;},0);
+  return getMeds(c).filter(function(m){return estaAtivo(m,c,d);}).reduce(function(s,m){return s+migrarParaDoses(m).doses.length;},0);
 }
 // fbLoadMedsCfg — carrega do Firestore
 window.fbLoadMedsCfg=function(){
@@ -3313,6 +3301,7 @@ document.addEventListener('click',e=>{
   if(w&&m&&!w.contains(e.target)&&!m.contains(e.target))fecharMenus();
 });
 function abrirMo(id){
+  if(id==='mo-med-admin'){setTimeout(_initNmDoses,50);}
   fecharMenus();
   if(id==='mo-meds-admin')renderMedsAdmin();
   if(id==='mo-perfil')atualizarHeaderUser();
@@ -3975,83 +3964,75 @@ function renderMedsAdmin(){
   }).join('');
 }
 
+// ── Gestão de doses dinâmicas no modal de edição ──────────
+function addDoseRow(periodo, hora){
+  const lista=document.getElementById('me-doses-lista');if(!lista)return;
+  const row=document.createElement('div');
+  row.className='dose-row';
+  row.style.cssText='display:flex;align-items:center;gap:8px';
+  row.innerHTML='<select class="dose-per" style="flex:1;font-size:.82rem;border:1.5px solid var(--border);border-radius:8px;padding:6px 8px;background:var(--bg);color:var(--text)">'
+    +'<option value="manha"'+(periodo==='manha'?' selected':'')+'>☀️ Manhã</option>'
+    +'<option value="tarde"'+(periodo==='tarde'?' selected':'')+'>🌤️ Tarde</option>'
+    +'<option value="noite"'+(periodo==='noite'?' selected':'')+'>🌙 Noite</option>'
+    +'</select>'
+    +'<input type="time" class="dose-hora" value="'+(hora||'')+'" style="flex:1;font-size:.82rem;border:1.5px solid var(--border);border-radius:8px;padding:6px 8px;background:var(--bg);color:var(--text)">'
+    +'<button type="button" onclick="this.parentNode.remove()" style="color:var(--red);background:none;border:none;font-size:1.1rem;cursor:pointer;padding:0 4px">✕</button>';
+  lista.appendChild(row);
+}
+function getDoseRows(){
+  const rows=document.querySelectorAll('#me-doses-lista .dose-row');
+  const doses=[];
+  rows.forEach(function(row){
+    const p=row.querySelector('.dose-per')?.value;
+    const h=row.querySelector('.dose-hora')?.value;
+    if(p&&h) doses.push({periodo:p,hora:h});
+  });
+  return doses;
+}
+function populateDoseRows(doses){
+  const lista=document.getElementById('me-doses-lista');if(!lista)return;
+  lista.innerHTML='';
+  (doses||[]).forEach(function(d){addDoseRow(d.periodo,d.hora);});
+  if(!doses||!doses.length) addDoseRow('manha','08:00');
+}
+
 function atualizarCamposHorario(){
   const quem=document.getElementById('me-quem')?.value||'Ambos';
-  const secGlobal=document.getElementById('me-secao-global');
-  const divAmbos=document.getElementById('me-horas-ambos');
-  const divInd=document.getElementById('me-horas-individual');
-  const horaN=document.getElementById('me-hora-n');if(horaN)horaN.value=''; // campo removido
+  const nomeRemedio=document.getElementById('me-idx')?.value||'';
+  const rIn=document.getElementById('me-row-icone-nome');
+  const rFr=document.getElementById('me-secao-frasco');
+  const avisoInd=document.getElementById('me-aviso-individual');
   if(quem==='Ambos'){
-    // Modo global: mostra todos os campos de edição geral
-    const rIn2=document.getElementById('me-row-icone-nome');if(rIn2)rIn2.style.display='grid';
-    const rFr2=document.getElementById('me-secao-frasco');if(rFr2)rFr2.style.display='block';
-    if(secGlobal)secGlobal.style.display='block';
-    if(divAmbos)divAmbos.style.display='block';
-    // Horário único: label e visibilidade do campo noite conforme período
-    const perVal2=document.getElementById('me-per')?.value||'manha';
-    const noiteWrap=document.getElementById('me-hora-n-wrap');
-    const mLabel=document.getElementById('me-hora-m-lbl');
-    if(noiteWrap) noiteWrap.style.display=perVal2==='ambos'?'block':'none';
-    if(mLabel){
-      const lbMap={'manha':'☀️ Horário manhã','tarde':'🌤️ Horário tarde','noite':'🌙 Horário noite','ambos':'☀️ Horário manhã'};
-      mLabel.textContent=lbMap[perVal2]||'Horário';
-    }
-    // Individual: mesma lógica
-    const noiteIndWrap=document.getElementById('me-hora-n-ind-wrap');
-    const indLabel=document.getElementById('me-hora-m-ind-lbl');
-    if(noiteIndWrap) noiteIndWrap.style.display=perVal2==='ambos'?'block':'none';
-    if(indLabel){
-      const lbMap2={'manha':'☀️ Horário manhã','tarde':'🌤️ Horário tarde','noite':'🌙 Horário noite','ambos':'☀️ Horário manhã'};
-      indLabel.textContent=lbMap2[perVal2]||'Horário';
-    }
-    if(divInd)divInd.style.display='none';
+    if(rIn) rIn.style.display='grid';
+    if(rFr) rFr.style.display='block';
+    if(avisoInd) avisoInd.style.display='none';
+    // Carregar doses Ambos (primeira criança como referência)
+    const c0=getCriancas()[0]||'Arthur';
+    const m0=getMedCfg(c0,nomeRemedio);
+    if(m0) renderDosesEditor(migrarParaDoses(m0).doses||[]);
+    // Restaurar datas geral
+    const _pU=_getPeriodoParaUI(m0||{},'geral');
+    const pI=document.getElementById('me-periodo-inicio');
+    const pF=document.getElementById('me-periodo-fim');
+    if(pI) pI.value=_pU.inicio||'';
+    if(pF) pF.value=_pU.fim||'';
   } else {
-    // Modo individual: esconde ícone/nome, mostra só horários da criança
-    const rIn=document.getElementById('me-row-icone-nome');if(rIn)rIn.style.display='none';
-    const rFr=document.getElementById('me-secao-frasco');if(rFr)rFr.style.display='block'; // mostrar datas individuais
-    // Carregar datas do periodo individual desta criança
-    const _nomeMedInd=document.getElementById('me-idx')?.value||'';
-    const _medIndCfg=_nomeMedInd?getMedCfg(quem,_nomeMedInd):null;
-    if(_medIndCfg){
-      const _pChave=quem.toLowerCase();
-      const _pCrianca=(_medIndCfg.periodo?.criancas||{})[_pChave]||{};
-      const _pI=document.getElementById('me-periodo-inicio');
-      const _pF=document.getElementById('me-periodo-fim');
-      if(_pI) _pI.value=_pCrianca.inicio||'';
-      if(_pF) _pF.value=_pCrianca.fim||'';
-    }
-    if(secGlobal)secGlobal.style.display='block'; // mantém select "Editar horários de"
-    if(divAmbos)divAmbos.style.display='none';
-    if(divInd)divInd.style.display='block';
-    // Sincronizar select do painel individual com o select principal
-    const selInd=document.getElementById('me-quem-ind');
-    if(selInd)selInd.value=quem;
-    // Pré-preencher com horários atuais da criança
-    const nR=document.getElementById('me-idx')?.value||'';
-    const m=getMedCfg(getCriancas()[0]||'Arthur',nR)||{};
-    if(m){
-      const perInd=document.getElementById('me-per')?.value||'manha';
-      const hmInd=document.getElementById('me-hora-m-ind');
-      const hnInd=document.getElementById('me-hora-n-ind');
-      // Campo principal: horário do período ativo
-      const horaAtiva=perInd==='noite'?(m.horaNoite||''):perInd==='tarde'?(m.horaManha||''):(m.horaManha||'');
-      if(hmInd) hmInd.value=horaAtiva;
-      if(hnInd) hnInd.value=m.horaNoite||'';
-      // Mostrar/ocultar campo noite individual
-      const nWrapInd=document.getElementById('me-hora-n-ind-wrap');
-      if(nWrapInd) nWrapInd.style.display=perInd==='ambos'?'block':'none';
-    }
-    const titulo=document.getElementById('me-horas-individual-titulo');
-    if(titulo){const cfg=getCriancaConfig(quem);titulo.textContent=cfg.emoji+' Horário específico — '+cfg.nome;}
+    if(rIn) rIn.style.display='none';    // nome/ícone não mudam em modo individual
+    if(rFr) rFr.style.display='block';
+    if(avisoInd) avisoInd.style.display='block';
+    // Carregar doses desta criança
+    const mInd=getMedCfg(quem,nomeRemedio);
+    if(mInd) renderDosesEditor(migrarParaDoses(mInd).doses||[]);
+    // Carregar datas individuais
+    const _pUi=_getPeriodoParaUI(mInd||{},quem.toLowerCase());
+    const pI2=document.getElementById('me-periodo-inicio');
+    const pF2=document.getElementById('me-periodo-fim');
+    if(pI2) pI2.value=_pUi.inicio||'';
+    if(pF2) pF2.value=_pUi.fim||'';
   }
 }
-// Sincroniza o select interno do painel individual com o select principal
-function sincronizarQuem(){
-  const selInd=document.getElementById('me-quem-ind');
-  const selPrincipal=document.getElementById('me-quem');
-  if(selInd&&selPrincipal) selPrincipal.value=selInd.value;
-  atualizarCamposHorario();
-}
+
+function sincronizarQuem(){atualizarCamposHorario();} // compatibilidade
 
 function abrirEditMed(nomeRemedio){
   // nomeRemedio = string do nome do remédio (ex: "Ferro")
@@ -4071,7 +4052,10 @@ function abrirEditMed(nomeRemedio){
   const _perValAbrir=perVal;
   const _horaM=m0.horaManha||'';
   const _horaN=m0.horaNoite||'';
-   // 1 único campo de horário — mostra o horário do período ativo
+   // Preencher doses dinâmicas (novo modelo)
+   const _medDoses=migrarParaDoses(m0).doses;
+   populateDoseRows(_medDoses);
+   // Compat: manter me-hora-m oculto com valor principal
    document.getElementById('me-hora-m').value=_perValAbrir==='noite'?_horaN:_horaM;
   // Carregar datas do novo modelo periodo (com fallback para modelo antigo)
   function _getPeriodoParaUI(med,chave){
@@ -4093,7 +4077,11 @@ function abrirEditMed(nomeRemedio){
   const rFr=document.getElementById('me-secao-frasco');if(rFr)rFr.style.display='block';
   const divAmbos=document.getElementById('me-horas-ambos');if(divAmbos)divAmbos.style.display='block';
   const divInd=document.getElementById('me-horas-individual');if(divInd)divInd.style.display='none';
-  _renderHorariosIndividuais(m0, nomeRemedio);
+  // Inicializar lista de doses no editor
+  const _m0migrado=migrarParaDoses(m0);
+  renderDosesEditor(_m0migrado.doses||[]);
+  document.getElementById('me-aviso-individual').style.display='none';
+  document.getElementById('me-row-icone-nome').style.display='grid';
   abrirMo('mo-med-edit');
 }
 // Exibe aviso visual se existem horários individuais configurados
@@ -4125,11 +4113,11 @@ function salvarMedEdit(){
     else{p.criancas[chave]={inicio:ini||null,fim:fim||null};}
     return p;
   }
-  // 1 único campo de horário — período determina onde armazenar
-  const horario=document.getElementById('me-hora-m').value||'';
-  const perSel=document.getElementById('me-per')?.value||'manha';
-  const horaManhaSave=perSel==='noite'?'':horario;
-  const horaNoiteSave=perSel==='noite'?horario:'';
+  // Ler doses das linhas dinâmicas (novo modelo)
+  const dosesParaSalvar=getDoseRows();
+  // Manter campos legados sincronizados para compat
+  const horaManhaSave=(dosesParaSalvar.find(d=>d.periodo==='manha')||dosesParaSalvar.find(d=>d.periodo==='tarde'))?.hora||'';
+  const horaNoiteSave=dosesParaSalvar.find(d=>d.periodo==='noite')?.hora||'';
 
   if(quem==='Ambos'){
     CRIANCAS.forEach(function(c){
@@ -4142,6 +4130,7 @@ function salvarMedEdit(){
       setMedCfg(c,novoNome,Object.assign({},atual,{
         crianca:c,remedio:novoNome,icon:icon,
         horaManha:horaManhaSave,horaNoite:horaNoiteSave,
+        doses:dosesParaSalvar, // novo modelo
         periodo:novoPeriodo
       }));
       if(novoNome!==nomeRemedio) deletarMedCfg(c,nomeRemedio);
@@ -4157,6 +4146,7 @@ function salvarMedEdit(){
     const novoPeriodoInd=_buildPeriodo(periodoIndAtual,chave,periodoInicio,periodoFim);
     setMedCfg(quem,nomeRemedio,Object.assign({},atual,{
       horaManha:horaManhaSave,horaNoite:horaNoiteSave,
+      doses:dosesParaSalvar, // novo modelo
       periodo:novoPeriodoInd
     }));
   }
@@ -4169,27 +4159,77 @@ function deletarMed(){
   CRIANCAS.forEach(function(c){deletarMedCfg(c,nomeRemedio);});
   fecharMo('mo-med-edit');renderMedsAdmin();atualizarTudo();
 }
-function atualizarCampoHoraNm(){
-  const per=document.getElementById('nm-per')?.value||'manha';
-  const wrap=document.getElementById('nm-hora-noite-wrap');
-  const lbl=document.getElementById('nm-hora-label');
-  if(wrap) wrap.style.display=per==='ambos'?'block':'none';
-  if(lbl) lbl.textContent=per==='noite'?'Horário noite':per==='tarde'?'Horário tarde':'Horário manhã';
+// ── Editor dinâmico de doses ─────────────────────────────
+// Cria uma linha de dose (período + horário) no editor
+function _criarLinhaDose(dose,onRemove){
+  const row=document.createElement('div');
+  row.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:6px';
+  const selPer=document.createElement('select');
+  selPer.style.cssText='flex:1;border:1.5px solid var(--border);border-radius:8px;padding:6px 8px;background:var(--bg);color:var(--text);font-size:.83rem';
+  ['manha','tarde','noite'].forEach(function(p){
+    const opt=document.createElement('option');
+    opt.value=p;opt.textContent={'manha':'☀️ Manhã','tarde':'🌤️ Tarde','noite':'🌙 Noite'}[p];
+    if(dose&&dose.periodo===p) opt.selected=true;
+    selPer.appendChild(opt);
+  });
+  const inp=document.createElement('input');
+  inp.type='time';inp.value=(dose&&dose.hora)||'';
+  inp.style.cssText='flex:1;border:1.5px solid var(--border);border-radius:8px;padding:6px 8px;background:var(--bg);color:var(--text);font-size:.83rem';
+  const btn=document.createElement('button');
+  btn.type='button';btn.textContent='✕';
+  btn.style.cssText='background:none;border:none;color:var(--red);font-size:1rem;cursor:pointer;padding:4px;flex-shrink:0';
+  btn.onclick=function(){row.parentNode&&row.parentNode.removeChild(row);if(onRemove)onRemove();};
+  row.appendChild(selPer);row.appendChild(inp);row.appendChild(btn);
+  row._getDose=function(){return{periodo:selPer.value,hora:inp.value};};
+  return row;
 }
+// Renderiza todas as doses no editor (para modo editar)
+function renderDosesEditor(doses){
+  const lista=document.getElementById('me-doses-lista');if(!lista)return;
+  lista.innerHTML='';
+  if(!doses||!doses.length) doses=[{periodo:'manha',hora:''}];
+  doses.forEach(function(d){lista.appendChild(_criarLinhaDose(d));});
+}
+// Botão "+ Adicionar horário" (modal editar)
+function adicionarDoseLinha(){
+  const lista=document.getElementById('me-doses-lista');if(!lista)return;
+  lista.appendChild(_criarLinhaDose({periodo:'noite',hora:''}));
+}
+// Lê as doses do editor (modal editar)
+function getDosesDoEditor(){
+  const lista=document.getElementById('me-doses-lista');if(!lista)return[];
+  return Array.from(lista.children).map(function(row){
+    return row._getDose?row._getDose():{periodo:'manha',hora:''};
+  }).filter(function(d){return d.hora;});
+}
+// ── Editor de doses do modal Adicionar ───────────────────
+function _initNmDoses(){
+  const lista=document.getElementById('nm-doses-lista');if(!lista)return;
+  lista.innerHTML='';lista.appendChild(_criarLinhaDose({periodo:'manha',hora:'08:00'}));
+}
+function adicionarDoseNmLinha(){
+  const lista=document.getElementById('nm-doses-lista');if(!lista)return;
+  lista.appendChild(_criarLinhaDose({periodo:'noite',hora:''}));
+}
+function getDosesNm(){
+  const lista=document.getElementById('nm-doses-lista');if(!lista)return[];
+  return Array.from(lista.children).map(function(row){
+    return row._getDose?row._getDose():{periodo:'manha',hora:''};
+  }).filter(function(d){return d.hora;});
+}
+function atualizarCampoHoraNm(){_initNmDoses();} // compat
 function adicionarMed(){
   const err=document.getElementById('nm-err');const nome=document.getElementById('nm-nome')?.value.trim();
   if(!nome){if(err){err.style.display='block';err.textContent='❌ Digite o nome.';}return;}
   const icon=document.getElementById('nm-icon')?.value||'💊';
-  const horario=document.getElementById('nm-hora')?.value||'08:00';
-  const perVal=document.getElementById('nm-per')?.value||'manha';
-  // 1 horário → mapear para campo correto baseado no período
-  const horaManha=perVal==='noite'?'':horario;
-  const horaNoite=perVal==='noite'?horario:'';
+  const dosesAdd=getDosesNm();
+  if(!dosesAdd.length){dosesAdd.push({periodo:'manha',hora:'08:00'});}
   getCriancas().forEach(function(c){
-    setMedCfg(c,nome,{crianca:c,remedio:nome,icon:icon,horaManha:horaManha,horaNoite:horaNoite,suspenso:false,suspHist:[],motivoSuspensao:'',periodoInicio:'',periodoFim:''});
+    setMedCfg(c,nome,{crianca:c,remedio:nome,icon:icon,doses:dosesAdd,suspenso:false,suspHist:[],motivoSuspensao:'',periodo:{geral:{inicio:null,fim:null},criancas:{}}});
   });
   if(err)err.style.display='none';
-  ['nm-icon','nm-nome','nm-hora','nm-hora-noite'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['nm-icon','nm-nome'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  _initNmDoses();
   renderMedsAdmin();atualizarTudo();
 }
 let _susMedIdx=null;
@@ -4379,8 +4419,9 @@ window.abrirNovoEvento=abrirNovoEvento; window.abrirEditEvento=abrirEditEvento;
 window.salvarEvento=salvarEvento; window.deletarEvento=deletarEvento;
 window.abrirEditMed=abrirEditMed; window.salvarMedEdit=salvarMedEdit;
 window.deletarMed=deletarMed; window.adicionarMed=adicionarMed; window.atualizarCampoHoraNm=atualizarCampoHoraNm;
+window.adicionarDoseLinha=adicionarDoseLinha; window.adicionarDoseNmLinha=adicionarDoseNmLinha;
 window.abrirSuspender=abrirSuspender; window.confirmarSuspensao=confirmarSuspensao;
-window.atualizarCamposHorario=atualizarCamposHorario; window.sincronizarQuem=sincronizarQuem;
+window.atualizarCamposHorario=atualizarCamposHorario; window.sincronizarQuem=sincronizarQuem; window.addDoseRow=addDoseRow;
 window.paStep=paStep; window.paCheckStrength=paCheckStrength; window.paConfirmarSenha=paConfirmarSenha;
 window.checkStrength=checkStrength; window.salvarSenha=salvarSenha;
 window.abrirSaude=abrirSaude; window.setSaudeTab=setSaudeTab; window.salvarSaudeAtual=salvarSaudeAtual;
