@@ -3964,37 +3964,6 @@ function renderMedsAdmin(){
   }).join('');
 }
 
-// ── Gestão de doses dinâmicas no modal de edição ──────────
-function addDoseRow(periodo, hora){
-  const lista=document.getElementById('me-doses-lista');if(!lista)return;
-  const row=document.createElement('div');
-  row.className='dose-row';
-  row.style.cssText='display:flex;align-items:center;gap:8px';
-  row.innerHTML='<select class="dose-per" style="flex:1;font-size:.82rem;border:1.5px solid var(--border);border-radius:8px;padding:6px 8px;background:var(--bg);color:var(--text)">'
-    +'<option value="manha"'+(periodo==='manha'?' selected':'')+'>☀️ Manhã</option>'
-    +'<option value="tarde"'+(periodo==='tarde'?' selected':'')+'>🌤️ Tarde</option>'
-    +'<option value="noite"'+(periodo==='noite'?' selected':'')+'>🌙 Noite</option>'
-    +'</select>'
-    +'<input type="time" class="dose-hora" value="'+(hora||'')+'" style="flex:1;font-size:.82rem;border:1.5px solid var(--border);border-radius:8px;padding:6px 8px;background:var(--bg);color:var(--text)">'
-    +'<button type="button" onclick="this.parentNode.remove()" style="color:var(--red);background:none;border:none;font-size:1.1rem;cursor:pointer;padding:0 4px">✕</button>';
-  lista.appendChild(row);
-}
-function getDoseRows(){
-  const rows=document.querySelectorAll('#me-doses-lista .dose-row');
-  const doses=[];
-  rows.forEach(function(row){
-    const p=row.querySelector('.dose-per')?.value;
-    const h=row.querySelector('.dose-hora')?.value;
-    if(p&&h) doses.push({periodo:p,hora:h});
-  });
-  return doses;
-}
-function populateDoseRows(doses){
-  const lista=document.getElementById('me-doses-lista');if(!lista)return;
-  lista.innerHTML='';
-  (doses||[]).forEach(function(d){addDoseRow(d.periodo,d.hora);});
-  if(!doses||!doses.length) addDoseRow('manha','08:00');
-}
 
 function atualizarCamposHorario(){
   const quem=document.getElementById('me-quem')?.value||'Ambos';
@@ -4052,11 +4021,8 @@ function abrirEditMed(nomeRemedio){
   const _perValAbrir=perVal;
   const _horaM=m0.horaManha||'';
   const _horaN=m0.horaNoite||'';
-   // Preencher doses dinâmicas (novo modelo)
-   const _medDoses=migrarParaDoses(m0).doses;
-   populateDoseRows(_medDoses);
-   // Compat: manter me-hora-m oculto com valor principal
-   document.getElementById('me-hora-m').value=_perValAbrir==='noite'?_horaN:_horaM;
+   // me-hora-m é campo hidden para compat — não usado na UI principal
+   const _hm=document.getElementById('me-hora-m');if(_hm)_hm.value='';
   // Carregar datas do novo modelo periodo (com fallback para modelo antigo)
   function _getPeriodoParaUI(med,chave){
     const p=med.periodo||{};
@@ -4114,7 +4080,7 @@ function salvarMedEdit(){
     return p;
   }
   // Ler doses das linhas dinâmicas (novo modelo)
-  const dosesParaSalvar=getDoseRows();
+  const dosesParaSalvar=getDosesDoEditor();
   // Manter campos legados sincronizados para compat
   const horaManhaSave=(dosesParaSalvar.find(d=>d.periodo==='manha')||dosesParaSalvar.find(d=>d.periodo==='tarde'))?.hora||'';
   const horaNoiteSave=dosesParaSalvar.find(d=>d.periodo==='noite')?.hora||'';
