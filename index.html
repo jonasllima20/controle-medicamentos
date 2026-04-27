@@ -1240,19 +1240,10 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
         <div class="field"><label>Ícone (emoji)</label><input id="nm-icon" type="text" placeholder="💊" maxlength="4"></div>
         <div class="field"><label>Nome</label><input id="nm-nome" type="text" placeholder="Ex: Vitamina C"></div>
       </div>
-      <div class="field-row">
-        <div class="field">
-          <label>Período(s)</label>
-          <select id="nm-per" onchange="atualizarCampoHoraNm()">
-            <option value="manha">☀️ Só de manhã</option>
-            <option value="tarde">🌤️ Só à tarde</option>
-            <option value="noite">🌙 Só à noite</option>
-            <option value="ambos">☀️🌙 Manhã e noite</option>
-          </select>
-        </div>
-        <div class="field"><label id="nm-hora-label">Horário manhã</label><input id="nm-hora" type="time"></div>
-      </div>
-      <!-- Campo noite removido: apenas 1 horário por remédio, período define turno -->
+      <!-- Doses dinâmicas — igual ao modal de edição -->
+      <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:6px">DOSES / HORÁRIOS</div>
+      <div id="nm-doses-lista"></div>
+      <button type="button" onclick="adicionarDoseNmLinha()" style="font-size:.78rem;color:var(--pri);background:none;border:1.5px dashed var(--pri);border-radius:8px;padding:5px 12px;cursor:pointer;width:100%;margin-top:4px">+ Adicionar horário</button>
     </div>
     <div class="lerr" id="nm-err"></div>
     <div class="mbtns">
@@ -2185,6 +2176,14 @@ function estaAtivo(med,crianca,dataISO){
 }
 
 // Retorna o horário do remédio para um dado período — lê de doses[]
+function normalizarDoses(doses){
+  return Array.from(new Map(doses.map(function(d){return[d.periodo+d.hora,d];})).values()).filter(function(d){return d.hora;});
+}
+function _getPeriodoParaUI(med,chave){
+  const p=(med&&med.periodo)||{};
+  if(chave==='geral'){const g=p.geral||{};return{inicio:g.inicio||med?.periodoInicio||'',fim:g.fim||med?.periodoFim||''};}
+  const c=p.criancas?.[chave.toLowerCase()]||{};return{inicio:c.inicio||'',fim:c.fim||''};
+}
 function getMedHorario(med,periodo){
   if(!med) return null;
   const m=migrarParaDoses(med);
@@ -3965,6 +3964,23 @@ function renderMedsAdmin(){
 }
 
 
+// Retorna datas de início/fim do período para um remédio e chave (geral/arthur/alice)
+function _getPeriodoParaUI(med,chave){
+  const p=(med&&med.periodo)||{};
+  if(chave==='geral'){
+    const g=p.geral||{};
+    return{inicio:g.inicio||med.periodoInicio||'',fim:g.fim||med.periodoFim||''};
+  }
+  const c=p.criancas?.[chave.toLowerCase()]||{};
+  return{inicio:c.inicio||'',fim:c.fim||''};
+}
+// Normaliza doses: remove duplicatas e doses sem horário
+function normalizarDoses(doses){
+  if(!doses||!doses.length) return [{periodo:'manha',hora:'08:00'}];
+  const filtered=doses.filter(function(d){return d&&d.hora;});
+  const deduped=Array.from(new Map(filtered.map(function(d){return[d.periodo+d.hora,d];})).values());
+  return deduped.length?deduped:[{periodo:'manha',hora:'08:00'}];
+}
 function atualizarCamposHorario(){
   const quem=document.getElementById('me-quem')?.value||'Ambos';
   const nomeRemedio=document.getElementById('me-idx')?.value||'';
@@ -4004,52 +4020,37 @@ function atualizarCamposHorario(){
 function sincronizarQuem(){atualizarCamposHorario();} // compatibilidade
 
 function abrirEditMed(nomeRemedio){
-  // nomeRemedio = string do nome do remédio (ex: "Ferro")
   const CRIANCAS=getCriancas();
-  // Pegar dados da primeira criança como referência para ícone/nome
-  const m0=getMedCfg(CRIANCAS[0],nomeRemedio)||getMedCfg(CRIANCAS[1]||CRIANCAS[0],nomeRemedio)||{icon:'💊',remedio:nomeRemedio,periodos:['manha'],horaManha:'08:00',horaNoite:'',periodoInicio:'',periodoFim:''};
-  document.getElementById('me-idx').value=nomeRemedio; // agora armazena o nome
+  const m0=getMedCfg(CRIANCAS[0],nomeRemedio)||getMedCfg(CRIANCAS[1]||CRIANCAS[0],nomeRemedio)||
+    {icon:'💊',remedio:nomeRemedio,doses:[{periodo:'manha',hora:'08:00'}]};
+
+  // Campos básicos
+  document.getElementById('me-idx').value=nomeRemedio;
   document.getElementById('me-icon').value=m0.icon||'💊';
   document.getElementById('me-nome').value=nomeRemedio;
-  // Derivar período a partir dos horários reais
-  const pm0=getPeriodoFromHora(m0.horaManha);
-  const pn0=getPeriodoFromHora(m0.horaNoite);
-  const perVal=pm0&&pn0&&pm0!==pn0?'ambos':(pn0||pm0||'manha');
-  document.getElementById('me-per').value=perVal;
-  // Horários do modo "Ambos": médio entre crianças (ou da primeira criança)
-  // Determinar qual horário mostrar no campo principal baseado no período
-  const _perValAbrir=perVal;
-  const _horaM=m0.horaManha||'';
-  const _horaN=m0.horaNoite||'';
-   // me-hora-m é campo hidden para compat — não usado na UI principal
-   const _hm=document.getElementById('me-hora-m');if(_hm)_hm.value='';
-  // Carregar datas do novo modelo periodo (com fallback para modelo antigo)
-  function _getPeriodoParaUI(med,chave){
-    const p=med.periodo||{};
-    if(chave==='geral'){
-      const g=p.geral||{};
-      // fallback modelo antigo
-      return {inicio:g.inicio||med.periodoInicio||'',fim:g.fim||med.periodoFim||''};
-    }
-    const c=p.criancas?.[chave.toLowerCase()]||{};
-    return {inicio:c.inicio||'',fim:c.fim||''};
-  }
-  const _perUI=_getPeriodoParaUI(m0,'geral');
-  document.getElementById('me-periodo-inicio').value=_perUI.inicio||'';
-  document.getElementById('me-periodo-fim').value=_perUI.fim||'';
-  // Sempre abrir em modo "Ambos"
-  const quemEl=document.getElementById('me-quem');if(quemEl)quemEl.value='Ambos';
-  const rIn=document.getElementById('me-row-icone-nome');if(rIn)rIn.style.display='grid';
-  const rFr=document.getElementById('me-secao-frasco');if(rFr)rFr.style.display='block';
-  const divAmbos=document.getElementById('me-horas-ambos');if(divAmbos)divAmbos.style.display='block';
-  const divInd=document.getElementById('me-horas-individual');if(divInd)divInd.style.display='none';
-  // Inicializar lista de doses no editor
-  const _m0migrado=migrarParaDoses(m0);
-  renderDosesEditor(_m0migrado.doses||[]);
-  document.getElementById('me-aviso-individual').style.display='none';
-  document.getElementById('me-row-icone-nome').style.display='grid';
+
+  // Resetar "Aplicar para" para Ambos
+  const quemEl=document.getElementById('me-quem');
+  if(quemEl) quemEl.value='Ambos';
+
+  // Ocultar aviso individual
+  const avisoEl=document.getElementById('me-aviso-individual');
+  if(avisoEl) avisoEl.style.display='none';
+
+  // Renderizar doses do remédio
+  const doses=migrarParaDoses(m0).doses;
+  renderDosesEditor(doses);
+
+  // Preencher datas de período (frasco)
+  const pUI=_getPeriodoParaUI(m0,'geral');
+  const pIni=document.getElementById('me-periodo-inicio');
+  const pFim=document.getElementById('me-periodo-fim');
+  if(pIni) pIni.value=pUI.inicio||'';
+  if(pFim) pFim.value=pUI.fim||'';
+
   abrirMo('mo-med-edit');
 }
+
 // Exibe aviso visual se existem horários individuais configurados
 function _renderHorariosIndividuais(m, idx){
   const CRIANCAS=getCriancas();
@@ -4080,7 +4081,7 @@ function salvarMedEdit(){
     return p;
   }
   // Ler doses das linhas dinâmicas (novo modelo)
-  const dosesParaSalvar=getDosesDoEditor();
+  const dosesParaSalvar=normalizarDoses(getDosesDoEditor());
   // Manter campos legados sincronizados para compat
   const horaManhaSave=(dosesParaSalvar.find(d=>d.periodo==='manha')||dosesParaSalvar.find(d=>d.periodo==='tarde'))?.hora||'';
   const horaNoiteSave=dosesParaSalvar.find(d=>d.periodo==='noite')?.hora||'';
@@ -4188,8 +4189,7 @@ function adicionarMed(){
   const err=document.getElementById('nm-err');const nome=document.getElementById('nm-nome')?.value.trim();
   if(!nome){if(err){err.style.display='block';err.textContent='❌ Digite o nome.';}return;}
   const icon=document.getElementById('nm-icon')?.value||'💊';
-  const dosesAdd=getDosesNm();
-  if(!dosesAdd.length){dosesAdd.push({periodo:'manha',hora:'08:00'});}
+  const dosesAdd=normalizarDoses(getDosesNm());
   getCriancas().forEach(function(c){
     setMedCfg(c,nome,{crianca:c,remedio:nome,icon:icon,doses:dosesAdd,suspenso:false,suspHist:[],motivoSuspensao:'',periodo:{geral:{inicio:null,fim:null},criancas:{}}});
   });
