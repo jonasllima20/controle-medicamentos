@@ -2507,7 +2507,7 @@ function marcarDose(nome,remedio,periodo,btn,nota){
   const data=hoje();const hora=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   // UNICIDADE: data + criança + remédio + período (ignorar hora pois pode mudar por milissegundos)
   const hist=window._fbHist||[];
-  const jaTem=hist.some(r=>r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo&&!(r.nota&&r.nota.startsWith('NAO_TOMOU')));
+  const jaTem=hist.some(r=>r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo&&r.hora===hora&&!(r.nota&&r.nota.startsWith('NAO_TOMOU')));
   if(jaTem) return; // dose já registrada — não duplicar
   const reg={data,dataISO:hojeISO(),nome,remedio,periodo,hora,usuario:activeUser,nota:nota||null};
   window._fbHist=[...hist,reg];
