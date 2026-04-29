@@ -253,6 +253,8 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
 .ptabs{display:flex;gap:4px}
 .ptab{padding:4px 9px;border-radius:99px;font-size:.68rem;font-weight:700;border:1.5px solid transparent;cursor:pointer;transition:all .2s;background:var(--bg);color:var(--muted)}
 .ptab.mnh.on{background:var(--mn);border-color:var(--mnb);color:#92400E}
+.badge-chip{display:inline-flex;align-items:center;gap:5px;background:var(--nt);border:1.5px solid var(--ntb);border-radius:20px;padding:4px 10px;font-size:.75rem}
+[data-theme="dark"] .badge-chip{background:#1e1b4b;border-color:#4338ca;color:#c7d2fe}
 .ptab.trd.on{background:#FEF3C7;border-color:#F59E0B;color:#92400E}
 .ptab.nte.on{background:var(--nt);border-color:var(--ntb);color:#4C1D95}
 [data-theme="dark"] .ptab.mnh.on{color:#FCD34D}
@@ -1832,6 +1834,7 @@ window.fbStartListeners = function(){
       try{ if(typeof atualizarTendencia==='function') atualizarTendencia(); }catch(e){}
       try{ if(typeof atualizarRecordes==='function') atualizarRecordes(); }catch(e){}
       try{ if(typeof atualizarSemanaResumo==='function') atualizarSemanaResumo(); }catch(e){}
+  try{ if(typeof renderBadgesGanhos==='function') renderBadgesGanhos(); }catch(e){}
       try{ if(typeof atualizarTudo==='function') atualizarTudo(); }catch(e){}
     },
     function(err){
@@ -2177,7 +2180,16 @@ function estaAtivo(med,crianca,dataISO){
 
 // Retorna o horário do remédio para um dado período — lê de doses[]
 function normalizarDoses(doses){
-  return Array.from(new Map(doses.map(function(d){return[d.periodo+d.hora,d];})).values()).filter(function(d){return d.hora;});
+  if(!Array.isArray(doses)) return [{periodo:'manha',hora:'08:00'}];
+  const result=Array.from(new Map(
+    doses.map(function(d){
+      const hora=(d.hora||'').trim().replace(/^(\d):/, '0$1:'); // "8:00"→"08:00"
+      const key=d.periodo+hora;
+      return[key,{periodo:d.periodo,hora:hora}];
+    })
+  ).values()).filter(function(d){return d.hora;});
+  // Proteção: nunca retornar array vazio
+  return result.length?result:[{periodo:'manha',hora:'08:00'}];
 }
 function _getPeriodoParaUI(med,chave){
   const p=(med&&med.periodo)||{};
@@ -2479,9 +2491,14 @@ function marcarDose(nome,remedio,periodo,btn,nota){
   const logEntry={ts:Date.now(),data,hora,usuario:activeUser,acao:'Marcou '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo)+') para '+nome+(nota?' — "'+nota+'"':'')};
   window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);
   btn.classList.add('pop');setTimeout(()=>btn.classList.remove('pop'),300);
-  // Verificar celebração com os dados já atualizados em memória (sem setTimeout)
+  // Verificar celebração e badges com dados já atualizados em memória
   verificarCelebracao(window._fbHist);
   atualizarTudo();
+  // Badges: verificar após atualizarTudo ter rodado
+  setTimeout(function(){
+    verificarEDispararBadges(getHist());
+    renderBadgesGanhos();
+  },800);
 }
 
 // ═══════════════ CELEBRAÇÃO ═══════════════
@@ -2546,7 +2563,11 @@ function tocarFanfarra(){
 }
 
 // ═══════════════ WIDGET + STATS ═══════════════
-function atualizarWidget(){const dados=getHist();const dHj=hoje();const CRIANCAS=getCriancas();const total=totalDoses()*CRIANCAS.length;const feitas=dados.filter(r=>r.data===dHj).length;const pct=total>0?Math.round(feitas/total*100):0;const el=document.getElementById('wd-title');const sub=document.getElementById('wd-sub');if(el)el.textContent=pct===100?'🎉 Tudo feito hoje!':feitas+' de '+total+' doses hoje';if(sub)sub.textContent=pct===100?'Parabéns pelo cuidado!':(total-feitas)+' dose'+(total-feitas!==1?'s':'')+' pendente'+(total-feitas!==1?'s':'');const badges=document.getElementById('wd-badges');if(badges)badges.innerHTML=CRIANCAS.map(n=>{const f=dados.filter(r=>r.data===dHj&&r.nome===n).length;const t=totalDoses();return '<div class="wd-badge"><div class="bdot '+(f>=t?'ok':'pend')+'"></div>'+n+': '+f+'/'+t+'</div>';}).join('');}
+function atualizarWidget(){const dados=getHist();const dHj=hoje();const CRIANCAS=getCriancas();
+  // FONTE ÚNICA: getResumoDia para hoje
+  const rHj=getResumoDia(dados,dHj);
+  const total=rHj.esperado; const feitas=rHj.tomadas; const pct=rHj.pct;
+  const el=document.getElementById('wd-title');const sub=document.getElementById('wd-sub');if(el)el.textContent=pct===100?'🎉 Tudo feito hoje!':feitas+' de '+total+' doses hoje';if(sub)sub.textContent=pct===100?'Parabéns pelo cuidado!':(total-feitas)+' dose'+(total-feitas!==1?'s':'')+' pendente'+(total-feitas!==1?'s':'');const badges=document.getElementById('wd-badges');if(badges)badges.innerHTML=CRIANCAS.map(n=>{const cf=getCriancaConfig(n);const rc=getResumoDiaCrianca(dados,dHj,n);return '<div class="wd-badge"><div class="bdot '+(rc.concluido?'ok':'pend')+'"></div>'+cf.emoji+' '+cf.nome+': '+rc.tomadas+'/'+rc.esperado+'</div>';}).join('');}
 function atualizarStatHoje(){const dados=getHist();const dHj=hoje();const CRIANS_=getCriancas();const total=CRIANS_.reduce((s,c)=>s+totalDoses(c),0);const el=document.getElementById('sv-hoje');if(el)el.textContent=dados.filter(r=>r.data===dHj).length+'/'+total;}
 function verificarPendencias(){
   const dados=getHist();const dHj=hoje();const falta=[];const CRIANCAS=getCriancas();
@@ -4365,6 +4386,103 @@ function renderSusHistorico(med){
 // ═══════════════ CELEBRAÇÃO ═══════════════
 // celebração unificada em verificarCelebracao()
 
+// ═══════════════ BADGES / GAMIFICAÇÃO ═══════════════
+const BADGES_DEF={
+  streak_3:   {emoji:'🟢',nome:'Iniciante',       desc:'3 dias consecutivos'},
+  streak_7:   {emoji:'🔥',nome:'Consistente',     desc:'7 dias consecutivos'},
+  streak_15:  {emoji:'💪',nome:'Disciplina forte', desc:'15 dias consecutivos'},
+  streak_30:  {emoji:'🏆',nome:'Elite',            desc:'30 dias consecutivos'},
+  semana_perfeita: {emoji:'⭐',nome:'Semana perfeita', desc:'7 dias completos na semana'},
+  familia_completa:{emoji:'👨‍👩‍👧‍👦',nome:'Missão cumprida', desc:'Família completa hoje'},
+  zero_falhas:{emoji:'🎯',nome:'Precisão total',   desc:'10 dias sem falha'},
+  recuperacao:{emoji:'🔄',nome:'Retomada',          desc:'Dia completo após falha'},
+};
+function carregarBadges(){try{return JSON.parse(localStorage.getItem('rm_badges')||'[]');}catch(e){return[];}}
+function salvarBadges(lista){localStorage.setItem('rm_badges',JSON.stringify(lista));}
+
+function verificarBadges(dados){
+  const ativos=[];
+  // Streak usando getResumoDia — fonte única
+  const diasOrdem=[...new Set(dados.map(r=>r.data))].sort().reverse();
+  let streak=0;
+  for(const df of diasOrdem){
+    const r=getResumoDia(dados,df);
+    if(r.temDados&&r.esperado>0&&r.concluido) streak++;
+    else break;
+  }
+  if(streak>=3)  ativos.push('streak_3');
+  if(streak>=7)  ativos.push('streak_7');
+  if(streak>=15) ativos.push('streak_15');
+  if(streak>=30) ativos.push('streak_30');
+
+  // Zero falhas: 10 dias consecutivos sem qualquer falha
+  let semFalha=0;
+  for(const df of diasOrdem){
+    const r=getResumoDia(dados,df);
+    if(r.temDados&&r.esperado>0&&r.concluido) semFalha++;
+    else break;
+  }
+  if(semFalha>=10) ativos.push('zero_falhas');
+
+  // Semana perfeita: últimos 7 dias todos completos
+  const semana7=[];
+  for(let i=0;i<7;i++){const d=new Date();d.setDate(d.getDate()-i);semana7.push(fmtDate(d));}
+  if(semana7.every(df=>{const r=getResumoDia(dados,df);return r.temDados&&r.esperado>0&&r.concluido;}))
+    ativos.push('semana_perfeita');
+
+  // Família completa: hoje todas as crianças concluídas
+  const dHj=hoje();
+  const CRIANCAS=getCriancas();
+  if(CRIANCAS.every(c=>getResumoDiaCrianca(dados,dHj,c).concluido))
+    ativos.push('familia_completa');
+
+  // Recuperação: dia completo após dia incompleto
+  const diasCron=[...new Set(dados.map(r=>r.data))].sort();
+  for(let i=1;i<diasCron.length;i++){
+    const prev=getResumoDia(dados,diasCron[i-1]);
+    const cur=getResumoDia(dados,diasCron[i]);
+    if(prev.temDados&&!prev.concluido&&cur.temDados&&cur.concluido){ativos.push('recuperacao');break;}
+  }
+
+  return ativos;
+}
+
+function mostrarBadgeToast(id){
+  const b=BADGES_DEF[id];if(!b)return;
+  const toast=document.createElement('div');
+  toast.style.cssText='position:fixed;bottom:88px;left:50%;transform:translateX(-50%) translateY(20px);z-index:9999;'
+    +'background:linear-gradient(135deg,#1e1b4b,#312e81);color:#fff;border-radius:16px;padding:14px 20px;'
+    +'display:flex;align-items:center;gap:12px;box-shadow:0 8px 32px rgba(0,0,0,.3);'
+    +'opacity:0;transition:all .4s cubic-bezier(.34,1.56,.64,1);min-width:240px;max-width:320px';
+  toast.innerHTML='<span style="font-size:2rem">'+b.emoji+'</span>'
+    +'<div><div style="font-weight:700;font-size:.9rem">Conquista desbloqueada!</div>'
+    +'<div style="font-size:.8rem;opacity:.85">'+b.nome+' · '+b.desc+'</div></div>';
+  document.body.appendChild(toast);
+  setTimeout(()=>{toast.style.opacity='1';toast.style.transform='translateX(-50%) translateY(0)';},50);
+  setTimeout(()=>{toast.style.opacity='0';toast.style.transform='translateX(-50%) translateY(20px)';},3500);
+  setTimeout(()=>{toast.remove();},4000);
+}
+
+function verificarEDispararBadges(dados){
+  const ativos=verificarBadges(dados);
+  const salvos=carregarBadges();
+  const novos=ativos.filter(b=>!salvos.includes(b));
+  if(novos.length){
+    salvarBadges([...salvos,...novos]);
+    novos.forEach((b,i)=>setTimeout(()=>mostrarBadgeToast(b),i*800));
+  }
+}
+
+function renderBadgesGanhos(){
+  const wrap=document.getElementById('badges-ganhos-wrap');if(!wrap)return;
+  const salvos=carregarBadges();
+  if(!salvos.length){wrap.innerHTML='<span style="color:var(--muted);font-size:.78rem">Nenhuma conquista ainda. Continue assim!</span>';return;}
+  wrap.innerHTML=salvos.map(id=>{
+    const b=BADGES_DEF[id];if(!b)return'';
+    return'<div class="badge-chip" title="'+b.desc+'"><span>'+b.emoji+'</span><span style="font-size:.72rem;font-weight:600">'+b.nome+'</span></div>';
+  }).join('');
+}
+
 // ═══════════════ INIT ═══════════════
 // Expor funções usadas em onclick como window.* para garantir acesso global
 // (necessário em alguns browsers com scripts grandes)
@@ -4404,6 +4522,8 @@ window.agendarTodasNotificacoes=agendarTodasNotificacoes;
 window.enviarNotifTeste=enviarNotifTeste; window.dispensarBannerNotif=dispensarBannerNotif;
 window.solicitarPermissaoPush=solicitarPermissaoPush;
 window.marcarRecuperacao=marcarRecuperacao; window.aplicarNomesCriancas=aplicarNomesCriancas;
+window.verificarEDispararBadges=verificarEDispararBadges;
+window.renderBadgesGanhos=renderBadgesGanhos;
 
 document.querySelector('.agenda-fab').style.display='none';
 mostrarSplash();
