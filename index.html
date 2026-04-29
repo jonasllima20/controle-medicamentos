@@ -1142,6 +1142,17 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     </div>
   </div>
 
+  <!-- CONQUISTAS / BADGES -->
+  <div class="dash-extra" style="grid-template-columns:1fr" id="dash-row-badges">
+    <div class="dash-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="dash-card-title">🏆 Conquistas</div>
+        <button onclick="debugBadge()" style="font-size:.68rem;color:var(--muted);background:none;border:1px solid var(--border);border-radius:6px;padding:2px 7px;cursor:pointer">testar</button>
+      </div>
+      <div id="badges-ganhos-wrap" style="display:flex;flex-wrap:wrap;gap:8px;min-height:32px"></div>
+    </div>
+  </div>
+
   <!-- PRÓXIMOS EVENTOS -->
   <div class="sec" id="sec-proximos">
     <div class="sec-hd">
@@ -2267,15 +2278,18 @@ function getResumoDia(dados,df){
   const tomadas=contarDosesDia(dados,df);
   const naoTomou=dados.filter(r=>r.data===df&&r.nota&&r.nota.startsWith('NAO_TOMOU')).length;
   const registros=dados.filter(r=>r.data===df);
+  // Proteção defensiva: nunca reportar mais que o esperado
+  const tomadasCap=esperado>0?Math.min(tomadas,esperado):tomadas;
   return{
     df,                                   // "dd/mm/yyyy"
     esperado,                             // total de doses esperadas
-    tomadas,                              // doses válidas (sem NAO_TOMOU)
+    tomadas:tomadasCap,                   // doses válidas (cap no esperado)
+    tomadasReal:tomadas,                  // doses reais (sem cap, para debug)
     naoTomou,                             // doses marcadas como não tomadas
     registros,                            // todos os registros do dia
-    concluido: esperado>0&&tomadas>=esperado, // true = dia 100% (exige esperado>0)
-    temDados:  registros.length>0,        // true = algum dado existe
-    pct: esperado>0?Math.round(tomadas/esperado*100):0
+    concluido: esperado>0&&tomadasCap>=esperado,
+    temDados:  registros.length>0,
+    pct: esperado>0?Math.min(100,Math.round(tomadasCap/esperado*100)):0
   };
 }
 // Resumo de um dia para UMA criança específica
@@ -2284,7 +2298,8 @@ function getResumoDiaCrianca(dados,df,crianca){
   const esperado=totalDoses(crianca,dISO);
   const tomadas=dados.filter(r=>r.data===df&&r.nome===crianca&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
   const temDados=dados.some(r=>r.data===df&&r.nome===crianca);
-  return{df,crianca,esperado,tomadas,temDados,concluido:esperado>0&&tomadas>=esperado,pct:esperado>0?Math.round(tomadas/esperado*100):0};
+  const tomadasC=esperado>0?Math.min(tomadas,esperado):tomadas;
+  return{df,crianca,esperado,tomadas:tomadasC,tomadasReal:tomadas,temDados,concluido:esperado>0&&tomadasC>=esperado,pct:esperado>0?Math.min(100,Math.round(tomadasC/esperado*100)):0};
 }
 // doseEsperada: retorna true se um remédio+criança+período deveria ser aplicado
 // Baseia-se na configuração ATUAL (remédio ativo, não suspenso)
@@ -2478,15 +2493,24 @@ function clicarMed(nome,remedio,periodo,btn){
   document.getElementById('nota-txt').value='';abrirMo('mo-nota');
   _notaCb=(nota)=>{fecharMo('mo-nota');marcarDose(nome,remedio,periodo,btn,nota);};
 }
+// Lock de clique duplo — evita registros duplicados por clique rápido
+let _marcandoDose=false;
 function marcarDose(nome,remedio,periodo,btn,nota){
   if(nota&&nota.startsWith('NAO_TOMOU:')){
     const logEntry={ts:Date.now(),data:hoje(),hora:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),usuario:activeUser,acao:'🚫 Não tomou '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo)+') para '+nome+' — '+nota.replace('NAO_TOMOU:','')};
     window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);return;
   }
+  // Proteção dupla: lock de clique e verificação de duplicidade
+  if(_marcandoDose) return;
+  _marcandoDose=true;
+  setTimeout(()=>{_marcandoDose=false;},400);
   const data=hoje();const hora=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  // UNICIDADE: data + criança + remédio + período (ignorar hora pois pode mudar por milissegundos)
+  const hist=window._fbHist||[];
+  const jaTem=hist.some(r=>r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo&&!(r.nota&&r.nota.startsWith('NAO_TOMOU')));
+  if(jaTem) return; // dose já registrada — não duplicar
   const reg={data,dataISO:hojeISO(),nome,remedio,periodo,hora,usuario:activeUser,nota:nota||null};
-  // Adicionar dose localmente primeiro — _fbHist já reflete o estado atual
-  window._fbHist=[...(window._fbHist||[]),reg];
+  window._fbHist=[...hist,reg];
   if(window.fbAddDose)window.fbAddDose(reg);
   const logEntry={ts:Date.now(),data,hora,usuario:activeUser,acao:'Marcou '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo)+') para '+nome+(nota?' — "'+nota+'"':'')};
   window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);
@@ -4399,6 +4423,16 @@ const BADGES_DEF={
 };
 function carregarBadges(){try{return JSON.parse(localStorage.getItem('rm_badges')||'[]');}catch(e){return[];}}
 function salvarBadges(lista){localStorage.setItem('rm_badges',JSON.stringify(lista));}
+// Debug: forçar exibição de um badge (para testar UI)
+function debugBadge(id){
+  id=id||'streak_3';
+  const salvos=carregarBadges();
+  if(!salvos.includes(id)){salvarBadges([...salvos,id]);}
+  mostrarBadgeToast(id);
+  renderBadgesGanhos();
+  console.log('🏆 Badge forçado:',id,'| Todos:',carregarBadges());
+}
+window.debugBadge=debugBadge;
 
 function verificarBadges(dados){
   const ativos=[];
