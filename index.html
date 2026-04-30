@@ -1145,9 +1145,8 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
   <!-- CONQUISTAS / BADGES -->
   <div class="dash-extra" style="grid-template-columns:1fr" id="dash-row-badges">
     <div class="dash-card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="margin-bottom:10px">
         <div class="dash-card-title">🏆 Conquistas</div>
-        <button onclick="debugBadge()" style="font-size:.68rem;color:var(--muted);background:none;border:1px solid var(--border);border-radius:6px;padding:2px 7px;cursor:pointer">testar</button>
       </div>
       <div id="badges-ganhos-wrap" style="display:flex;flex-wrap:wrap;gap:8px;min-height:32px"></div>
     </div>
@@ -2253,6 +2252,9 @@ function getIconRemedio(nome){return (getMedsNomes().find(m=>m.nome===nome)||{})
 // ── Fonte única para cálculo de dia completo ─────────────
 // Conta doses válidas (não NAO_TOMOU) de um dia em dd/mm/yyyy
 // ══ FONTE ÚNICA DE VERDADE ══════════════════════════════
+// Normalização de hora — garante formato "HH:MM" consistente
+function normalizarHora(h){return(h||'').trim().padStart(5,'0');}
+
 // getResumoDia: todos os módulos derivam daqui — calendário,
 // semana, mês, tendência, streak, padrões.
 
@@ -2503,16 +2505,18 @@ function marcarDose(nome,remedio,periodo,btn,nota){
   // Proteção dupla: lock de clique e verificação de duplicidade
   if(_marcandoDose) return;
   _marcandoDose=true;
-  setTimeout(()=>{_marcandoDose=false;},400);
-  const data=hoje();const hora=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-  // UNICIDADE: data + criança + remédio + período (ignorar hora pois pode mudar por milissegundos)
+  const data=hoje();
+  const hora=normalizarHora(new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}));
+  // UNICIDADE: data + criança + remédio + período + hora normalizados
+  const periodoN=(periodo||'').trim().toLowerCase();
   const hist=window._fbHist||[];
-  const jaTem=hist.some(r=>r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo&&r.hora===hora&&!(r.nota&&r.nota.startsWith('NAO_TOMOU')));
-  if(jaTem) return; // dose já registrada — não duplicar
-  const reg={data,dataISO:hojeISO(),nome,remedio,periodo,hora,usuario:activeUser,nota:nota||null};
+  const jaTem=hist.some(r=>r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodoN&&r.hora===hora&&!(r.nota&&r.nota.startsWith('NAO_TOMOU')));
+  if(jaTem){_marcandoDose=false;return;} // dose já registrada — não duplicar
+  try{
+  const reg={data,dataISO:hojeISO(),nome,remedio,periodo:periodoN,hora,usuario:activeUser,nota:nota||null};
   window._fbHist=[...hist,reg];
   if(window.fbAddDose)window.fbAddDose(reg);
-  const logEntry={ts:Date.now(),data,hora,usuario:activeUser,acao:'Marcou '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo)+') para '+nome+(nota?' — "'+nota+'"':'')};
+  const logEntry={ts:Date.now(),data,hora,usuario:activeUser,acao:'Marcou '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodoN]||periodoN)+') para '+nome+(nota?' — "'+nota+'"':'')};
   window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);
   btn.classList.add('pop');setTimeout(()=>btn.classList.remove('pop'),300);
   // Verificar celebração e badges com dados já atualizados em memória
@@ -2523,6 +2527,9 @@ function marcarDose(nome,remedio,periodo,btn,nota){
     verificarEDispararBadges(getHist());
     renderBadgesGanhos();
   },800);
+  }finally{
+    _marcandoDose=false;
+  }
 }
 
 // ═══════════════ CELEBRAÇÃO ═══════════════
@@ -4432,7 +4439,6 @@ function debugBadge(id){
   renderBadgesGanhos();
   console.log('🏆 Badge forçado:',id,'| Todos:',carregarBadges());
 }
-window.debugBadge=debugBadge;
 
 function verificarBadges(dados){
   const ativos=[];
