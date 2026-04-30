@@ -1828,12 +1828,24 @@ function gerarChaveDose(r){ return gerarKeyDose(r); }
 
 // Remove duplicatas do histórico em memória usando a chave única
 // Mantém sempre o PRIMEIRO registro de cada chave
+// Chave de unicidade para deduplicação: SEM hora
+// data+nome+remedio+periodo define a dose — hora pode variar entre pai/mãe
+function _chaveDosePeriodo(r){
+  if(!r) return '';
+  return [
+    normalizarData(r.data||r.dataISO||''),
+    normalizarTexto(r.nome).toLowerCase(),
+    normalizarTexto(r.remedio).toLowerCase(),
+    normalizarPeriodo(r.periodo)
+  ].join('|');
+}
+
 function limparDuplicados(arr){
   if(!arr||!arr.length) return arr||[];
   const vistas=new Set();
   return arr.filter(r=>{
-    if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return true; // não deduplicar marcações de não-tomou
-    const k=gerarKeyDose(r);
+    if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return true;
+    const k=_chaveDosePeriodo(r); // chave SEM hora — elimina duplicatas pai/mãe
     if(!k||vistas.has(k)) return false;
     vistas.add(k);
     return true;
@@ -1887,7 +1899,8 @@ window.fbStartListeners = function(){
     var arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
     cacheSet('hist', arr);
     // Normalizar e deduplicar ao carregar do servidor
-    window._fbHist = typeof limparDuplicados==='function' ? limparDuplicados(arr.map(r=>typeof _normalizarRegistro==='function'?_normalizarRegistro(r):r)) : arr;
+    var _arrNorm0=arr.map(function(r){return typeof _normalizarRegistro==='function'?_normalizarRegistro(r):r;});
+    window._fbHist = typeof limparDuplicados==='function' ? limparDuplicados(_arrNorm0) : _arrNorm0;
     setSyncStatus('ok');
     // Chamar as funções de dashboard diretamente (sem depender de atualizarTudo completo)
     try{ if(typeof atualizarTendencia==='function') atualizarTendencia(); }catch(e){ console.error('tend:',e); }
@@ -1907,8 +1920,32 @@ window.fbStartListeners = function(){
   window._fbUnsubHist = _db.collection('historico').onSnapshot(
     function(snap){
       var arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
-      cacheSet('hist', arr);
-      window._fbHist = typeof limparDuplicados==='function' ? limparDuplicados(arr.map(r=>typeof _normalizarRegistro==='function'?_normalizarRegistro(r):r)) : arr;
+      // Normalizar todos os registros antes de processar
+      var arrNorm = arr.map(function(r){ return typeof _normalizarRegistro==='function'?_normalizarRegistro(r):r; });
+      var arrDedup = typeof limparDuplicados==='function' ? limparDuplicados(arrNorm) : arrNorm;
+      window._fbHist = arrDedup;
+      cacheSet('hist', arrDedup);
+      // LIMPEZA DE DUPLICATAS NO FIRESTORE: se vieram mais docs que o deduplicado, apagar extras
+      if(typeof _chaveDosePeriodo==='function' && arrNorm.length > arrDedup.length){
+        var chavesOk=new Set();
+        arrDedup.forEach(function(r){ chavesOk.add(_chaveDosePeriodo(r)); });
+        var chavesVistas=new Set();
+        arr.forEach(function(rawDoc){
+          if(!rawDoc.id||!rawDoc.nota||!rawDoc.nota.startsWith('NAO_TOMOU')){
+            if(rawDoc.nota&&rawDoc.nota.startsWith('NAO_TOMOU')) return;
+            var rn=typeof _normalizarRegistro==='function'?_normalizarRegistro(rawDoc):rawDoc;
+            var chave=_chaveDosePeriodo(rn);
+            if(!chave) return;
+            if(chavesVistas.has(chave)){
+              // Duplicata — apagar silenciosamente do Firestore
+              console.log('[Dedup] Apagando duplicata Firestore:', rawDoc.id, chave);
+              try{ _db.collection('historico').doc(rawDoc.id).delete().catch(function(e){ console.warn('[Dedup] erro delete:', e); }); }catch(e){}
+            } else {
+              chavesVistas.add(chave);
+            }
+          }
+        });
+      }
       setSyncStatus('ok');
       try{ if(typeof atualizarTendencia==='function') atualizarTendencia(); }catch(e){}
       try{ if(typeof atualizarRecordes==='function') atualizarRecordes(); }catch(e){}
@@ -1947,7 +1984,12 @@ window.fbAddDose = function(reg){
     setSyncStatus('err'); return;
   }
   setSyncStatus('sync');
-  const id = reg.dataISO+'_'+reg.nome+'_'+reg.remedio+'_'+reg.periodo;
+  // ID determinístico normalizado — garante que pai/mãe escrevem no MESMO documento
+  const _n=normalizarTexto(reg.nome).toLowerCase();
+  const _r=normalizarTexto(reg.remedio).toLowerCase();
+  const _p=normalizarPeriodo(reg.periodo);
+  const _d=normalizarData(reg.dataISO||reg.data||'');
+  const id = _d+'_'+_n+'_'+_r+'_'+_p;
   _db.collection('historico').doc(id).set(
     Object.assign({}, reg, {_t: window.APP_TOKEN, ts: firebase.firestore.FieldValue.serverTimestamp()})
   ).then(function(){ setSyncStatus('ok'); })
@@ -2588,15 +2630,13 @@ function marcarDose(nome,remedio,periodo,btn,nota){
 
     // Montar registro normalizado
     const novo={data,dataISO:dataISO_,nome:nomeN,remedio:remedioN,periodo:periodoN,hora,usuario:activeUser,nota:nota||null};
-    const keyNovo=gerarKeyDose(novo);
 
-    // UNICIDADE via chave determinística
+    // UNICIDADE: chave sem hora — bloqueia duplicidade pai/mãe mesmo com horários diferentes
+    const keyNovo=_chaveDosePeriodo(novo);
     const hist=window._fbHist||[];
-    // Normalizar cada registro do hist ao comparar — garante match mesmo com dados antigos
     const jaExiste=hist.some(r=>{
       if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return false;
-      const rN={data:r.data,nome:normalizarTexto(r.nome),remedio:normalizarTexto(r.remedio),periodo:normalizarPeriodo(r.periodo),hora:normalizarHora(r.hora)};
-      return gerarKeyDose(rN)===keyNovo;
+      return _chaveDosePeriodo(r)===keyNovo;
     });
     if(jaExiste) return;
 
