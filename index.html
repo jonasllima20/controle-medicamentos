@@ -1925,27 +1925,7 @@ window.fbStartListeners = function(){
       var arrDedup = typeof limparDuplicados==='function' ? limparDuplicados(arrNorm) : arrNorm;
       window._fbHist = arrDedup;
       cacheSet('hist', arrDedup);
-      // LIMPEZA DE DUPLICATAS NO FIRESTORE: se vieram mais docs que o deduplicado, apagar extras
-      if(typeof _chaveDosePeriodo==='function' && arrNorm.length > arrDedup.length){
-        var chavesOk=new Set();
-        arrDedup.forEach(function(r){ chavesOk.add(_chaveDosePeriodo(r)); });
-        var chavesVistas=new Set();
-        arr.forEach(function(rawDoc){
-          if(!rawDoc.id||!rawDoc.nota||!rawDoc.nota.startsWith('NAO_TOMOU')){
-            if(rawDoc.nota&&rawDoc.nota.startsWith('NAO_TOMOU')) return;
-            var rn=typeof _normalizarRegistro==='function'?_normalizarRegistro(rawDoc):rawDoc;
-            var chave=_chaveDosePeriodo(rn);
-            if(!chave) return;
-            if(chavesVistas.has(chave)){
-              // Duplicata — apagar silenciosamente do Firestore
-              console.log('[Dedup] Apagando duplicata Firestore:', rawDoc.id, chave);
-              try{ _db.collection('historico').doc(rawDoc.id).delete().catch(function(e){ console.warn('[Dedup] erro delete:', e); }); }catch(e){}
-            } else {
-              chavesVistas.add(chave);
-            }
-          }
-        });
-      }
+      // Deduplicação tratada na gravação (write-time) via ID determinístico no fbAddDose
       setSyncStatus('ok');
       try{ if(typeof atualizarTendencia==='function') atualizarTendencia(); }catch(e){}
       try{ if(typeof atualizarRecordes==='function') atualizarRecordes(); }catch(e){}
@@ -1984,23 +1964,43 @@ window.fbAddDose = function(reg){
     setSyncStatus('err'); return;
   }
   setSyncStatus('sync');
-  // ID determinístico normalizado — garante que pai/mãe escrevem no MESMO documento
-  const _n=normalizarTexto(reg.nome).toLowerCase();
-  const _r=normalizarTexto(reg.remedio).toLowerCase();
+  // ID determinístico: data+nome+remedio+periodo (sem hora — hora é informativa)
+  const _n=(normalizarTexto(reg.nome)||'').toLowerCase();
+  const _r=(normalizarTexto(reg.remedio)||'').toLowerCase();
   const _p=normalizarPeriodo(reg.periodo);
   const _d=normalizarData(reg.dataISO||reg.data||'');
   const id = _d+'_'+_n+'_'+_r+'_'+_p;
-  _db.collection('historico').doc(id).set(
-    Object.assign({}, reg, {_t: window.APP_TOKEN, ts: firebase.firestore.FieldValue.serverTimestamp()})
-  ).then(function(){ setSyncStatus('ok'); })
-   .catch(function(e){ console.error('[FB] fbAddDose:', e); setSyncStatus('err'); });
+  const ref = _db.collection('historico').doc(id);
+  const payload = Object.assign({}, reg, {
+    nome: _n, remedio: _r, periodo: _p, // persistir normalizado
+    _t: window.APP_TOKEN,
+    ts: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  // TRANSAÇÃO ATÔMICA: só grava se o documento ainda não existe
+  // Isso resolve race condition pai/mãe: o primeiro a chegar vence, o segundo é ignorado
+  _db.runTransaction(function(tx){
+    return tx.get(ref).then(function(doc){
+      if(doc.exists){ return; } // já existe — não sobrescrever
+      tx.set(ref, payload);
+    });
+  }).then(function(){ setSyncStatus('ok'); })
+    .catch(function(e){
+      console.error('[FB] fbAddDose tx:', e);
+      // Fallback: tentar .set() simples em caso de erro de transação
+      ref.set(payload).then(function(){ setSyncStatus('ok'); })
+         .catch(function(e2){ setSyncStatus('err'); console.error('[FB] fbAddDose fallback:', e2); });
+    });
 };
 
 window.fbRemoveDose = function(data,nome,remedio,periodo){
   setSyncStatus('sync');
   const p=data.split('/');
   const iso=p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
-  const id=iso+'_'+nome+'_'+remedio+'_'+periodo;
+  const _n=(normalizarTexto(nome)||'').toLowerCase();
+const _r=(normalizarTexto(remedio)||'').toLowerCase();
+const _p=normalizarPeriodo(periodo);
+const _d=normalizarData(data);
+const id=_d+'_'+_n+'_'+_r+'_'+_p;
   _db.collection('historico').doc(id).delete()
     .then(function(){ setSyncStatus('ok'); })
     .catch(function(e){ console.error('[FB] fbRemoveDose:', e); setSyncStatus('err'); });
@@ -2607,7 +2607,7 @@ function clicarMed(nome,remedio,periodo,btn){
   _notaCb=(nota)=>{fecharMo('mo-nota');marcarDose(nome,remedio,periodo,btn,nota);};
 }
 // Lock de clique duplo — evita registros duplicados por clique rápido
-let _lockDose=false; // lock único de registro de dose
+let _savingDose=false; // lock único de registro de dose
 function marcarDose(nome,remedio,periodo,btn,nota){
   // Bloco NAO_TOMOU: apenas log, sem registrar dose
   if(nota&&nota.startsWith('NAO_TOMOU:')){
@@ -2617,8 +2617,8 @@ function marcarDose(nome,remedio,periodo,btn,nota){
     window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);return;
   }
   // LOCK: impede clique duplo e race condition
-  if(_lockDose) return;
-  _lockDose=true;
+  if(_savingDose) return;
+  _savingDose=true;
   try{
     // Normalização completa dos campos
     const nomeN     = normalizarTexto(nome);
@@ -2633,15 +2633,15 @@ function marcarDose(nome,remedio,periodo,btn,nota){
 
     // UNICIDADE: chave sem hora — bloqueia duplicidade pai/mãe mesmo com horários diferentes
     const keyNovo=_chaveDosePeriodo(novo);
-    const hist=window._fbHist||[];
-    const jaExiste=hist.some(r=>{
+    const histAtual=window._fbHist||[]; // leitura direta para incluir entradas ainda não sincronizadas
+    const jaExiste=histAtual.some(r=>{
       if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return false;
       return _chaveDosePeriodo(r)===keyNovo;
     });
     if(jaExiste) return;
 
-    // Persistir
-    window._fbHist=[...hist,novo];
+    // Persistir (adicionar ao estado local antes do Firestore responder)
+    window._fbHist=[...histAtual,novo];
     if(window.fbAddDose)window.fbAddDose(novo);
 
     // Log de ação
@@ -2655,7 +2655,7 @@ function marcarDose(nome,remedio,periodo,btn,nota){
     atualizarTudo();
     setTimeout(function(){verificarEDispararBadges(getDados());renderBadgesGanhos();},800);
   }finally{
-    _lockDose=false;
+    _savingDose=false;
   }
 }
 
