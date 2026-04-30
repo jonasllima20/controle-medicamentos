@@ -1797,9 +1797,10 @@ window._fbUnsubLog  = null;
 // ═══════════════════════════════════════════════════════
 
 // Funções de normalização — aplicadas ANTES de salvar e ao comparar
-function normalizarTexto(t){ return (t||'').trim().toLowerCase(); }
-function normalizarPeriodo(p){ return (p||'').trim().toLowerCase(); }
-function normalizarHoraFn(h){ return (h||'').trim().padStart(5,'0'); }
+function normalizarTexto(t){ return (t||'').toString().trim(); }
+function normalizarPeriodo(p){ return (p||'').toString().trim().toLowerCase(); }
+function normalizarHora(h){ return (h||'').toString().trim().padStart(5,'0'); }
+function normalizarHoraFn(h){ return normalizarHora(h); } // alias
 function normalizarData(d){
   // Aceita dd/mm/yyyy ou yyyy-mm-dd; retorna yyyy-mm-dd
   if(!d) return '';
@@ -1821,6 +1822,9 @@ function gerarKeyDose(r){
     normalizarHoraFn(r.hora)
   ].join('|');
 }
+// Alias para compatibilidade com spec
+function gerarChaveDose(r){ return gerarKeyDose(r); }
+
 
 // Remove duplicatas do histórico em memória usando a chave única
 // Mantém sempre o PRIMEIRO registro de cada chave
@@ -1839,16 +1843,19 @@ function limparDuplicados(arr){
 function _normHora(h){return(h||'').trim().padStart(5,'0');}
 function _normalizarRegistro(r){
   if(!r) return r;
-  return Object.assign({},r,{
-    periodo:(r.periodo||'').trim().toLowerCase()||r.periodo,
-    hora:_normHora(r.hora)
-  });
+  // Normalizar todos os campos comparáveis ao ler dados
+  const periodo=(r.periodo||'').toString().trim().toLowerCase()||r.periodo;
+  const hora=_normHora(r.hora);
+  return Object.assign({},r,{periodo,hora});
 }
 function getDados(){ return limparDuplicados((window._fbHist||[]).map(_normalizarRegistro)); }
 function getHist(){ return getDados(); }
 function getLog() { return window._fbLog  || []; }
 window.getHist = getHist;
 window.getDados = getDados;
+window.gerarChaveDose = gerarChaveDose;
+window.badgeJaExiste = badgeJaExiste;
+window.normalizarHora = normalizarHora;
 window.gerarKeyDose = gerarKeyDose;
 window.limparDuplicados = limparDuplicados;
 window.normalizarTexto = normalizarTexto;
@@ -2315,7 +2322,7 @@ function getIconRemedio(nome){return (getMedsNomes().find(m=>m.nome===nome)||{})
 // Conta doses válidas (não NAO_TOMOU) de um dia em dd/mm/yyyy
 // ══ FONTE ÚNICA DE VERDADE ══════════════════════════════
 // Normalização de hora — garante formato "HH:MM" consistente
-function normalizarHora(h){return(h||'').trim().padStart(5,'0');}
+// normalizarHora defined above (canonical)
 
 // getResumoDia: todos os módulos derivam daqui — calendário,
 // semana, mês, tendência, streak, padrões.
@@ -2585,7 +2592,12 @@ function marcarDose(nome,remedio,periodo,btn,nota){
 
     // UNICIDADE via chave determinística
     const hist=window._fbHist||[];
-    const jaExiste=hist.some(r=>gerarKeyDose(r)===keyNovo&&!(r.nota&&r.nota.startsWith('NAO_TOMOU')));
+    // Normalizar cada registro do hist ao comparar — garante match mesmo com dados antigos
+    const jaExiste=hist.some(r=>{
+      if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return false;
+      const rN={data:r.data,nome:normalizarTexto(r.nome),remedio:normalizarTexto(r.remedio),periodo:normalizarPeriodo(r.periodo),hora:normalizarHora(r.hora)};
+      return gerarKeyDose(rN)===keyNovo;
+    });
     if(jaExiste) return;
 
     // Persistir
@@ -3794,23 +3806,24 @@ function atualizarSemanaResumo(){
     const diaCompleto=res.concluido;
     const diaAguardando=isHoje&&!diaCompleto;
     let status,icon,cor,detail='';
-    if(diaAguardando&&res.tomadas===0){
-      status='Aguardando…';icon='⌛';cor='var(--muted)';
-    } else if(diaCompleto){
-      // Mesmo critério do calendário: temDados && concluido
-      status='Concluído';icon='✅';cor='var(--green)';
-    } else if(naoTomouList.length>0){
-      const remedios=[...new Set(naoTomouList.map(r=>r.remedio||'?'))];
-      status='Não tomou';icon='🚫';cor='var(--red)';
-      detail=remedios.slice(0,2).join(', ')+(remedios.length>2?'…':'');
-    } else if(res.temDados&&!res.concluido){
-      const faltam=res.esperado-res.tomadas;
-      status='Atenção';icon='⚠️';cor='var(--warn)';
-      detail='Faltou '+(faltam===1?'1 dose':faltam+' doses');
-    } else {
+    // Status derivado EXCLUSIVAMENTE de getResumoDia — mesma fonte do calendário
+    if(!res.temDados||res.esperado===0){
       status=isHoje?'Aguardando…':'Sem registro';
       icon=isHoje?'⌛':'—';
       cor='var(--muted)';
+    } else if(res.concluido){
+      status='Concluído';icon='✅';cor='var(--green)';
+    } else {
+      // Incompleto: tem dados mas não concluído
+      const faltam=res.esperado-res.tomadas;
+      if(naoTomouList.length>0&&res.tomadas===0){
+        const remedios=[...new Set(naoTomouList.map(r=>r.remedio||'?'))];
+        status='Não tomou';icon='🚫';cor='var(--red)';
+        detail=remedios.slice(0,2).join(', ')+(remedios.length>2?'…':'');
+      } else {
+        status='Atenção';icon='⚠️';cor='var(--warn)';
+        detail=faltam>0?'Faltou '+(faltam===1?'1 dose':faltam+' doses'):'';
+      }
     }
     diasInfo.push({df,dow:DIAS_PT[d.getDay()],isHoje,status,icon,cor,detail,res});
   }
@@ -4564,10 +4577,13 @@ function mostrarBadgeToast(id){
   setTimeout(()=>{toast.remove();},4000);
 }
 
+function badgeJaExiste(id){ return carregarBadges().includes(id); }
+
 function verificarEDispararBadges(dados){
   const ativos=verificarBadges(dados);
   const salvos=carregarBadges();
   const novos=ativos.filter(b=>!salvos.includes(b));
+  console.log('[Badges] avaliados:',ativos,'novos:',novos);
   if(novos.length){
     salvarBadges([...salvos,...novos]);
     novos.forEach((b,i)=>setTimeout(()=>mostrarBadgeToast(b),i*800));
