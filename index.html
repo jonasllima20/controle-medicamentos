@@ -1790,7 +1790,18 @@ window._fbUnsubHist = null;
 window._fbUnsubLog  = null;
 
 // ── Helpers de acesso ─────────────────────────────────────
-function getHist(){ return window._fbHist || []; }
+// getDados / getHist: fonte única de dados — TODOS os componentes usam isso
+// Normaliza período e hora automaticamente ao ler (inline para evitar dependência de ordem)
+function _normHora(h){return(h||'').trim().padStart(5,'0');}
+function _normalizarRegistro(r){
+  if(!r) return r;
+  return Object.assign({},r,{
+    periodo:(r.periodo||'').trim().toLowerCase()||r.periodo,
+    hora:_normHora(r.hora)
+  });
+}
+function getDados(){ return (window._fbHist||[]).map(_normalizarRegistro); }
+function getHist(){ return getDados(); }
 function getLog() { return window._fbLog  || []; }
 window.getHist = getHist;
 window.getLog  = getLog;
@@ -2520,11 +2531,11 @@ function marcarDose(nome,remedio,periodo,btn,nota){
   window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);
   btn.classList.add('pop');setTimeout(()=>btn.classList.remove('pop'),300);
   // Verificar celebração e badges com dados já atualizados em memória
-  verificarCelebracao(window._fbHist);
+  verificarCelebracao(getDados());
   atualizarTudo();
   // Badges: verificar após atualizarTudo ter rodado
   setTimeout(function(){
-    verificarEDispararBadges(getHist());
+    verificarEDispararBadges(getDados());
     renderBadgesGanhos();
   },800);
   }finally{
@@ -2607,7 +2618,7 @@ function verificarPendencias(){
   if('setAppBadge' in navigator){if(falta.length>0)navigator.setAppBadge(falta.length).catch(()=>{});else navigator.clearAppBadge().catch(()=>{});}
 }
 function calcStreak(){
-  const dados=getHist();if(!dados.length)return 0;
+  const dados=getDados();if(!dados.length)return 0;
   let s=0;const d=new Date();
   if(!getResumoDia(dados,fmtDate(d)).concluido) d.setDate(d.getDate()-1);
   while(true){const k=fmtDate(d);if(getResumoDia(dados,k).concluido){s++;d.setDate(d.getDate()-1);}else break;}
@@ -2637,21 +2648,14 @@ const TIPO_LABELS={consulta:'🩺 Consulta',retorno:'🔄 Retorno',exame:'🔬 E
 const TIPO_CLS={consulta:'ev-consulta',retorno:'ev-retorno',exame:'ev-exame',vacina:'ev-vacina'};
 function mudaMes(d){_calMes+=d;if(_calMes<0){_calMes=11;_calAno--;}if(_calMes>11){_calMes=0;_calAno++;}gerarCal();}
 function gerarCal(){
-  const dados=getHist();const mapa={};
+  const dados=getDados();const mapa={};
   const CRIANCAS=getCriancas();
   dados.forEach(r=>{
     const dk=r.data||'';
     if(!mapa[dk])mapa[dk]={};
     mapa[dk][r.nome]=(mapa[dk][r.nome]||0)+1;
   });
-  Object.keys(mapa).forEach(data=>{
-    const key='rm_cal_done_'+data;const atual=JSON.parse(localStorage.getItem(key)||'{}');
-    CRIANCAS.forEach(n=>{
-      const rc=getResumoDiaCrianca(dados,data,n);
-      if(rc.tomadas>0&&rc.esperado>0&&rc.concluido) atual[n]=true;
-    });
-    localStorage.setItem(key,JSON.stringify(atual));
-  });
+  // Persistência de calendário removida — usar apenas dados ao vivo de getResumoDiaCrianca
   const el=document.getElementById('cal-mes-txt');if(el)el.textContent=MESES[_calMes]+' '+_calAno;
   const prim=new Date(_calAno,_calMes,1).getDay(),diasM=new Date(_calAno,_calMes+1,0).getDate(),now=new Date();
   const grid=document.getElementById('cal-grid');if(!grid)return;grid.innerHTML='';
@@ -2659,11 +2663,12 @@ function gerarCal(){
   for(let d=1;d<=diasM;d++){
     const df=String(d).padStart(2,'0')+'/'+String(_calMes+1).padStart(2,'0')+'/'+_calAno;
     const isoKey=_calAno+'-'+String(_calMes+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
-    const liveInfo=mapa[df]||{};const persisted=JSON.parse(localStorage.getItem('rm_cal_done_'+df)||'{}');
+    const liveInfo=mapa[df]||{};
     const _rA=getResumoDiaCrianca(dados,df,'Arthur');
     const _rB=getResumoDiaCrianca(dados,df,'Alice');
-    const aOk=(_rA.tomadas>0&&_rA.esperado>0&&_rA.concluido)||persisted['Arthur'];
-    const bOk=(_rB.tomadas>0&&_rB.esperado>0&&_rB.concluido)||persisted['Alice'];
+    // FONTE ÚNICA: getResumoDiaCrianca — mesmo critério do resumo da semana
+    const aOk=_rA.concluido;
+    const bOk=_rB.concluido;
     const cell=document.createElement('div');
     const isHj=d===now.getDate()&&_calMes===now.getMonth()&&_calAno===now.getFullYear();
     cell.className='cal-day'+(isHj?' hoje':'');
@@ -2727,8 +2732,7 @@ function salvarObs(del){
 // ═══════════════ TENDÊNCIA SEMANAL ═══════════════
 function atualizarTendencia(){
   const wrap=document.getElementById('tendencia-wrap');if(!wrap)return;
-  if(!window._fbHist||!window._fbHist.length){const cached=cacheGet('hist');if(cached&&cached.length)window._fbHist=cached;}
-  const dados=window._fbHist||[];
+  const dados=getDados();
   const CRIANCAS=getCriancas();
   const totalD=CRIANCAS.reduce((s,c)=>s+getMeds(c).filter(m=>!m.suspenso).reduce((ss,m)=>ss+getPeriodosMed(m).length,0),0);
   const espSem=Math.max(1,totalD*7);
@@ -2814,8 +2818,7 @@ function atualizarTendencia(){
 // ═══════════════ RECORDES ═══════════════
 function atualizarRecordes(){
   const wrap=document.getElementById('recordes-wrap');if(!wrap)return;
-  if(!window._fbHist||!window._fbHist.length){const cached=cacheGet('hist');if(cached&&cached.length)window._fbHist=cached;}
-  const dados=window._fbHist||[];
+  const dados=getDados();
   if(!dados.length){
     wrap.innerHTML=`<div style="text-align:center;padding:16px 0">
       <div style="font-size:2rem;margin-bottom:8px">🏆</div>
@@ -3163,7 +3166,7 @@ function atualizarGrafico(){
 // ═══════════════ PIZZA ═══════════════
 let pizzaInst=null;
 function atualizarPizza(){
-  const dados=window._fbHist||cacheGet('hist')||[];
+  const dados=getDados();
   const ctx=document.getElementById('grafico-pizza')?.getContext('2d');if(!ctx)return;
   if(pizzaInst)pizzaInst.destroy();
   const medsUnicos=getMedsNomes();
@@ -3217,7 +3220,7 @@ function atualizarDashboardExtra(){
 
 // ═══════════════ PADRÕES ═══════════════
 function calcPatterns(){
-  const dados=getHist();const wrap=document.getElementById('patterns-wrap');if(!wrap)return;
+  const dados=getDados();const wrap=document.getElementById('patterns-wrap');if(!wrap)return;
   if(dados.length<14){wrap.innerHTML='<div style="color:var(--muted);font-size:.8rem;text-align:center;padding:14px">Dados insuficientes (2 semanas mínimo).</div>';return;}
   const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];const alertas=[];const CRIANCAS=getCriancas();
   // Agrupar histórico por (crianca, remedio, periodo) — usa periodos DO HISTÓRICO,
@@ -3711,12 +3714,7 @@ function verificarBannerNotif(){
 // ═══════════════ RESUMO DA SEMANA ═══════════════
 function atualizarSemanaResumo(){
   const wrap=document.getElementById('semana-resumo-wrap');if(!wrap)return;
-  // Se _fbHist vazio mas temos cache, usar cache
-  if(!window._fbHist||!window._fbHist.length){
-    const cached=cacheGet('hist');
-    if(cached&&cached.length) window._fbHist=cached;
-  }
-  const dados=window._fbHist||[];
+  const dados=getDados();
   const now=new Date();const CRIANCAS=getCriancas();
   const DIAS_PT=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
 
@@ -3728,9 +3726,8 @@ function atualizarSemanaResumo(){
     const isHoje=i===0;
     const res=getResumoDia(dados,df); // ÚNICA fonte — igual ao calendário
     const naoTomouList=dados.filter(r=>r.data===df&&r.nota&&r.nota.startsWith('NAO_TOMOU'));
-    const horaAtual=now.getHours();
-    // diaCompleto: usa res.concluido (getResumoDia). Para hoje, só marca completo após 22h.
-    const diaCompleto=isHoje?(horaAtual>=22&&res.concluido):res.concluido;
+      // diaCompleto: usa EXCLUSIVAMENTE res.concluido de getResumoDia — mesmo critério do calendário
+    const diaCompleto=res.concluido;
     const diaAguardando=isHoje&&!diaCompleto;
     let status,icon,cor,detail='';
     if(diaAguardando&&res.tomadas===0){
