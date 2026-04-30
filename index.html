@@ -1797,9 +1797,9 @@ window._fbUnsubLog  = null;
 // ═══════════════════════════════════════════════════════
 
 // Funções de normalização — aplicadas ANTES de salvar e ao comparar
-function normalizarTexto(t){ return (t||'').toString().trim(); }
+function normalizarTexto(t){ return (t||'').toString().trim().toLowerCase(); }
 function normalizarPeriodo(p){ return (p||'').toString().trim().toLowerCase(); }
-function normalizarHora(h){ return (h||'').toString().trim().padStart(5,'0'); }
+function normalizarHora(h){ return (h||'').toString().trim().replace(/^(\d):/, '0$1:').padStart(5,'0'); }
 function normalizarHoraFn(h){ return normalizarHora(h); } // alias
 function normalizarData(d){
   // Aceita dd/mm/yyyy ou yyyy-mm-dd; retorna yyyy-mm-dd
@@ -1828,24 +1828,25 @@ function gerarChaveDose(r){ return gerarKeyDose(r); }
 
 // Remove duplicatas do histórico em memória usando a chave única
 // Mantém sempre o PRIMEIRO registro de cada chave
-// Chave de unicidade para deduplicação: SEM hora
-// data+nome+remedio+periodo define a dose — hora pode variar entre pai/mãe
-function _chaveDosePeriodo(r){
+// CHAVE CANÔNICA DE DOSE: data+nome+remedio+periodo (hora é informativa, não faz parte da identidade)
+function gerarChaveDoseSemHora(r){
   if(!r) return '';
   return [
     normalizarData(r.data||r.dataISO||''),
-    normalizarTexto(r.nome).toLowerCase(),
-    normalizarTexto(r.remedio).toLowerCase(),
+    normalizarTexto(r.nome),
+    normalizarTexto(r.remedio),
     normalizarPeriodo(r.periodo)
   ].join('|');
 }
+// Alias interno
+function _chaveDosePeriodo(r){ return gerarChaveDoseSemHora(r); }
 
 function limparDuplicados(arr){
   if(!arr||!arr.length) return arr||[];
   const vistas=new Set();
   return arr.filter(r=>{
     if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return true;
-    const k=_chaveDosePeriodo(r); // chave SEM hora — elimina duplicatas pai/mãe
+    const k=gerarChaveDoseSemHora(r); // chave canônica SEM hora
     if(!k||vistas.has(k)) return false;
     vistas.add(k);
     return true;
@@ -1866,6 +1867,7 @@ function getLog() { return window._fbLog  || []; }
 window.getHist = getHist;
 window.getDados = getDados;
 window.gerarChaveDose = gerarChaveDose;
+window.gerarChaveDoseSemHora = gerarChaveDoseSemHora;
 window.badgeJaExiste = badgeJaExiste;
 window.normalizarHora = normalizarHora;
 window.gerarKeyDose = gerarKeyDose;
@@ -1965,8 +1967,8 @@ window.fbAddDose = function(reg){
   }
   setSyncStatus('sync');
   // ID determinístico: data+nome+remedio+periodo (sem hora — hora é informativa)
-  const _n=(normalizarTexto(reg.nome)||'').toLowerCase();
-  const _r=(normalizarTexto(reg.remedio)||'').toLowerCase();
+  const _n=normalizarTexto(reg.nome);
+  const _r=normalizarTexto(reg.remedio);
   const _p=normalizarPeriodo(reg.periodo);
   const _d=normalizarData(reg.dataISO||reg.data||'');
   const id = _d+'_'+_n+'_'+_r+'_'+_p;
@@ -1980,15 +1982,17 @@ window.fbAddDose = function(reg){
   // Isso resolve race condition pai/mãe: o primeiro a chegar vence, o segundo é ignorado
   _db.runTransaction(function(tx){
     return tx.get(ref).then(function(doc){
-      if(doc.exists){ return; } // já existe — não sobrescrever
-      tx.set(ref, payload);
+      if(doc.exists){ return; } // já existe — ignorar (pai/mãe simultâneo)
+      tx.create(ref, payload); // create() falha atomicamente se doc surgir entre get e write
     });
   }).then(function(){ setSyncStatus('ok'); })
     .catch(function(e){
+      // AlreadyExists = outro usuário gravou primeiro — não é erro real
+      if(e.code==='already-exists'||e.message&&e.message.indexOf('already-exists')>-1){
+        setSyncStatus('ok'); return;
+      }
       console.error('[FB] fbAddDose tx:', e);
-      // Fallback: tentar .set() simples em caso de erro de transação
-      ref.set(payload).then(function(){ setSyncStatus('ok'); })
-         .catch(function(e2){ setSyncStatus('err'); console.error('[FB] fbAddDose fallback:', e2); });
+      setSyncStatus('err');
     });
 };
 
@@ -1996,8 +2000,8 @@ window.fbRemoveDose = function(data,nome,remedio,periodo){
   setSyncStatus('sync');
   const p=data.split('/');
   const iso=p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
-  const _n=(normalizarTexto(nome)||'').toLowerCase();
-const _r=(normalizarTexto(remedio)||'').toLowerCase();
+  const _n=normalizarTexto(nome);
+const _r=normalizarTexto(remedio);
 const _p=normalizarPeriodo(periodo);
 const _d=normalizarData(data);
 const id=_d+'_'+_n+'_'+_r+'_'+_p;
@@ -2632,11 +2636,11 @@ function marcarDose(nome,remedio,periodo,btn,nota){
     const novo={data,dataISO:dataISO_,nome:nomeN,remedio:remedioN,periodo:periodoN,hora,usuario:activeUser,nota:nota||null};
 
     // UNICIDADE: chave sem hora — bloqueia duplicidade pai/mãe mesmo com horários diferentes
-    const keyNovo=_chaveDosePeriodo(novo);
+    const keyNovo=gerarChaveDoseSemHora(novo);
     const histAtual=window._fbHist||[]; // leitura direta para incluir entradas ainda não sincronizadas
     const jaExiste=histAtual.some(r=>{
       if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return false;
-      return _chaveDosePeriodo(r)===keyNovo;
+      return gerarChaveDoseSemHora(r)===keyNovo;
     });
     if(jaExiste) return;
 
@@ -2826,10 +2830,11 @@ function abrirDiaCal(df,isoKey){
       const cfg=getCriancaConfig(nome);
       histHtml+=`<div style="font-size:.72rem;font-weight:700;color:${cfg.cor};margin:8px 0 4px">${cfg.emoji} ${nome}</div>`;
       dCri.forEach(r=>{
+        const _rDisp=r.remedio?(r.remedio.charAt(0).toUpperCase()+r.remedio.slice(1)):r.remedio;
         const icon=getIconRemedio(r.remedio);
         const per=({'manha':'☀️ manhã','tarde':'🌤️ tarde','noite':'🌙 noite'}[r.periodo]||r.periodo);
         const who=(USERS[r.usuario]||{}).nome||'?';
-        histHtml+=`<div class="cal-dose-row"><span class="cal-dose-icon">${icon}</span><div class="cal-dose-body"><div class="cal-dose-nome">${r.remedio} <span style="opacity:.6;font-size:.65rem">${per}</span></div><div class="cal-dose-meta">✓ ${r.hora} — por ${who}</div>${r.nota?'<div class="cal-dose-nota">'+r.nota+'</div>':''}</div></div>`;
+        histHtml+=`<div class="cal-dose-row"><span class="cal-dose-icon">${icon}</span><div class="cal-dose-body"><div class="cal-dose-nome">${_rDisp} <span style="opacity:.6;font-size:.65rem">${per}</span></div><div class="cal-dose-meta">✓ ${r.hora} — por ${who}</div>${r.nota?'<div class="cal-dose-nota">'+r.nota+'</div>':''}</div></div>`;
       });
     });
     histHtml+='</div>';
@@ -4687,6 +4692,38 @@ mostrarSplash();
 initAuth();
 initDark();
 if('serviceWorker' in navigator) initServiceWorker();
+
+// ═══════════════════════════════════════════════════════
+// SCRIPT DE LIMPEZA MANUAL — executar uma vez via console
+// Uso: window.limparDuplicatasFirestore()
+// ═══════════════════════════════════════════════════════
+window.limparDuplicatasFirestore = async function(){
+  if(!_db){ console.error('Firestore não disponível'); return; }
+  console.log('[Cleanup] Iniciando limpeza de duplicatas no Firestore...');
+  let total=0, removidos=0;
+  const snap = await _db.collection('historico').get();
+  const docs = snap.docs.map(d=>Object.assign({id:d.id},d.data()));
+  const vistas = new Map(); // chave → docId
+  for(const doc of docs){
+    if(doc.nota&&doc.nota.startsWith('NAO_TOMOU')) continue;
+    const chave = typeof gerarChaveDoseSemHora==='function' ? gerarChaveDoseSemHora(doc) : '';
+    if(!chave) continue;
+    total++;
+    if(vistas.has(chave)){
+      // Duplicata: manter o primeiro (menor ID = mais antigo), apagar este
+      console.log('[Cleanup] Duplicata encontrada:', doc.id, '→ chave:', chave);
+      try{
+        await _db.collection('historico').doc(doc.id).delete();
+        removidos++;
+        console.log('[Cleanup] Apagado:', doc.id);
+      }catch(e){ console.error('[Cleanup] Erro ao apagar', doc.id, e); }
+    } else {
+      vistas.set(chave, doc.id);
+    }
+  }
+  console.log('[Cleanup] Concluído. Total:', total, '| Removidos:', removidos);
+  return {total, removidos};
+};
 </script>
 <audio id="audio-celebracao" src="trombetas.mp3" preload="auto"></audio>
 </body>
