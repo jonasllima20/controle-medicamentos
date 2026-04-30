@@ -1792,6 +1792,50 @@ window._fbUnsubLog  = null;
 // ── Helpers de acesso ─────────────────────────────────────
 // getDados / getHist: fonte única de dados — TODOS os componentes usam isso
 // Normaliza período e hora automaticamente ao ler (inline para evitar dependência de ordem)
+// ═══════════════════════════════════════════════════════
+// NORMALIZAÇÃO GLOBAL + CHAVE ÚNICA + DEDUPLICAÇÃO
+// ═══════════════════════════════════════════════════════
+
+// Funções de normalização — aplicadas ANTES de salvar e ao comparar
+function normalizarTexto(t){ return (t||'').trim().toLowerCase(); }
+function normalizarPeriodo(p){ return (p||'').trim().toLowerCase(); }
+function normalizarHoraFn(h){ return (h||'').trim().padStart(5,'0'); }
+function normalizarData(d){
+  // Aceita dd/mm/yyyy ou yyyy-mm-dd; retorna yyyy-mm-dd
+  if(!d) return '';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+  const p=d.split('/');
+  if(p.length===3) return p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
+  return d;
+}
+
+// Chave única determinística da dose
+// Formato: "2026-04-28|arthur|flixotide|manha|08:00"
+function gerarKeyDose(r){
+  if(!r) return '';
+  return [
+    normalizarData(r.data||r.dataISO||''),
+    normalizarTexto(r.nome),
+    normalizarTexto(r.remedio),
+    normalizarPeriodo(r.periodo),
+    normalizarHoraFn(r.hora)
+  ].join('|');
+}
+
+// Remove duplicatas do histórico em memória usando a chave única
+// Mantém sempre o PRIMEIRO registro de cada chave
+function limparDuplicados(arr){
+  if(!arr||!arr.length) return arr||[];
+  const vistas=new Set();
+  return arr.filter(r=>{
+    if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return true; // não deduplicar marcações de não-tomou
+    const k=gerarKeyDose(r);
+    if(!k||vistas.has(k)) return false;
+    vistas.add(k);
+    return true;
+  });
+}
+
 function _normHora(h){return(h||'').trim().padStart(5,'0');}
 function _normalizarRegistro(r){
   if(!r) return r;
@@ -1800,10 +1844,16 @@ function _normalizarRegistro(r){
     hora:_normHora(r.hora)
   });
 }
-function getDados(){ return (window._fbHist||[]).map(_normalizarRegistro); }
+function getDados(){ return limparDuplicados((window._fbHist||[]).map(_normalizarRegistro)); }
 function getHist(){ return getDados(); }
 function getLog() { return window._fbLog  || []; }
 window.getHist = getHist;
+window.getDados = getDados;
+window.gerarKeyDose = gerarKeyDose;
+window.limparDuplicados = limparDuplicados;
+window.normalizarTexto = normalizarTexto;
+window.normalizarPeriodo = normalizarPeriodo;
+window.normalizarHoraFn = normalizarHoraFn;
 window.getLog  = getLog;
 
 // ── Indicador de sync ─────────────────────────────────────
@@ -1829,7 +1879,8 @@ window.fbStartListeners = function(){
   _db.collection('historico').get().then(function(snap){
     var arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
     cacheSet('hist', arr);
-    window._fbHist = arr;
+    // Normalizar e deduplicar ao carregar do servidor
+    window._fbHist = typeof limparDuplicados==='function' ? limparDuplicados(arr.map(r=>typeof _normalizarRegistro==='function'?_normalizarRegistro(r):r)) : arr;
     setSyncStatus('ok');
     // Chamar as funções de dashboard diretamente (sem depender de atualizarTudo completo)
     try{ if(typeof atualizarTendencia==='function') atualizarTendencia(); }catch(e){ console.error('tend:',e); }
@@ -1850,7 +1901,7 @@ window.fbStartListeners = function(){
     function(snap){
       var arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
       cacheSet('hist', arr);
-      window._fbHist = arr;
+      window._fbHist = typeof limparDuplicados==='function' ? limparDuplicados(arr.map(r=>typeof _normalizarRegistro==='function'?_normalizarRegistro(r):r)) : arr;
       setSyncStatus('ok');
       try{ if(typeof atualizarTendencia==='function') atualizarTendencia(); }catch(e){}
       try{ if(typeof atualizarRecordes==='function') atualizarRecordes(); }catch(e){}
@@ -2507,39 +2558,52 @@ function clicarMed(nome,remedio,periodo,btn){
   _notaCb=(nota)=>{fecharMo('mo-nota');marcarDose(nome,remedio,periodo,btn,nota);};
 }
 // Lock de clique duplo — evita registros duplicados por clique rápido
-let _marcandoDose=false;
+let _lockDose=false; // lock único de registro de dose
 function marcarDose(nome,remedio,periodo,btn,nota){
+  // Bloco NAO_TOMOU: apenas log, sem registrar dose
   if(nota&&nota.startsWith('NAO_TOMOU:')){
-    const logEntry={ts:Date.now(),data:hoje(),hora:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),usuario:activeUser,acao:'🚫 Não tomou '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo)+') para '+nome+' — '+nota.replace('NAO_TOMOU:','')};
+    const _hNT=normalizarHoraFn(new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}));
+    const logEntry={ts:Date.now(),data:hoje(),hora:_hNT,usuario:activeUser,
+      acao:'\uD83D\uDEAB N\u00e3o tomou '+remedio+' ('+({'manha':'manh\u00e3','tarde':'tarde','noite':'noite'}[normalizarPeriodo(periodo)]||periodo)+') para '+nome+' \u2014 '+nota.replace('NAO_TOMOU:','')};
     window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);return;
   }
-  // Proteção dupla: lock de clique e verificação de duplicidade
-  if(_marcandoDose) return;
-  _marcandoDose=true;
-  const data=hoje();
-  const hora=normalizarHora(new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}));
-  // UNICIDADE: data + criança + remédio + período + hora normalizados
-  const periodoN=(periodo||'').trim().toLowerCase();
-  const hist=window._fbHist||[];
-  const jaTem=hist.some(r=>r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodoN&&r.hora===hora&&!(r.nota&&r.nota.startsWith('NAO_TOMOU')));
-  if(jaTem){_marcandoDose=false;return;} // dose já registrada — não duplicar
+  // LOCK: impede clique duplo e race condition
+  if(_lockDose) return;
+  _lockDose=true;
   try{
-  const reg={data,dataISO:hojeISO(),nome,remedio,periodo:periodoN,hora,usuario:activeUser,nota:nota||null};
-  window._fbHist=[...hist,reg];
-  if(window.fbAddDose)window.fbAddDose(reg);
-  const logEntry={ts:Date.now(),data,hora,usuario:activeUser,acao:'Marcou '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodoN]||periodoN)+') para '+nome+(nota?' — "'+nota+'"':'')};
-  window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);
-  btn.classList.add('pop');setTimeout(()=>btn.classList.remove('pop'),300);
-  // Verificar celebração e badges com dados já atualizados em memória
-  verificarCelebracao(getDados());
-  atualizarTudo();
-  // Badges: verificar após atualizarTudo ter rodado
-  setTimeout(function(){
-    verificarEDispararBadges(getDados());
-    renderBadgesGanhos();
-  },800);
+    // Normalização completa dos campos
+    const nomeN     = normalizarTexto(nome);
+    const remedioN  = normalizarTexto(remedio);
+    const periodoN  = normalizarPeriodo(periodo);
+    const hora      = normalizarHoraFn(new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}));
+    const data      = hoje();
+    const dataISO_  = hojeISO();
+
+    // Montar registro normalizado
+    const novo={data,dataISO:dataISO_,nome:nomeN,remedio:remedioN,periodo:periodoN,hora,usuario:activeUser,nota:nota||null};
+    const keyNovo=gerarKeyDose(novo);
+
+    // UNICIDADE via chave determinística
+    const hist=window._fbHist||[];
+    const jaExiste=hist.some(r=>gerarKeyDose(r)===keyNovo&&!(r.nota&&r.nota.startsWith('NAO_TOMOU')));
+    if(jaExiste) return;
+
+    // Persistir
+    window._fbHist=[...hist,novo];
+    if(window.fbAddDose)window.fbAddDose(novo);
+
+    // Log de ação
+    const logEntry={ts:Date.now(),data,hora,usuario:activeUser,
+      acao:'Marcou '+remedioN+' ('+({'manha':'manh\u00e3','tarde':'tarde','noite':'noite'}[periodoN]||periodoN)+') para '+nomeN+(nota?' \u2014 "'+nota+'"':'')};
+    window._fbLog=[...(window._fbLog||[]),logEntry];
+    if(window.fbAddLog)window.fbAddLog(logEntry);
+
+    btn.classList.add('pop');setTimeout(()=>btn.classList.remove('pop'),300);
+    verificarCelebracao(getDados());
+    atualizarTudo();
+    setTimeout(function(){verificarEDispararBadges(getDados());renderBadgesGanhos();},800);
   }finally{
-    _marcandoDose=false;
+    _lockDose=false;
   }
 }
 
