@@ -1828,6 +1828,47 @@ function gerarChaveDose(r){ return gerarKeyDose(r); }
 
 // Remove duplicatas do histórico em memória usando a chave única
 // Mantém sempre o PRIMEIRO registro de cada chave
+// ── Validação de horário ────────────────────────────────────────
+// Retorna true se pode marcar a dose agora (com 10min de tolerância)
+function podeMarcarDose(horaDose){
+  if(!horaDose) return true; // sem horário definido — sempre pode
+  const agora=new Date();
+  const partes=String(horaDose).split(':').map(Number);
+  if(partes.length<2||isNaN(partes[0])||isNaN(partes[1])) return true;
+  const limite=new Date();
+  limite.setHours(partes[0],partes[1]-10,0,0); // 10min antes
+  return agora>=limite;
+}
+
+// Normaliza todos os campos de um registro para comparação/persistência
+function normalizarRegistro(r){
+  if(!r) return r;
+  return Object.assign({},r,{
+    nome:    normalizarTexto(r.nome),
+    remedio: normalizarTexto(r.remedio),
+    periodo: normalizarPeriodo(r.periodo),
+    hora:    normalizarHora(r.hora||'')
+  });
+}
+
+// Remove da memória local registros com hora futura para hoje
+function limparRegistrosFuturos(){
+  if(!window._fbHist||!window._fbHist.length) return;
+  const dHj=hoje();
+  const agoraMin=nowMin();
+  const antes=window._fbHist.length;
+  window._fbHist=window._fbHist.filter(function(r){
+    if(r.data!==dHj) return true; // dias passados: manter
+    if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return true;
+    if(!r.hora) return true;
+    const p=r.hora.split(':').map(Number);
+    const rMin=(p[0]||0)*60+(p[1]||0);
+    return rMin<=agoraMin+5; // manter registros até 5min no futuro (tolerância)
+  });
+  const removidos=antes-window._fbHist.length;
+  if(removidos>0) console.log('[Cleanup] Registros futuros removidos da memória:',removidos);
+}
+
 // CHAVE CANÔNICA DE DOSE: data+nome+remedio+periodo (hora é informativa, não faz parte da identidade)
 function gerarChaveDoseSemHora(r){
   if(!r) return '';
@@ -1868,6 +1909,9 @@ window.getHist = getHist;
 window.getDados = getDados;
 window.gerarChaveDose = gerarChaveDose;
 window.gerarChaveDoseSemHora = gerarChaveDoseSemHora;
+window.podeMarcarDose = podeMarcarDose;
+window.normalizarRegistro = normalizarRegistro;
+window.limparRegistrosFuturos = limparRegistrosFuturos;
 window.badgeJaExiste = badgeJaExiste;
 window.normalizarHora = normalizarHora;
 window.gerarKeyDose = gerarKeyDose;
@@ -1980,20 +2024,24 @@ window.fbAddDose = function(reg){
   });
   // TRANSAÇÃO ATÔMICA: só grava se o documento ainda não existe
   // Isso resolve race condition pai/mãe: o primeiro a chegar vence, o segundo é ignorado
-  _db.runTransaction(function(tx){
+  // Retorna Promise — permite await em marcarDose
+  return _db.runTransaction(function(tx){
     return tx.get(ref).then(function(doc){
-      if(doc.exists){ return; } // já existe — ignorar (pai/mãe simultâneo)
-      tx.create(ref, payload); // create() falha atomicamente se doc surgir entre get e write
+      if(doc.exists){ return 'exists'; } // já existe — ignorar
+      tx.create(ref, payload);
+      return 'created';
     });
-  }).then(function(){ setSyncStatus('ok'); })
-    .catch(function(e){
-      // AlreadyExists = outro usuário gravou primeiro — não é erro real
-      if(e.code==='already-exists'||e.message&&e.message.indexOf('already-exists')>-1){
-        setSyncStatus('ok'); return;
-      }
-      console.error('[FB] fbAddDose tx:', e);
-      setSyncStatus('err');
-    });
+  }).then(function(resultado){
+    setSyncStatus('ok');
+    return resultado; // 'created' | 'exists'
+  }).catch(function(e){
+    if(e.code==='already-exists'||(e.message&&e.message.indexOf('already-exists')>-1)){
+      setSyncStatus('ok'); return 'exists';
+    }
+    console.error('[FB] fbAddDose tx:', e);
+    setSyncStatus('err');
+    throw e; // re-throw para marcarDose capturar
+  });
 };
 
 window.fbRemoveDose = function(data,nome,remedio,periodo){
@@ -2100,7 +2148,23 @@ window.flushOfflineQueueFB = function(){
   });
   Promise.all(promises).then(function(){
     localStorage.setItem('rm_offline_queue',JSON.stringify(remaining));
-    if(!remaining.length){ setSyncStatus('ok'); if(typeof mostrarNotifInApp==='function') mostrarNotifInApp('☁️ Sincronizado!','Registros offline enviados.','ok'); }
+    if(!remaining.length){
+      setSyncStatus('ok');
+      if(typeof mostrarNotifInApp==='function') mostrarNotifInApp('\u2601\uFE0F Sincronizado!','Registros offline enviados.','ok');
+      // Celebrar AGORA que temos confirmação do servidor
+      try{
+        if(typeof atualizarTudo==='function') atualizarTudo();
+        setTimeout(function(){
+          if(typeof verificarCelebracao==='function') verificarCelebracao(getDados());
+          if(typeof verificarEDispararBadges==='function') verificarEDispararBadges(getDados());
+          if(typeof renderBadgesGanhos==='function') renderBadgesGanhos();
+          // Limpar flags _pending dos registros sincronizados
+          if(window._fbHist) window._fbHist=window._fbHist.map(function(r){
+            const c=Object.assign({},r);delete c._pending;return c;
+          });
+        },600);
+      }catch(e){}
+    }
     else setSyncStatus('err');
   });
 };
@@ -2631,22 +2695,8 @@ function naoTomou(){const txt=document.getElementById('nota-txt').value.trim();c
 function clicarMed(nome,remedio,periodo,btn){
   const data=hoje();
 
-  // ─── VALIDAÇÃO DE HORÁRIO ──────────────────────────────────────
-  // Busca o horário programado da dose (ex: "20:00")
-  const _med=(getMeds(nome)||[]).find(m=>normalizarTexto(m.remedio)===normalizarTexto(remedio));
-  const _horaProgramada=_med?getMedHorario(_med,periodo):'';
-  if(_horaProgramada){
-    const agora=new Date();
-    const horaAtual=normalizarHora(agora.getHours()+':'+String(agora.getMinutes()).padStart(2,'0'));
-    const [hP,mP]=_horaProgramada.split(':').map(Number);
-    const limiteMin=new Date();limiteMin.setHours(hP,mP-10,0,0); // 10min de tolerância antes
-    if(agora<limiteMin){
-      // Dose ainda não está no horário — bloquear silenciosamente com toast
-      if(typeof mostrarNotifInApp==='function') mostrarNotifInApp('⏰ Dose programada para '+_horaProgramada+' — aguarde o horário');
-      return;
-    }
-  }
-  // ─── FIM VALIDAÇÃO ─────────────────────────────────────────────
+  // Validação de horário centralizada em marcarDose (podeMarcarDose)
+  // Aqui apenas verificamos se já foi marcada para decidir toggle vs marcar
 
   // Verificar se já foi marcada (usando chave canônica)
   const keyClick=gerarChaveDoseSemHora({data,nome,remedio,periodo});
@@ -2666,52 +2716,101 @@ function clicarMed(nome,remedio,periodo,btn){
 }
 // Lock de clique duplo — evita registros duplicados por clique rápido
 let _savingDose=false; // lock único de registro de dose
-function marcarDose(nome,remedio,periodo,btn,nota){
-  // Bloco NAO_TOMOU: apenas log, sem registrar dose
+async function marcarDose(nome,remedio,periodo,btn,nota){
+  // ── NAO_TOMOU: só log, não registra dose ───────────────────
   if(nota&&nota.startsWith('NAO_TOMOU:')){
-    const _hNT=normalizarHoraFn(new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}));
+    const _hNT=normalizarHora(new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}));
     const logEntry={ts:Date.now(),data:hoje(),hora:_hNT,usuario:activeUser,
-      acao:'\uD83D\uDEAB N\u00e3o tomou '+remedio+' ('+({'manha':'manh\u00e3','tarde':'tarde','noite':'noite'}[normalizarPeriodo(periodo)]||periodo)+') para '+nome+' \u2014 '+nota.replace('NAO_TOMOU:','')};
-    window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);return;
+      acao:'\uD83D\uDEAB N\u00e3o tomou '+normalizarTexto(remedio)+' para '+normalizarTexto(nome)+' \u2014 '+nota.replace('NAO_TOMOU:','')};
+    window._fbLog=[...(window._fbLog||[]),logEntry];
+    if(window.fbAddLog)window.fbAddLog(logEntry);
+    return;
   }
-  // LOCK: impede clique duplo e race condition
+
+  // ── LOCK ───────────────────────────────────────────────────
   if(_savingDose) return;
   _savingDose=true;
+
   try{
-    // Normalização completa dos campos
-    const nomeN     = normalizarTexto(nome);
-    const remedioN  = normalizarTexto(remedio);
-    const periodoN  = normalizarPeriodo(periodo);
-    const hora      = normalizarHoraFn(new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}));
-    const data      = hoje();
-    const dataISO_  = hojeISO();
+    // ── NORMALIZAÇÃO ─────────────────────────────────────────
+    const nomeN    = normalizarTexto(nome);
+    const remedioN = normalizarTexto(remedio);
+    const periodoN = normalizarPeriodo(periodo);
+    const hora     = normalizarHora(new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}));
+    const data     = hoje();
+    const dataISO_ = hojeISO();
 
-    // Montar registro normalizado
+    // ── VALIDAÇÃO DE HORÁRIO (central — vale tanto online quanto offline) ─
+    const _med=(getMeds(nomeN)||getMeds(nome)||[]).find(function(m){
+      return normalizarTexto(m.remedio)===remedioN;
+    });
+    const _horaProg=_med?getMedHorario(_med,periodoN):'';
+    if(_horaProg&&!podeMarcarDose(_horaProg)){
+      if(typeof mostrarNotifInApp==='function') mostrarNotifInApp('\u23F0 Dose programada para '+_horaProg+' \u2014 aguarde o hor\u00e1rio','','warn');
+      return;
+    }
+
+    // ── UNICIDADE LOCAL ──────────────────────────────────────
     const novo={data,dataISO:dataISO_,nome:nomeN,remedio:remedioN,periodo:periodoN,hora,usuario:activeUser,nota:nota||null};
-
-    // UNICIDADE: chave sem hora — bloqueia duplicidade pai/mãe mesmo com horários diferentes
     const keyNovo=gerarChaveDoseSemHora(novo);
-    const histAtual=window._fbHist||[]; // leitura direta para incluir entradas ainda não sincronizadas
-    const jaExiste=histAtual.some(r=>{
+    const histAtual=window._fbHist||[];
+    const jaExiste=histAtual.some(function(r){
       if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return false;
       return gerarChaveDoseSemHora(r)===keyNovo;
     });
     if(jaExiste) return;
 
-    // Persistir (adicionar ao estado local antes do Firestore responder)
-    window._fbHist=[...histAtual,novo];
-    if(window.fbAddDose)window.fbAddDose(novo);
+    // ── PERSISTIR NO FIREBASE PRIMEIRO ──────────────────────
+    // UI só atualiza APÓS confirmação (ou fila offline)
+    let salvouOk=false;
+    if(window.fbAddDose){
+      if(!navigator.onLine){
+        // Offline: enfileirar e mostrar estado pendente (sem celebração)
+        window.fbAddDose(novo); // enfileira em offline_queue
+        window._fbHist=[...histAtual,Object.assign({},novo,{_pending:true})];
+        btn.classList.add('pop');setTimeout(function(){btn.classList.remove('pop');},300);
+        atualizarTudo(); // atualiza UI com dose pendente
+        if(typeof mostrarNotifInApp==='function') mostrarNotifInApp('\u23F3 Dose salva localmente \u2014 ser\u00e1 sincronizada ao reconectar','','warn');
+        return; // NÃO celebrar offline
+      }
+      try{
+        const resultado=await window.fbAddDose(novo);
+        salvouOk=true;
+        if(resultado==='exists'){
+          // Outro usuário já gravou — sincronizar local
+          if(!histAtual.some(function(r){ return gerarChaveDoseSemHora(r)===keyNovo&&!r.nota; })){
+            window._fbHist=[...histAtual,novo];
+          }
+          atualizarTudo();
+          return;
+        }
+      }catch(e){
+        console.error('[marcarDose] Firebase error:',e);
+        if(typeof mostrarNotifInApp==='function') mostrarNotifInApp('\u26A0\uFE0F Erro ao salvar dose \u2014 tente novamente','','err');
+        return; // NÃO atualizar UI
+      }
+    } else {
+      salvouOk=true; // modo sem Firebase
+    }
 
-    // Log de ação
+    // ── SÓ AQUI: confirmação, UI, celebração ─────────────────
+    window._fbHist=[...histAtual,novo];
+
     const logEntry={ts:Date.now(),data,hora,usuario:activeUser,
       acao:'Marcou '+remedioN+' ('+({'manha':'manh\u00e3','tarde':'tarde','noite':'noite'}[periodoN]||periodoN)+') para '+nomeN+(nota?' \u2014 "'+nota+'"':'')};
     window._fbLog=[...(window._fbLog||[]),logEntry];
     if(window.fbAddLog)window.fbAddLog(logEntry);
 
-    btn.classList.add('pop');setTimeout(()=>btn.classList.remove('pop'),300);
-    verificarCelebracao(getDados());
-    atualizarTudo();
-    setTimeout(function(){verificarEDispararBadges(getDados());renderBadgesGanhos();},800);
+    btn.classList.add('pop');setTimeout(function(){btn.classList.remove('pop');},300);
+    atualizarTudo(); // PRIMEIRO: atualizar estado
+
+    // DEPOIS: celebração e badges (500ms para UI renderizar)
+    setTimeout(function(){
+      verificarCelebracao(getDados());
+      verificarEDispararBadges(getDados());
+      renderBadgesGanhos();
+    },500);
+
   }finally{
     _savingDose=false;
   }
@@ -3446,6 +3545,7 @@ function atualizarStatEvento(){
 
 // ═══════════════ ATUALIZARTUDO + ENTRAR ═══════════════
 function atualizarTudo(){
+  limparRegistrosFuturos(); // remove dados inválidos antes de renderizar
   renderCards();verificarPendencias();atualizarStreak();atualizarAdesao();
   atualizarGrafico();gerarCal();calcPatterns();renderProximos();atualizarStatEvento();
   atualizarPizza();atualizarDashboardExtra();verificarPeriodoAlertas();
