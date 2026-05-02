@@ -253,6 +253,8 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
 .ptabs{display:flex;gap:4px}
 .ptab{padding:4px 9px;border-radius:99px;font-size:.68rem;font-weight:700;border:1.5px solid transparent;cursor:pointer;transition:all .2s;background:var(--bg);color:var(--muted)}
 .ptab.mnh.on{background:var(--mn);border-color:var(--mnb);color:#92400E}
+.badge-chip{display:inline-flex;align-items:center;gap:5px;background:var(--nt);border:1.5px solid var(--ntb);border-radius:20px;padding:4px 10px;font-size:.75rem}
+[data-theme="dark"] .badge-chip{background:#1e1b4b;border-color:#4338ca;color:#c7d2fe}
 .ptab.trd.on{background:#FEF3C7;border-color:#F59E0B;color:#92400E}
 .ptab.nte.on{background:var(--nt);border-color:var(--ntb);color:#4C1D95}
 [data-theme="dark"] .ptab.mnh.on{color:#FCD34D}
@@ -1140,6 +1142,16 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     </div>
   </div>
 
+  <!-- CONQUISTAS / BADGES -->
+  <div class="dash-extra" style="grid-template-columns:1fr" id="dash-row-badges">
+    <div class="dash-card">
+      <div style="margin-bottom:10px">
+        <div class="dash-card-title">🏆 Conquistas</div>
+      </div>
+      <div id="badges-ganhos-wrap" style="display:flex;flex-wrap:wrap;gap:8px;min-height:32px"></div>
+    </div>
+  </div>
+
   <!-- PRÓXIMOS EVENTOS -->
   <div class="sec" id="sec-proximos">
     <div class="sec-hd">
@@ -1778,9 +1790,147 @@ window._fbUnsubHist = null;
 window._fbUnsubLog  = null;
 
 // ── Helpers de acesso ─────────────────────────────────────
-function getHist(){ return window._fbHist || []; }
+// getDados / getHist: fonte única de dados — TODOS os componentes usam isso
+// Normaliza período e hora automaticamente ao ler (inline para evitar dependência de ordem)
+// ═══════════════════════════════════════════════════════
+// NORMALIZAÇÃO GLOBAL + CHAVE ÚNICA + DEDUPLICAÇÃO
+// ═══════════════════════════════════════════════════════
+
+// Funções de normalização — aplicadas ANTES de salvar e ao comparar
+function normalizarTexto(t){ return (t||'').toString().trim().toLowerCase(); }
+function normalizarPeriodo(p){ return (p||'').toString().trim().toLowerCase(); }
+function normalizarHora(h){ return (h||'').toString().trim().replace(/^(\d):/, '0$1:').padStart(5,'0'); }
+function normalizarHoraFn(h){ return normalizarHora(h); } // alias
+function normalizarData(d){
+  // Aceita dd/mm/yyyy ou yyyy-mm-dd; retorna yyyy-mm-dd
+  if(!d) return '';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+  const p=d.split('/');
+  if(p.length===3) return p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
+  return d;
+}
+
+// Chave única determinística da dose
+// Formato: "2026-04-28|arthur|flixotide|manha|08:00"
+function gerarKeyDose(r){
+  if(!r) return '';
+  return [
+    normalizarData(r.data||r.dataISO||''),
+    normalizarTexto(r.nome),
+    normalizarTexto(r.remedio),
+    normalizarPeriodo(r.periodo),
+    normalizarHoraFn(r.hora)
+  ].join('|');
+}
+// Alias para compatibilidade com spec
+function gerarChaveDose(r){ return gerarKeyDose(r); }
+
+
+// Remove duplicatas do histórico em memória usando a chave única
+// Mantém sempre o PRIMEIRO registro de cada chave
+// ── Validação de horário ────────────────────────────────────────
+// Retorna true se pode marcar a dose agora (com 10min de tolerância)
+function podeMarcarDose(horaDose){
+  if(!horaDose) return true; // sem horário definido — sempre pode
+  const agora=new Date();
+  const partes=String(horaDose).split(':').map(Number);
+  if(partes.length<2||isNaN(partes[0])||isNaN(partes[1])) return true;
+  const limite=new Date();
+  limite.setHours(partes[0],partes[1]-10,0,0); // 10min antes
+  return agora>=limite;
+}
+
+// Normaliza todos os campos de um registro para comparação/persistência
+function normalizarRegistro(r){
+  if(!r) return r;
+  return Object.assign({},r,{
+    nome:    normalizarTexto(r.nome),
+    remedio: normalizarTexto(r.remedio),
+    periodo: normalizarPeriodo(r.periodo),
+    hora:    normalizarHora(r.hora||'')
+  });
+}
+
+// Remove da memória local registros com hora futura para hoje
+function limparRegistrosFuturos(){
+  if(!window._fbHist||!window._fbHist.length) return;
+  const dHj=hoje();
+  const agoraMin=nowMin();
+  const antes=window._fbHist.length;
+  window._fbHist=window._fbHist.filter(function(r){
+    if(r.data!==dHj) return true; // dias passados: manter
+    if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return true;
+    if(!r.hora) return true;
+    const p=r.hora.split(':').map(Number);
+    const rMin=(p[0]||0)*60+(p[1]||0);
+    return rMin<=agoraMin+5; // manter registros até 5min no futuro (tolerância)
+  });
+  const removidos=antes-window._fbHist.length;
+  if(removidos>0) console.log('[Cleanup] Registros futuros removidos da memória:',removidos);
+}
+
+// CHAVE CANÔNICA DE DOSE: data+nome+remedio+periodo (hora é informativa, não faz parte da identidade)
+function gerarChaveDoseSemHora(r){
+  if(!r) return '';
+  return [
+    normalizarData(r.data||r.dataISO||''),
+    normalizarTexto(r.nome),
+    normalizarTexto(r.remedio),
+    normalizarPeriodo(r.periodo)
+  ].join('|');
+}
+// Alias interno
+function _chaveDosePeriodo(r){ return gerarChaveDoseSemHora(r); }
+
+function limparDuplicados(arr){
+  if(!arr||!arr.length) return arr||[];
+  const vistas=new Set();
+  return arr.filter(r=>{
+    if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return true;
+    const k=gerarChaveDoseSemHora(r); // chave canônica SEM hora
+    if(!k||vistas.has(k)) return false;
+    vistas.add(k);
+    return true;
+  });
+}
+
+function _normHora(h){return(h||'').trim().padStart(5,'0');}
+function _normalizarRegistro(r){
+  if(!r) return r;
+  // Normalizar todos os campos comparáveis ao ler dados
+  const periodo=(r.periodo||'').toString().trim().toLowerCase()||r.periodo;
+  const hora=_normHora(r.hora);
+  return Object.assign({},r,{periodo,hora});
+}
+function getDados(){
+  const dHj=hoje();
+  const aMin=nowMin();
+  return limparDuplicados((window._fbHist||[]).map(_normalizarRegistro).filter(function(r){
+    // Filtrar registros com hora futura para hoje em toda leitura
+    if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return true;
+    if(r.data===dHj&&r.hora){
+      const p=r.hora.split(':').map(Number);
+      if((p[0]||0)*60+(p[1]||0)>aMin+5) return false;
+    }
+    return true;
+  }));
+}
+function getHist(){ return getDados(); }
 function getLog() { return window._fbLog  || []; }
 window.getHist = getHist;
+window.getDados = getDados;
+window.gerarChaveDose = gerarChaveDose;
+window.gerarChaveDoseSemHora = gerarChaveDoseSemHora;
+window.podeMarcarDose = podeMarcarDose;
+window.normalizarRegistro = normalizarRegistro;
+window.limparRegistrosFuturos = limparRegistrosFuturos;
+window.badgeJaExiste = badgeJaExiste;
+window.normalizarHora = normalizarHora;
+window.gerarKeyDose = gerarKeyDose;
+window.limparDuplicados = limparDuplicados;
+window.normalizarTexto = normalizarTexto;
+window.normalizarPeriodo = normalizarPeriodo;
+window.normalizarHoraFn = normalizarHoraFn;
 window.getLog  = getLog;
 
 // ── Indicador de sync ─────────────────────────────────────
@@ -1806,7 +1956,10 @@ window.fbStartListeners = function(){
   _db.collection('historico').get().then(function(snap){
     var arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
     cacheSet('hist', arr);
-    window._fbHist = arr;
+    // Normalizar e deduplicar ao carregar do servidor
+    var _arrNorm0=arr.map(function(r){return typeof _normalizarRegistro==='function'?_normalizarRegistro(r):r;});
+    window._fbHist = typeof limparDuplicados==='function' ? limparDuplicados(_arrNorm0) : _arrNorm0;
+    if(typeof limparRegistrosFuturos==='function') limparRegistrosFuturos();
     setSyncStatus('ok');
     // Chamar as funções de dashboard diretamente (sem depender de atualizarTudo completo)
     try{ if(typeof atualizarTendencia==='function') atualizarTendencia(); }catch(e){ console.error('tend:',e); }
@@ -1826,12 +1979,18 @@ window.fbStartListeners = function(){
   window._fbUnsubHist = _db.collection('historico').onSnapshot(
     function(snap){
       var arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
-      cacheSet('hist', arr);
-      window._fbHist = arr;
+      // Normalizar todos os registros antes de processar
+      var arrNorm = arr.map(function(r){ return typeof _normalizarRegistro==='function'?_normalizarRegistro(r):r; });
+      var arrDedup = typeof limparDuplicados==='function' ? limparDuplicados(arrNorm) : arrNorm;
+      window._fbHist = arrDedup;
+      if(typeof limparRegistrosFuturos==='function') limparRegistrosFuturos();
+      cacheSet('hist', window._fbHist);
+      // Deduplicação tratada na gravação (write-time) via ID determinístico no fbAddDose
       setSyncStatus('ok');
       try{ if(typeof atualizarTendencia==='function') atualizarTendencia(); }catch(e){}
       try{ if(typeof atualizarRecordes==='function') atualizarRecordes(); }catch(e){}
       try{ if(typeof atualizarSemanaResumo==='function') atualizarSemanaResumo(); }catch(e){}
+  try{ if(typeof renderBadgesGanhos==='function') renderBadgesGanhos(); }catch(e){}
       try{ if(typeof atualizarTudo==='function') atualizarTudo(); }catch(e){}
     },
     function(err){
@@ -1865,18 +2024,49 @@ window.fbAddDose = function(reg){
     setSyncStatus('err'); return;
   }
   setSyncStatus('sync');
-  const id = reg.dataISO+'_'+reg.nome+'_'+reg.remedio+'_'+reg.periodo;
-  _db.collection('historico').doc(id).set(
-    Object.assign({}, reg, {_t: window.APP_TOKEN, ts: firebase.firestore.FieldValue.serverTimestamp()})
-  ).then(function(){ setSyncStatus('ok'); })
-   .catch(function(e){ console.error('[FB] fbAddDose:', e); setSyncStatus('err'); });
+  // ID determinístico: data+nome+remedio+periodo (sem hora — hora é informativa)
+  const _n=normalizarTexto(reg.nome);
+  const _r=normalizarTexto(reg.remedio);
+  const _p=normalizarPeriodo(reg.periodo);
+  const _d=normalizarData(reg.dataISO||reg.data||'');
+  const id = _d+'_'+_n+'_'+_r+'_'+_p;
+  const ref = _db.collection('historico').doc(id);
+  const payload = Object.assign({}, reg, {
+    nome: _n, remedio: _r, periodo: _p, // persistir normalizado
+    _t: window.APP_TOKEN,
+    ts: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  // TRANSAÇÃO ATÔMICA: só grava se o documento ainda não existe
+  // Isso resolve race condition pai/mãe: o primeiro a chegar vence, o segundo é ignorado
+  // Retorna Promise — permite await em marcarDose
+  return _db.runTransaction(function(tx){
+    return tx.get(ref).then(function(doc){
+      if(doc.exists){ return 'exists'; } // já existe — ignorar
+      tx.create(ref, payload);
+      return 'created';
+    });
+  }).then(function(resultado){
+    setSyncStatus('ok');
+    return resultado; // 'created' | 'exists'
+  }).catch(function(e){
+    if(e.code==='already-exists'||(e.message&&e.message.indexOf('already-exists')>-1)){
+      setSyncStatus('ok'); return 'exists';
+    }
+    console.error('[FB] fbAddDose tx:', e);
+    setSyncStatus('err');
+    throw e; // re-throw para marcarDose capturar
+  });
 };
 
 window.fbRemoveDose = function(data,nome,remedio,periodo){
   setSyncStatus('sync');
   const p=data.split('/');
   const iso=p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
-  const id=iso+'_'+nome+'_'+remedio+'_'+periodo;
+  const _n=normalizarTexto(nome);
+const _r=normalizarTexto(remedio);
+const _p=normalizarPeriodo(periodo);
+const _d=normalizarData(data);
+const id=_d+'_'+_n+'_'+_r+'_'+_p;
   _db.collection('historico').doc(id).delete()
     .then(function(){ setSyncStatus('ok'); })
     .catch(function(e){ console.error('[FB] fbRemoveDose:', e); setSyncStatus('err'); });
@@ -1948,16 +2138,48 @@ window.flushOfflineQueueFB = function(){
   const remaining=[];
   const promises=q.map(function(op){
     if(op.type==='addDose'){
-      const id=op.reg.dataISO+'_'+op.reg.nome+'_'+op.reg.remedio+'_'+op.reg.periodo;
-      return _db.collection('historico').doc(id).set(
-        Object.assign({},op.reg,{_t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()})
-      ).catch(function(){ remaining.push(op); });
+      // ID normalizado idêntico ao fbAddDose — garante idempotência
+      const _n=normalizarTexto(op.reg.nome);
+      const _r=normalizarTexto(op.reg.remedio);
+      const _p=normalizarPeriodo(op.reg.periodo);
+      const _d=normalizarData(op.reg.dataISO||op.reg.data||'');
+      const id=_d+'_'+_n+'_'+_r+'_'+_p;
+      const ref=_db.collection('historico').doc(id);
+      const payload=Object.assign({},op.reg,{nome:_n,remedio:_r,periodo:_p,
+        _t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()});
+      // Transação atômica: só grava se não existe — evita duplicar offline
+      return _db.runTransaction(function(tx){
+        return tx.get(ref).then(function(doc){
+          if(doc.exists){ return; } // já existe — ignorar
+          tx.create(ref,payload);
+        });
+      }).catch(function(e){
+        if(e.code==='already-exists'||String(e.message).indexOf('already-exists')>-1){ return; }
+        remaining.push(op); // erro real — tentar novamente depois
+      });
     }
     return Promise.resolve();
   });
   Promise.all(promises).then(function(){
     localStorage.setItem('rm_offline_queue',JSON.stringify(remaining));
-    if(!remaining.length){ setSyncStatus('ok'); if(typeof mostrarNotifInApp==='function') mostrarNotifInApp('☁️ Sincronizado!','Registros offline enviados.','ok'); }
+    if(!remaining.length){
+      setSyncStatus('ok');
+      if(typeof mostrarNotifInApp==='function') mostrarNotifInApp('\u2601\uFE0F Sincronizado!','Registros offline enviados.','ok');
+      // Celebrar AGORA que temos confirmação do servidor
+      try{
+        if(typeof atualizarTudo==='function') atualizarTudo();
+        setTimeout(function(){
+          if(typeof verificarCelebracao==='function') verificarCelebracao(getDados());
+          if(typeof verificarEDispararBadges==='function') verificarEDispararBadges(getDados());
+          if(typeof renderBadgesGanhos==='function') renderBadgesGanhos();
+          // Limpar flags _pending e registros futuros após sync
+          if(window._fbHist) window._fbHist=window._fbHist.map(function(r){
+            const c=Object.assign({},r);delete c._pending;return c;
+          });
+          if(typeof limparRegistrosFuturos==='function') limparRegistrosFuturos();
+        },600);
+      }catch(e){}
+    }
     else setSyncStatus('err');
   });
 };
@@ -2177,7 +2399,16 @@ function estaAtivo(med,crianca,dataISO){
 
 // Retorna o horário do remédio para um dado período — lê de doses[]
 function normalizarDoses(doses){
-  return Array.from(new Map(doses.map(function(d){return[d.periodo+d.hora,d];})).values()).filter(function(d){return d.hora;});
+  if(!Array.isArray(doses)) return [{periodo:'manha',hora:'08:00'}];
+  const result=Array.from(new Map(
+    doses.map(function(d){
+      const hora=(d.hora||'').trim().replace(/^(\d):/, '0$1:'); // "8:00"→"08:00"
+      const key=d.periodo+hora;
+      return[key,{periodo:d.periodo,hora:hora}];
+    })
+  ).values()).filter(function(d){return d.hora;});
+  // Proteção: nunca retornar array vazio
+  return result.length?result:[{periodo:'manha',hora:'08:00'}];
 }
 function _getPeriodoParaUI(med,chave){
   const p=(med&&med.periodo)||{};
@@ -2230,13 +2461,28 @@ function getIconRemedio(nome){return (getMedsNomes().find(m=>m.nome===nome)||{})
 // ── Fonte única para cálculo de dia completo ─────────────
 // Conta doses válidas (não NAO_TOMOU) de um dia em dd/mm/yyyy
 // ══ FONTE ÚNICA DE VERDADE ══════════════════════════════
+// Normalização de hora — garante formato "HH:MM" consistente
+// normalizarHora defined above (canonical)
+
 // getResumoDia: todos os módulos derivam daqui — calendário,
 // semana, mês, tendência, streak, padrões.
 
 // Converte dd/mm/yyyy → yyyy-mm-dd (para passar para estaAtivo)
 function _dfToISO(df){if(!df)return'';const p=df.split('/');return p.length===3?p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0'):df;}
 function contarDosesDia(dados,df){
-  return dados.filter(r=>r.data===df&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
+  const dHj=hoje();
+  const aMin=nowMin();
+  return dados.filter(function(r){
+    if(r.data!==df) return false;
+    if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return false;
+    // Filtrar registros com hora futura para hoje
+    if(df===dHj&&r.hora){
+      const p=r.hora.split(':').map(Number);
+      const rMin=(p[0]||0)*60+(p[1]||0);
+      if(rMin>aMin+5) return false; // hora futura — não contar
+    }
+    return true;
+  }).length;
 }
 function totalDosesDiario(dataISO){
   const d=dataISO||hojeISO();
@@ -2254,16 +2500,30 @@ function getResumoDia(dados,df){
   const esperado=totalDosesDiario(df.includes('/')?_dfToISO(df):df);
   const tomadas=contarDosesDia(dados,df);
   const naoTomou=dados.filter(r=>r.data===df&&r.nota&&r.nota.startsWith('NAO_TOMOU')).length;
-  const registros=dados.filter(r=>r.data===df);
+  // Proteção: ignorar registros com hora futura para hoje (dados inválidos/corruptos)
+  const _hojeStr=hoje();const _agoraMin=nowMin();
+  const registros=dados.filter(r=>{
+    if(r.data!==df) return false;
+    if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return true; // manter não-tomou
+    if(df===_hojeStr&&r.hora){
+      const [rh,rm]=(r.hora||'00:00').split(':').map(Number);
+      const rMin=rh*60+rm;
+      if(rMin>_agoraMin+5) return false; // hora futura — ignorar
+    }
+    return true;
+  });
+  // Proteção defensiva: nunca reportar mais que o esperado
+  const tomadasCap=esperado>0?Math.min(tomadas,esperado):tomadas;
   return{
     df,                                   // "dd/mm/yyyy"
     esperado,                             // total de doses esperadas
-    tomadas,                              // doses válidas (sem NAO_TOMOU)
+    tomadas:tomadasCap,                   // doses válidas (cap no esperado)
+    tomadasReal:tomadas,                  // doses reais (sem cap, para debug)
     naoTomou,                             // doses marcadas como não tomadas
     registros,                            // todos os registros do dia
-    concluido: esperado>0&&tomadas>=esperado, // true = dia 100% (exige esperado>0)
-    temDados:  registros.length>0,        // true = algum dado existe
-    pct: esperado>0?Math.round(tomadas/esperado*100):0
+    concluido: esperado>0&&tomadasCap>=esperado,
+    temDados:  registros.length>0,
+    pct: esperado>0?Math.min(100,Math.round(tomadasCap/esperado*100)):0
   };
 }
 // Resumo de um dia para UMA criança específica
@@ -2272,7 +2532,8 @@ function getResumoDiaCrianca(dados,df,crianca){
   const esperado=totalDoses(crianca,dISO);
   const tomadas=dados.filter(r=>r.data===df&&r.nome===crianca&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
   const temDados=dados.some(r=>r.data===df&&r.nome===crianca);
-  return{df,crianca,esperado,tomadas,temDados,concluido:esperado>0&&tomadas>=esperado,pct:esperado>0?Math.round(tomadas/esperado*100):0};
+  const tomadasC=esperado>0?Math.min(tomadas,esperado):tomadas;
+  return{df,crianca,esperado,tomadas:tomadasC,tomadasReal:tomadas,temDados,concluido:esperado>0&&tomadasC>=esperado,pct:esperado>0?Math.min(100,Math.round(tomadasC/esperado*100)):0};
 }
 // doseEsperada: retorna true se um remédio+criança+período deveria ser aplicado
 // Baseia-se na configuração ATUAL (remédio ativo, não suspenso)
@@ -2422,7 +2683,14 @@ function renderCards(){
     const cont=document.getElementById('ml-'+nome);if(!cont)return;cont.innerHTML='';
     lista.forEach(med=>{
       const suspenso=!!med.suspenso;
-      const reg=!suspenso&&dados.find(r=>r.data===dHj&&r.nome===nome&&r.remedio===med.remedio&&r.periodo===per);
+      const _agoraMinRC=nowMin();
+    const reg=!suspenso&&dados.find(function(r){
+      if(r.data!==dHj||r.nome!==nome||r.remedio!==med.remedio||r.periodo!==per) return false;
+      if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return false;
+      // Ignorar registros com hora futura
+      if(r.hora){const p=r.hora.split(':').map(Number);if((p[0]||0)*60+(p[1]||0)>_agoraMinRC+5) return false;}
+      return true;
+    });
       const done=!!reg;
       // Horário específico desta criança (já é individual no novo modelo)
       const horaAlvo=getMedHorario(med,per)||'';
@@ -2459,29 +2727,142 @@ function toggleTag(el,tag){const idx=_selectedTags.indexOf(tag);if(idx>=0){_sele
 function confirmarNota(){const txt=document.getElementById('nota-txt').value.trim();const parts=[..._selectedTags];if(txt)parts.push(txt);const nota=parts.join(' · ')||null;_selectedTags=[];document.querySelectorAll('.tag-pill').forEach(t=>t.classList.remove('sel'));if(_notaCb)_notaCb(nota);}
 function naoTomou(){const txt=document.getElementById('nota-txt').value.trim();const parts=['🚫 Não tomou',..._selectedTags];if(txt)parts.push(txt);const nota=parts.join(' · ');_selectedTags=[];document.querySelectorAll('.tag-pill').forEach(t=>t.classList.remove('sel'));fecharMo('mo-nota');if(_notaCb)_notaCb('NAO_TOMOU:'+nota);}
 function clicarMed(nome,remedio,periodo,btn){
-  const data=hoje();const jaFeito=(window._fbHist||[]).some(r=>r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo);
-  if(jaFeito){window._fbHist=(window._fbHist||[]).filter(r=>!(r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo));if(window.fbRemoveDose)window.fbRemoveDose(data,nome,remedio,periodo);atualizarTudo();return;}
+  const data=hoje();
+
+  // Validação de horário centralizada em marcarDose (podeMarcarDose)
+  // Aqui apenas verificamos se já foi marcada para decidir toggle vs marcar
+
+  // Verificar se já foi marcada (usando chave canônica + filtro de hora futura)
+  const keyClick=gerarChaveDoseSemHora({data,nome,remedio,periodo});
+  const _agoraMinClick=nowMin();
+  const jaFeito=(window._fbHist||[]).some(function(r){
+    if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return false;
+    if(gerarChaveDoseSemHora(r)!==keyClick) return false;
+    // Ignorar registros com hora futura (dados fantasma)
+    if(r.data===data&&r.hora){
+      const p=r.hora.split(':').map(Number);
+      if((p[0]||0)*60+(p[1]||0)>_agoraMinClick+5) return false;
+    }
+    return true;
+  });
+  if(jaFeito){
+    // Desmarcar dose
+    window._fbHist=(window._fbHist||[]).filter(r=>gerarChaveDoseSemHora(r)!==keyClick);
+    if(window.fbRemoveDose)window.fbRemoveDose(data,normalizarTexto(nome),normalizarTexto(remedio),normalizarPeriodo(periodo));
+    atualizarTudo();return;
+  }
   _selectedTags=[];document.querySelectorAll('.tag-pill').forEach(t=>t.classList.remove('sel'));
-  document.getElementById('nota-context').textContent=nome+' · '+remedio+' · '+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo);
+  document.getElementById('nota-context').textContent=nome+' · '+remedio+' · '+({'manha':'manhã','tarde':'tarde','noite':'noite'}[normalizarPeriodo(periodo)]||periodo);
   document.getElementById('nota-txt').value='';abrirMo('mo-nota');
   _notaCb=(nota)=>{fecharMo('mo-nota');marcarDose(nome,remedio,periodo,btn,nota);};
 }
-function marcarDose(nome,remedio,periodo,btn,nota){
+// Lock de clique duplo — evita registros duplicados por clique rápido
+let _savingDose=false; // lock único de registro de dose
+async function marcarDose(nome,remedio,periodo,btn,nota){
+  // ── NAO_TOMOU: só log, não registra dose ───────────────────
   if(nota&&nota.startsWith('NAO_TOMOU:')){
-    const logEntry={ts:Date.now(),data:hoje(),hora:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),usuario:activeUser,acao:'🚫 Não tomou '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo)+') para '+nome+' — '+nota.replace('NAO_TOMOU:','')};
-    window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);return;
+    const _hNT=normalizarHora(new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}));
+    const logEntry={ts:Date.now(),data:hoje(),hora:_hNT,usuario:activeUser,
+      acao:'\uD83D\uDEAB N\u00e3o tomou '+normalizarTexto(remedio)+' para '+normalizarTexto(nome)+' \u2014 '+nota.replace('NAO_TOMOU:','')};
+    window._fbLog=[...(window._fbLog||[]),logEntry];
+    if(window.fbAddLog)window.fbAddLog(logEntry);
+    return;
   }
-  const data=hoje();const hora=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-  const reg={data,dataISO:hojeISO(),nome,remedio,periodo,hora,usuario:activeUser,nota:nota||null};
-  // Adicionar dose localmente primeiro — _fbHist já reflete o estado atual
-  window._fbHist=[...(window._fbHist||[]),reg];
-  if(window.fbAddDose)window.fbAddDose(reg);
-  const logEntry={ts:Date.now(),data,hora,usuario:activeUser,acao:'Marcou '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo)+') para '+nome+(nota?' — "'+nota+'"':'')};
-  window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);
-  btn.classList.add('pop');setTimeout(()=>btn.classList.remove('pop'),300);
-  // Verificar celebração com os dados já atualizados em memória (sem setTimeout)
-  verificarCelebracao(window._fbHist);
-  atualizarTudo();
+
+  // ── LOCK ───────────────────────────────────────────────────
+  if(_savingDose) return;
+  _savingDose=true;
+
+  try{
+    // ── NORMALIZAÇÃO ─────────────────────────────────────────
+    const nomeN    = normalizarTexto(nome);
+    const remedioN = normalizarTexto(remedio);
+    const periodoN = normalizarPeriodo(periodo);
+    const hora     = normalizarHora(new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}));
+    const data     = hoje();
+    const dataISO_ = hojeISO();
+
+    // ── VALIDAÇÃO DE HORÁRIO (central — vale tanto online quanto offline) ─
+    const _med=(getMeds(nomeN)||getMeds(nome)||[]).find(function(m){
+      return normalizarTexto(m.remedio)===remedioN;
+    });
+    const _horaProg=_med?getMedHorario(_med,periodoN):'';
+    if(_horaProg&&!podeMarcarDose(_horaProg)){
+      if(typeof mostrarNotifInApp==='function') mostrarNotifInApp('\u23F0 Dose programada para '+_horaProg+' \u2014 aguarde o hor\u00e1rio','','warn');
+      return;
+    }
+
+    // ── UNICIDADE LOCAL ──────────────────────────────────────
+    const novo={data,dataISO:dataISO_,nome:nomeN,remedio:remedioN,periodo:periodoN,hora,usuario:activeUser,nota:nota||null};
+    const keyNovo=gerarChaveDoseSemHora(novo);
+    const histAtual=window._fbHist||[];
+    const jaExiste=histAtual.some(function(r){
+      if(r.nota&&r.nota.startsWith('NAO_TOMOU')) return false;
+      return gerarChaveDoseSemHora(r)===keyNovo;
+    });
+    if(jaExiste) return;
+
+    // ── PERSISTIR NO FIREBASE PRIMEIRO ──────────────────────
+    // UI só atualiza APÓS confirmação (ou fila offline)
+    let salvouOk=false;
+    if(window.fbAddDose){
+      if(!navigator.onLine){
+        // Offline: enfileirar e mostrar estado pendente (sem celebração)
+        window.fbAddDose(novo); // enfileira em offline_queue
+        window._fbHist=[...histAtual,Object.assign({},novo,{_pending:true})];
+        btn.classList.add('pop');setTimeout(function(){btn.classList.remove('pop');},300);
+        atualizarTudo(); // atualiza UI com dose pendente
+        if(typeof mostrarNotifInApp==='function') mostrarNotifInApp('\u23F3 Dose salva localmente \u2014 ser\u00e1 sincronizada ao reconectar','','warn');
+        return; // NÃO celebrar offline
+      }
+      try{
+        const resultado=await window.fbAddDose(novo);
+        salvouOk=true;
+        if(resultado==='exists'){
+          // Outro usuário já gravou — sincronizar local sem duplicar
+          if(!histAtual.some(function(r){ return gerarChaveDoseSemHora(r)===keyNovo&&!(r.nota&&r.nota.startsWith('NAO_TOMOU')); })){
+            window._fbHist=[...histAtual,novo];
+          }
+          atualizarTudo();
+          return;
+        }
+      }catch(e){
+        console.error('[marcarDose] Firebase error:',e);
+        // Firebase inacessível mas onLine=true (rede instável) → enfileirar como offline
+        const _q=JSON.parse(localStorage.getItem('rm_offline_queue')||'[]');
+        // Só enfileira se não existe já na fila (mesma chave)
+        const _jaFila=_q.some(function(op){ return op.type==='addDose'&&gerarChaveDoseSemHora(op.reg)===keyNovo; });
+        if(!_jaFila){ _q.push({type:'addDose',reg:novo}); localStorage.setItem('rm_offline_queue',JSON.stringify(_q)); }
+        window._fbHist=[...histAtual,Object.assign({},novo,{_pending:true})];
+        if(typeof mostrarNotifInApp==='function') mostrarNotifInApp('\u23F3 Dose salva localmente \u2014 ser\u00e1 sincronizada ao reconectar','','warn');
+        atualizarTudo();
+        return; // Sem celebração até confirmação
+      }
+    } else {
+      salvouOk=true; // modo sem Firebase
+    }
+
+    // ── SÓ AQUI: confirmação, UI, celebração ─────────────────
+    window._fbHist=[...histAtual,novo];
+
+    const logEntry={ts:Date.now(),data,hora,usuario:activeUser,
+      acao:'Marcou '+remedioN+' ('+({'manha':'manh\u00e3','tarde':'tarde','noite':'noite'}[periodoN]||periodoN)+') para '+nomeN+(nota?' \u2014 "'+nota+'"':'')};
+    window._fbLog=[...(window._fbLog||[]),logEntry];
+    if(window.fbAddLog)window.fbAddLog(logEntry);
+
+    btn.classList.add('pop');setTimeout(function(){btn.classList.remove('pop');},300);
+    atualizarTudo(); // PRIMEIRO: atualizar estado
+
+    // DEPOIS: celebração e badges (500ms para UI renderizar)
+    setTimeout(function(){
+      verificarCelebracao(getDados());
+      verificarEDispararBadges(getDados());
+      renderBadgesGanhos();
+    },500);
+
+  }finally{
+    _savingDose=false;
+  }
 }
 
 // ═══════════════ CELEBRAÇÃO ═══════════════
@@ -2546,7 +2927,11 @@ function tocarFanfarra(){
 }
 
 // ═══════════════ WIDGET + STATS ═══════════════
-function atualizarWidget(){const dados=getHist();const dHj=hoje();const CRIANCAS=getCriancas();const total=totalDoses()*CRIANCAS.length;const feitas=dados.filter(r=>r.data===dHj).length;const pct=total>0?Math.round(feitas/total*100):0;const el=document.getElementById('wd-title');const sub=document.getElementById('wd-sub');if(el)el.textContent=pct===100?'🎉 Tudo feito hoje!':feitas+' de '+total+' doses hoje';if(sub)sub.textContent=pct===100?'Parabéns pelo cuidado!':(total-feitas)+' dose'+(total-feitas!==1?'s':'')+' pendente'+(total-feitas!==1?'s':'');const badges=document.getElementById('wd-badges');if(badges)badges.innerHTML=CRIANCAS.map(n=>{const f=dados.filter(r=>r.data===dHj&&r.nome===n).length;const t=totalDoses();return '<div class="wd-badge"><div class="bdot '+(f>=t?'ok':'pend')+'"></div>'+n+': '+f+'/'+t+'</div>';}).join('');}
+function atualizarWidget(){const dados=getHist();const dHj=hoje();const CRIANCAS=getCriancas();
+  // FONTE ÚNICA: getResumoDia para hoje
+  const rHj=getResumoDia(dados,dHj);
+  const total=rHj.esperado; const feitas=rHj.tomadas; const pct=rHj.pct;
+  const el=document.getElementById('wd-title');const sub=document.getElementById('wd-sub');if(el)el.textContent=pct===100?'🎉 Tudo feito hoje!':feitas+' de '+total+' doses hoje';if(sub)sub.textContent=pct===100?'Parabéns pelo cuidado!':(total-feitas)+' dose'+(total-feitas!==1?'s':'')+' pendente'+(total-feitas!==1?'s':'');const badges=document.getElementById('wd-badges');if(badges)badges.innerHTML=CRIANCAS.map(n=>{const cf=getCriancaConfig(n);const rc=getResumoDiaCrianca(dados,dHj,n);return '<div class="wd-badge"><div class="bdot '+(rc.concluido?'ok':'pend')+'"></div>'+cf.emoji+' '+cf.nome+': '+rc.tomadas+'/'+rc.esperado+'</div>';}).join('');}
 function atualizarStatHoje(){const dados=getHist();const dHj=hoje();const CRIANS_=getCriancas();const total=CRIANS_.reduce((s,c)=>s+totalDoses(c),0);const el=document.getElementById('sv-hoje');if(el)el.textContent=dados.filter(r=>r.data===dHj).length+'/'+total;}
 function verificarPendencias(){
   const dados=getHist();const dHj=hoje();const falta=[];const CRIANCAS=getCriancas();
@@ -2555,7 +2940,7 @@ function verificarPendencias(){
   if('setAppBadge' in navigator){if(falta.length>0)navigator.setAppBadge(falta.length).catch(()=>{});else navigator.clearAppBadge().catch(()=>{});}
 }
 function calcStreak(){
-  const dados=getHist();if(!dados.length)return 0;
+  const dados=getDados();if(!dados.length)return 0;
   let s=0;const d=new Date();
   if(!getResumoDia(dados,fmtDate(d)).concluido) d.setDate(d.getDate()-1);
   while(true){const k=fmtDate(d);if(getResumoDia(dados,k).concluido){s++;d.setDate(d.getDate()-1);}else break;}
@@ -2585,21 +2970,14 @@ const TIPO_LABELS={consulta:'🩺 Consulta',retorno:'🔄 Retorno',exame:'🔬 E
 const TIPO_CLS={consulta:'ev-consulta',retorno:'ev-retorno',exame:'ev-exame',vacina:'ev-vacina'};
 function mudaMes(d){_calMes+=d;if(_calMes<0){_calMes=11;_calAno--;}if(_calMes>11){_calMes=0;_calAno++;}gerarCal();}
 function gerarCal(){
-  const dados=getHist();const mapa={};
+  const dados=getDados();const mapa={};
   const CRIANCAS=getCriancas();
   dados.forEach(r=>{
     const dk=r.data||'';
     if(!mapa[dk])mapa[dk]={};
     mapa[dk][r.nome]=(mapa[dk][r.nome]||0)+1;
   });
-  Object.keys(mapa).forEach(data=>{
-    const key='rm_cal_done_'+data;const atual=JSON.parse(localStorage.getItem(key)||'{}');
-    CRIANCAS.forEach(n=>{
-      const rc=getResumoDiaCrianca(dados,data,n);
-      if(rc.tomadas>0&&rc.esperado>0&&rc.concluido) atual[n]=true;
-    });
-    localStorage.setItem(key,JSON.stringify(atual));
-  });
+  // Persistência de calendário removida — usar apenas dados ao vivo de getResumoDiaCrianca
   const el=document.getElementById('cal-mes-txt');if(el)el.textContent=MESES[_calMes]+' '+_calAno;
   const prim=new Date(_calAno,_calMes,1).getDay(),diasM=new Date(_calAno,_calMes+1,0).getDate(),now=new Date();
   const grid=document.getElementById('cal-grid');if(!grid)return;grid.innerHTML='';
@@ -2607,11 +2985,12 @@ function gerarCal(){
   for(let d=1;d<=diasM;d++){
     const df=String(d).padStart(2,'0')+'/'+String(_calMes+1).padStart(2,'0')+'/'+_calAno;
     const isoKey=_calAno+'-'+String(_calMes+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
-    const liveInfo=mapa[df]||{};const persisted=JSON.parse(localStorage.getItem('rm_cal_done_'+df)||'{}');
+    const liveInfo=mapa[df]||{};
     const _rA=getResumoDiaCrianca(dados,df,'Arthur');
     const _rB=getResumoDiaCrianca(dados,df,'Alice');
-    const aOk=(_rA.tomadas>0&&_rA.esperado>0&&_rA.concluido)||persisted['Arthur'];
-    const bOk=(_rB.tomadas>0&&_rB.esperado>0&&_rB.concluido)||persisted['Alice'];
+    // FONTE ÚNICA: getResumoDiaCrianca — mesmo critério do resumo da semana
+    const aOk=_rA.concluido;
+    const bOk=_rB.concluido;
     const cell=document.createElement('div');
     const isHj=d===now.getDate()&&_calMes===now.getMonth()&&_calAno===now.getFullYear();
     cell.className='cal-day'+(isHj?' hoje':'');
@@ -2653,10 +3032,11 @@ function abrirDiaCal(df,isoKey){
       const cfg=getCriancaConfig(nome);
       histHtml+=`<div style="font-size:.72rem;font-weight:700;color:${cfg.cor};margin:8px 0 4px">${cfg.emoji} ${nome}</div>`;
       dCri.forEach(r=>{
+        const _rDisp=r.remedio?(r.remedio.charAt(0).toUpperCase()+r.remedio.slice(1)):r.remedio;
         const icon=getIconRemedio(r.remedio);
         const per=({'manha':'☀️ manhã','tarde':'🌤️ tarde','noite':'🌙 noite'}[r.periodo]||r.periodo);
         const who=(USERS[r.usuario]||{}).nome||'?';
-        histHtml+=`<div class="cal-dose-row"><span class="cal-dose-icon">${icon}</span><div class="cal-dose-body"><div class="cal-dose-nome">${r.remedio} <span style="opacity:.6;font-size:.65rem">${per}</span></div><div class="cal-dose-meta">✓ ${r.hora} — por ${who}</div>${r.nota?'<div class="cal-dose-nota">'+r.nota+'</div>':''}</div></div>`;
+        histHtml+=`<div class="cal-dose-row"><span class="cal-dose-icon">${icon}</span><div class="cal-dose-body"><div class="cal-dose-nome">${_rDisp} <span style="opacity:.6;font-size:.65rem">${per}</span></div><div class="cal-dose-meta">✓ ${r.hora} — por ${who}</div>${r.nota?'<div class="cal-dose-nota">'+r.nota+'</div>':''}</div></div>`;
       });
     });
     histHtml+='</div>';
@@ -2675,8 +3055,7 @@ function salvarObs(del){
 // ═══════════════ TENDÊNCIA SEMANAL ═══════════════
 function atualizarTendencia(){
   const wrap=document.getElementById('tendencia-wrap');if(!wrap)return;
-  if(!window._fbHist||!window._fbHist.length){const cached=cacheGet('hist');if(cached&&cached.length)window._fbHist=cached;}
-  const dados=window._fbHist||[];
+  const dados=getDados();
   const CRIANCAS=getCriancas();
   const totalD=CRIANCAS.reduce((s,c)=>s+getMeds(c).filter(m=>!m.suspenso).reduce((ss,m)=>ss+getPeriodosMed(m).length,0),0);
   const espSem=Math.max(1,totalD*7);
@@ -2762,8 +3141,7 @@ function atualizarTendencia(){
 // ═══════════════ RECORDES ═══════════════
 function atualizarRecordes(){
   const wrap=document.getElementById('recordes-wrap');if(!wrap)return;
-  if(!window._fbHist||!window._fbHist.length){const cached=cacheGet('hist');if(cached&&cached.length)window._fbHist=cached;}
-  const dados=window._fbHist||[];
+  const dados=getDados();
   if(!dados.length){
     wrap.innerHTML=`<div style="text-align:center;padding:16px 0">
       <div style="font-size:2rem;margin-bottom:8px">🏆</div>
@@ -3111,7 +3489,7 @@ function atualizarGrafico(){
 // ═══════════════ PIZZA ═══════════════
 let pizzaInst=null;
 function atualizarPizza(){
-  const dados=window._fbHist||cacheGet('hist')||[];
+  const dados=getDados();
   const ctx=document.getElementById('grafico-pizza')?.getContext('2d');if(!ctx)return;
   if(pizzaInst)pizzaInst.destroy();
   const medsUnicos=getMedsNomes();
@@ -3165,7 +3543,7 @@ function atualizarDashboardExtra(){
 
 // ═══════════════ PADRÕES ═══════════════
 function calcPatterns(){
-  const dados=getHist();const wrap=document.getElementById('patterns-wrap');if(!wrap)return;
+  const dados=getDados();const wrap=document.getElementById('patterns-wrap');if(!wrap)return;
   if(dados.length<14){wrap.innerHTML='<div style="color:var(--muted);font-size:.8rem;text-align:center;padding:14px">Dados insuficientes (2 semanas mínimo).</div>';return;}
   const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];const alertas=[];const CRIANCAS=getCriancas();
   // Agrupar histórico por (crianca, remedio, periodo) — usa periodos DO HISTÓRICO,
@@ -3216,6 +3594,7 @@ function atualizarStatEvento(){
 
 // ═══════════════ ATUALIZARTUDO + ENTRAR ═══════════════
 function atualizarTudo(){
+  limparRegistrosFuturos(); // remove dados inválidos antes de renderizar
   renderCards();verificarPendencias();atualizarStreak();atualizarAdesao();
   atualizarGrafico();gerarCal();calcPatterns();renderProximos();atualizarStatEvento();
   atualizarPizza();atualizarDashboardExtra();verificarPeriodoAlertas();
@@ -3659,12 +4038,7 @@ function verificarBannerNotif(){
 // ═══════════════ RESUMO DA SEMANA ═══════════════
 function atualizarSemanaResumo(){
   const wrap=document.getElementById('semana-resumo-wrap');if(!wrap)return;
-  // Se _fbHist vazio mas temos cache, usar cache
-  if(!window._fbHist||!window._fbHist.length){
-    const cached=cacheGet('hist');
-    if(cached&&cached.length) window._fbHist=cached;
-  }
-  const dados=window._fbHist||[];
+  const dados=getDados();
   const now=new Date();const CRIANCAS=getCriancas();
   const DIAS_PT=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
 
@@ -3676,28 +4050,28 @@ function atualizarSemanaResumo(){
     const isHoje=i===0;
     const res=getResumoDia(dados,df); // ÚNICA fonte — igual ao calendário
     const naoTomouList=dados.filter(r=>r.data===df&&r.nota&&r.nota.startsWith('NAO_TOMOU'));
-    const horaAtual=now.getHours();
-    // diaCompleto: usa res.concluido (getResumoDia). Para hoje, só marca completo após 22h.
-    const diaCompleto=isHoje?(horaAtual>=22&&res.concluido):res.concluido;
+      // diaCompleto: usa EXCLUSIVAMENTE res.concluido de getResumoDia — mesmo critério do calendário
+    const diaCompleto=res.concluido;
     const diaAguardando=isHoje&&!diaCompleto;
     let status,icon,cor,detail='';
-    if(diaAguardando&&res.tomadas===0){
-      status='Aguardando…';icon='⌛';cor='var(--muted)';
-    } else if(diaCompleto){
-      // Mesmo critério do calendário: temDados && concluido
-      status='Concluído';icon='✅';cor='var(--green)';
-    } else if(naoTomouList.length>0){
-      const remedios=[...new Set(naoTomouList.map(r=>r.remedio||'?'))];
-      status='Não tomou';icon='🚫';cor='var(--red)';
-      detail=remedios.slice(0,2).join(', ')+(remedios.length>2?'…':'');
-    } else if(res.temDados&&!res.concluido){
-      const faltam=res.esperado-res.tomadas;
-      status='Atenção';icon='⚠️';cor='var(--warn)';
-      detail='Faltou '+(faltam===1?'1 dose':faltam+' doses');
-    } else {
+    // Status derivado EXCLUSIVAMENTE de getResumoDia — mesma fonte do calendário
+    if(!res.temDados||res.esperado===0){
       status=isHoje?'Aguardando…':'Sem registro';
       icon=isHoje?'⌛':'—';
       cor='var(--muted)';
+    } else if(res.concluido){
+      status='Concluído';icon='✅';cor='var(--green)';
+    } else {
+      // Incompleto: tem dados mas não concluído
+      const faltam=res.esperado-res.tomadas;
+      if(naoTomouList.length>0&&res.tomadas===0){
+        const remedios=[...new Set(naoTomouList.map(r=>r.remedio||'?'))];
+        status='Não tomou';icon='🚫';cor='var(--red)';
+        detail=remedios.slice(0,2).join(', ')+(remedios.length>2?'…':'');
+      } else {
+        status='Atenção';icon='⚠️';cor='var(--warn)';
+        detail=faltam>0?'Faltou '+(faltam===1?'1 dose':faltam+' doses'):'';
+      }
     }
     diasInfo.push({df,dow:DIAS_PT[d.getDay()],isHoje,status,icon,cor,detail,res});
   }
@@ -4365,6 +4739,115 @@ function renderSusHistorico(med){
 // ═══════════════ CELEBRAÇÃO ═══════════════
 // celebração unificada em verificarCelebracao()
 
+// ═══════════════ BADGES / GAMIFICAÇÃO ═══════════════
+const BADGES_DEF={
+  streak_3:   {emoji:'🟢',nome:'Iniciante',       desc:'3 dias consecutivos'},
+  streak_7:   {emoji:'🔥',nome:'Consistente',     desc:'7 dias consecutivos'},
+  streak_15:  {emoji:'💪',nome:'Disciplina forte', desc:'15 dias consecutivos'},
+  streak_30:  {emoji:'🏆',nome:'Elite',            desc:'30 dias consecutivos'},
+  semana_perfeita: {emoji:'⭐',nome:'Semana perfeita', desc:'7 dias completos na semana'},
+  familia_completa:{emoji:'👨‍👩‍👧‍👦',nome:'Missão cumprida', desc:'Família completa hoje'},
+  zero_falhas:{emoji:'🎯',nome:'Precisão total',   desc:'10 dias sem falha'},
+  recuperacao:{emoji:'🔄',nome:'Retomada',          desc:'Dia completo após falha'},
+};
+function carregarBadges(){try{return JSON.parse(localStorage.getItem('rm_badges')||'[]');}catch(e){return[];}}
+function salvarBadges(lista){localStorage.setItem('rm_badges',JSON.stringify(lista));}
+// Debug: forçar exibição de um badge (para testar UI)
+function debugBadge(id){
+  id=id||'streak_3';
+  const salvos=carregarBadges();
+  if(!salvos.includes(id)){salvarBadges([...salvos,id]);}
+  mostrarBadgeToast(id);
+  renderBadgesGanhos();
+  console.log('🏆 Badge forçado:',id,'| Todos:',carregarBadges());
+}
+
+function verificarBadges(dados){
+  const ativos=[];
+  // Streak usando getResumoDia — fonte única
+  const diasOrdem=[...new Set(dados.map(r=>r.data))].sort().reverse();
+  let streak=0;
+  for(const df of diasOrdem){
+    const r=getResumoDia(dados,df);
+    if(r.temDados&&r.esperado>0&&r.concluido) streak++;
+    else break;
+  }
+  if(streak>=3)  ativos.push('streak_3');
+  if(streak>=7)  ativos.push('streak_7');
+  if(streak>=15) ativos.push('streak_15');
+  if(streak>=30) ativos.push('streak_30');
+
+  // Zero falhas: 10 dias consecutivos sem qualquer falha
+  let semFalha=0;
+  for(const df of diasOrdem){
+    const r=getResumoDia(dados,df);
+    if(r.temDados&&r.esperado>0&&r.concluido) semFalha++;
+    else break;
+  }
+  if(semFalha>=10) ativos.push('zero_falhas');
+
+  // Semana perfeita: últimos 7 dias todos completos
+  const semana7=[];
+  for(let i=0;i<7;i++){const d=new Date();d.setDate(d.getDate()-i);semana7.push(fmtDate(d));}
+  if(semana7.every(df=>{const r=getResumoDia(dados,df);return r.temDados&&r.esperado>0&&r.concluido;}))
+    ativos.push('semana_perfeita');
+
+  // Família completa: hoje todas as crianças concluídas
+  const dHj=hoje();
+  const CRIANCAS=getCriancas();
+  if(CRIANCAS.every(c=>getResumoDiaCrianca(dados,dHj,c).concluido))
+    ativos.push('familia_completa');
+
+  // Recuperação: dia completo após dia incompleto
+  const diasCron=[...new Set(dados.map(r=>r.data))].sort();
+  for(let i=1;i<diasCron.length;i++){
+    const prev=getResumoDia(dados,diasCron[i-1]);
+    const cur=getResumoDia(dados,diasCron[i]);
+    if(prev.temDados&&!prev.concluido&&cur.temDados&&cur.concluido){ativos.push('recuperacao');break;}
+  }
+
+  return ativos;
+}
+
+function mostrarBadgeToast(id){
+  const b=BADGES_DEF[id];if(!b)return;
+  const toast=document.createElement('div');
+  toast.style.cssText='position:fixed;bottom:88px;left:50%;transform:translateX(-50%) translateY(20px);z-index:9999;'
+    +'background:linear-gradient(135deg,#1e1b4b,#312e81);color:#fff;border-radius:16px;padding:14px 20px;'
+    +'display:flex;align-items:center;gap:12px;box-shadow:0 8px 32px rgba(0,0,0,.3);'
+    +'opacity:0;transition:all .4s cubic-bezier(.34,1.56,.64,1);min-width:240px;max-width:320px';
+  toast.innerHTML='<span style="font-size:2rem">'+b.emoji+'</span>'
+    +'<div><div style="font-weight:700;font-size:.9rem">Conquista desbloqueada!</div>'
+    +'<div style="font-size:.8rem;opacity:.85">'+b.nome+' · '+b.desc+'</div></div>';
+  document.body.appendChild(toast);
+  setTimeout(()=>{toast.style.opacity='1';toast.style.transform='translateX(-50%) translateY(0)';},50);
+  setTimeout(()=>{toast.style.opacity='0';toast.style.transform='translateX(-50%) translateY(20px)';},3500);
+  setTimeout(()=>{toast.remove();},4000);
+}
+
+function badgeJaExiste(id){ return carregarBadges().includes(id); }
+
+function verificarEDispararBadges(dados){
+  const ativos=verificarBadges(dados);
+  const salvos=carregarBadges();
+  const novos=ativos.filter(b=>!salvos.includes(b));
+  console.log('[Badges] avaliados:',ativos,'novos:',novos);
+  if(novos.length){
+    salvarBadges([...salvos,...novos]);
+    novos.forEach((b,i)=>setTimeout(()=>mostrarBadgeToast(b),i*800));
+  }
+}
+
+function renderBadgesGanhos(){
+  const wrap=document.getElementById('badges-ganhos-wrap');if(!wrap)return;
+  const salvos=carregarBadges();
+  if(!salvos.length){wrap.innerHTML='<span style="color:var(--muted);font-size:.78rem">Nenhuma conquista ainda. Continue assim!</span>';return;}
+  wrap.innerHTML=salvos.map(id=>{
+    const b=BADGES_DEF[id];if(!b)return'';
+    return'<div class="badge-chip" title="'+b.desc+'"><span>'+b.emoji+'</span><span style="font-size:.72rem;font-weight:600">'+b.nome+'</span></div>';
+  }).join('');
+}
+
 // ═══════════════ INIT ═══════════════
 // Expor funções usadas em onclick como window.* para garantir acesso global
 // (necessário em alguns browsers com scripts grandes)
@@ -4404,12 +4887,46 @@ window.agendarTodasNotificacoes=agendarTodasNotificacoes;
 window.enviarNotifTeste=enviarNotifTeste; window.dispensarBannerNotif=dispensarBannerNotif;
 window.solicitarPermissaoPush=solicitarPermissaoPush;
 window.marcarRecuperacao=marcarRecuperacao; window.aplicarNomesCriancas=aplicarNomesCriancas;
+window.verificarEDispararBadges=verificarEDispararBadges;
+window.renderBadgesGanhos=renderBadgesGanhos;
 
 document.querySelector('.agenda-fab').style.display='none';
 mostrarSplash();
 initAuth();
 initDark();
 if('serviceWorker' in navigator) initServiceWorker();
+
+// ═══════════════════════════════════════════════════════
+// SCRIPT DE LIMPEZA MANUAL — executar uma vez via console
+// Uso: window.limparDuplicatasFirestore()
+// ═══════════════════════════════════════════════════════
+window.limparDuplicatasFirestore = async function(){
+  if(!_db){ console.error('Firestore não disponível'); return; }
+  console.log('[Cleanup] Iniciando limpeza de duplicatas no Firestore...');
+  let total=0, removidos=0;
+  const snap = await _db.collection('historico').get();
+  const docs = snap.docs.map(d=>Object.assign({id:d.id},d.data()));
+  const vistas = new Map(); // chave → docId
+  for(const doc of docs){
+    if(doc.nota&&doc.nota.startsWith('NAO_TOMOU')) continue;
+    const chave = typeof gerarChaveDoseSemHora==='function' ? gerarChaveDoseSemHora(doc) : '';
+    if(!chave) continue;
+    total++;
+    if(vistas.has(chave)){
+      // Duplicata: manter o primeiro (menor ID = mais antigo), apagar este
+      console.log('[Cleanup] Duplicata encontrada:', doc.id, '→ chave:', chave);
+      try{
+        await _db.collection('historico').doc(doc.id).delete();
+        removidos++;
+        console.log('[Cleanup] Apagado:', doc.id);
+      }catch(e){ console.error('[Cleanup] Erro ao apagar', doc.id, e); }
+    } else {
+      vistas.set(chave, doc.id);
+    }
+  }
+  console.log('[Cleanup] Concluído. Total:', total, '| Removidos:', removidos);
+  return {total, removidos};
+};
 </script>
 <audio id="audio-celebracao" src="trombetas.mp3" preload="auto"></audio>
 </body>
