@@ -1479,14 +1479,6 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     <div style="background:var(--warnl);border:1.5px solid var(--mnb);border-radius:11px;padding:12px;margin-bottom:13px;font-size:.82rem;color:#92400E">
       ⚠️ O remédio ficará riscado com tag ⛔. O histórico é preservado. Você pode reativar a qualquer momento.
     </div>
-    <div class="field" id="sus-aplicar-wrap">
-      <label>Aplicar para</label>
-      <select id="sus-aplicar" style="width:100%;border:1.5px solid var(--border);border-radius:11px;padding:11px 13px;font-size:.88rem;outline:none;color:var(--text);background:var(--bg);transition:border-color .2s;-webkit-appearance:auto">
-        <option value="Ambos">👫 Ambos</option>
-        <option value="Arthur">🧒 Arthur</option>
-        <option value="Alice">👧 Alice</option>
-      </select>
-    </div>
     <div class="field">
       <label>Motivo da suspensão (opcional)</label>
       <textarea id="sus-motivo" placeholder="Ex: Suspenso pelo Dr. João em 08/04/2026 — aguardar retorno"></textarea>
@@ -3961,14 +3953,12 @@ function renderMedsAdmin(){
       return getPeriodosMed(mc).map(p=>PERIODO_ICON[p]+' '+cfg.emoji+' '+getMedHorario(mc,p)).join(' ');
     }).filter(Boolean).join(' · ');
     const suspensoAlgum=CRIANCAS.some(c=>{const mc=getMedCfg(c,nome);return mc&&mc.suspenso;});
-    const suspensoTodos=CRIANCAS.every(c=>{const mc=getMedCfg(c,nome);return mc&&mc.suspenso;});
-    const susLabel=suspensoTodos?'⛔':suspensoAlgum?'⛔ parcial':'';
     return '<div class="med-admin-item'+(suspensoAlgum?' suspenso':'')+'"><div class="mai-left">'
-      +'<span class="mai-icon">'+icon+'</span><div><div class="mai-nome">'+nome+(suspensoAlgum?'<span class="sus-badge">'+susLabel+'</span>':'')+'</div>'
+      +'<span class="mai-icon">'+icon+'</span><div><div class="mai-nome">'+nome+(suspensoAlgum?'<span class="sus-badge">⛔</span>':'')+'</div>'
       +'<div class="mai-meta">'+metaHtml+'</div></div></div>'
       +'<div class="mai-actions">'
       +'<button class="mai-btn" onclick="abrirEditMed(\''+nome+'\')" title="Editar">✏️</button>'
-      +'<button class="mai-btn '+(suspensoAlgum?'':'del')+'" onclick="abrirSuspender(\''+nome+'\')" title="'+(suspensoAlgum?'Reativar/Suspender':'Suspender')+'">'+(suspensoAlgum?'✅':'⛔')+'</button>'
+      +'<button class="mai-btn '+(suspensoAlgum?'':'del')+'" onclick="abrirSuspender(\''+nome+'\')" title="'+(suspensoAlgum?'Reativar':'Suspender')+'">'+(suspensoAlgum?'✅':'⛔')+'</button>'
       +'</div></div>';
   }).join('');
 }
@@ -4213,35 +4203,22 @@ function abrirSuspender(nomeRemedio){
   _susMedIdx=nomeRemedio; // agora armazena o nome
   const CRIANCAS=getCriancas();
   const m0=getMedCfg(CRIANCAS[0],nomeRemedio)||{suspenso:false,motivoSuspensao:''};
-  // Detecta se alguma criança tem o remédio suspenso (para exibir modo reativar)
-  const algumSuspenso=CRIANCAS.some(c=>{const mc=getMedCfg(c,nomeRemedio);return mc&&mc.suspenso;});
-  const t=document.getElementById('sus-titulo');if(t)t.textContent=algumSuspenso?'✅ Reativar '+nomeRemedio:'⛔ Suspender '+nomeRemedio;
-  const motEl=document.getElementById('sus-motivo');if(motEl){motEl.value=m0.motivoSuspensao||'';motEl.style.display=algumSuspenso?'none':'block';}
-  // Mostrar/ocultar campo "Aplicar para"
-  const apWrap=document.getElementById('sus-aplicar-wrap');
-  const apSel=document.getElementById('sus-aplicar');
-  if(apWrap)apWrap.style.display='block';
-  if(apSel)apSel.value='Ambos';
-  // Botão: texto dinâmico
-  const btnSus=document.querySelector('#mo-suspender .mbtn.warn');
-  if(btnSus)btnSus.textContent=algumSuspenso?'✅ Reativar':'⛔ Suspender';
+  const t=document.getElementById('sus-titulo');if(t)t.textContent=m0.suspenso?'✅ Reativar '+nomeRemedio:'⛔ Suspender '+nomeRemedio;
+  const motEl=document.getElementById('sus-motivo');if(motEl){motEl.value=m0.motivoSuspensao||'';motEl.style.display=m0.suspenso?'none':'block';}
   abrirMo('mo-suspender');
 }
 function confirmarSuspensao(){
   if(_susMedIdx===null)return;
   const nomeRemedio=_susMedIdx;
   const motivo=document.getElementById('sus-motivo')?.value.trim()||'';
-  const aplicarPara=document.getElementById('sus-aplicar')?.value||'Ambos';
   const CRIANCAS=getCriancas();
-  // Filtra as crianças de acordo com a seleção
-  const alvos=aplicarPara==='Ambos'?CRIANCAS:CRIANCAS.filter(c=>c===aplicarPara);
-  // Aplicar suspensão/reativação apenas para os alvos selecionados
-  alvos.forEach(function(c){
+  // Aplicar suspensão/reativação para CADA criança independentemente
+  CRIANCAS.forEach(function(c){
     const mc=getMedCfg(c,nomeRemedio);if(!mc)return;
     const eraSuspenso=mc.suspenso;
     if(!eraSuspenso){
       const hist=mc.suspHist||[];
-      hist.push({de:hojeISO(),ate:null,motivo,aplicadoPara:aplicarPara});
+      hist.push({de:hojeISO(),ate:null,motivo});
       setMedCfg(c,nomeRemedio,Object.assign({},mc,{suspenso:true,motivoSuspensao:motivo,suspHist:hist}));
     } else {
       const hist=mc.suspHist||[];
