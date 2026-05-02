@@ -463,6 +463,8 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
   display:flex;align-items:center;justify-content:space-between;
   padding:10px 12px;border-radius:10px;background:var(--bg);border:1.5px solid var(--border);margin-bottom:7px;
 }
+.med-admin-item.suspenso{opacity:.6}
+.med-admin-item.suspenso-parcial{opacity:.8;border-color:var(--warn);background:var(--warnl)}
 .mai-left{display:flex;align-items:center;gap:9px;flex:1;min-width:0}
 .mai-icon{font-size:1rem;flex-shrink:0}
 .mai-nome{font-size:.83rem;font-weight:700;color:var(--text)}
@@ -1481,7 +1483,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     </div>
     <div class="field" id="sus-aplicar-wrap">
       <label>Aplicar para</label>
-      <select id="sus-aplicar" style="width:100%;border:1.5px solid var(--border);border-radius:11px;padding:11px 13px;font-size:.88rem;outline:none;color:var(--text);background:var(--bg);transition:border-color .2s;-webkit-appearance:auto">
+      <select id="sus-aplicar" onchange="_atualizarModalSuspensao()" style="width:100%;border:1.5px solid var(--border);border-radius:11px;padding:11px 13px;font-size:.88rem;outline:none;color:var(--text);background:var(--bg);transition:border-color .2s;-webkit-appearance:auto">
         <option value="Ambos">👫 Ambos</option>
         <option value="Arthur">🧒 Arthur</option>
         <option value="Alice">👧 Alice</option>
@@ -2554,8 +2556,8 @@ function tocarFanfarra(){
 }
 
 // ═══════════════ WIDGET + STATS ═══════════════
-function atualizarWidget(){const dados=getHist();const dHj=hoje();const CRIANCAS=getCriancas();const total=totalDoses()*CRIANCAS.length;const feitas=dados.filter(r=>r.data===dHj).length;const pct=total>0?Math.round(feitas/total*100):0;const el=document.getElementById('wd-title');const sub=document.getElementById('wd-sub');if(el)el.textContent=pct===100?'🎉 Tudo feito hoje!':feitas+' de '+total+' doses hoje';if(sub)sub.textContent=pct===100?'Parabéns pelo cuidado!':(total-feitas)+' dose'+(total-feitas!==1?'s':'')+' pendente'+(total-feitas!==1?'s':'');const badges=document.getElementById('wd-badges');if(badges)badges.innerHTML=CRIANCAS.map(n=>{const f=dados.filter(r=>r.data===dHj&&r.nome===n).length;const t=totalDoses();return '<div class="wd-badge"><div class="bdot '+(f>=t?'ok':'pend')+'"></div>'+n+': '+f+'/'+t+'</div>';}).join('');}
-function atualizarStatHoje(){const dados=getHist();const dHj=hoje();const CRIANS_=getCriancas();const total=CRIANS_.reduce((s,c)=>s+totalDoses(c),0);const el=document.getElementById('sv-hoje');if(el)el.textContent=dados.filter(r=>r.data===dHj).length+'/'+total;}
+function atualizarWidget(){const dados=getHist();const dHj=hoje();const CRIANCAS=getCriancas();const total=totalDosesDiario();const feitas=dados.filter(r=>r.data===dHj&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;const pct=total>0?Math.round(feitas/total*100):0;const el=document.getElementById('wd-title');const sub=document.getElementById('wd-sub');if(el)el.textContent=pct===100?'🎉 Tudo feito hoje!':feitas+' de '+total+' doses hoje';if(sub)sub.textContent=pct===100?'Parabéns pelo cuidado!':(total-feitas)+' dose'+(total-feitas!==1?'s':'')+' pendente'+(total-feitas!==1?'s':'');const badges=document.getElementById('wd-badges');if(badges)badges.innerHTML=CRIANCAS.map(n=>{const f=dados.filter(r=>r.data===dHj&&r.nome===n&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;const t=totalDoses(n);return '<div class="wd-badge"><div class="bdot '+(f>=t?'ok':'pend')+'"></div>'+n+': '+f+'/'+t+'</div>';}).join('');}
+function atualizarStatHoje(){const dados=getHist();const dHj=hoje();const CRIANS_=getCriancas();const total=CRIANS_.reduce((s,c)=>s+totalDoses(c),0);const el=document.getElementById('sv-hoje');if(el)el.textContent=dados.filter(r=>r.data===dHj&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length+'/'+total;}
 function verificarPendencias(){
   const dados=getHist();const dHj=hoje();const falta=[];const CRIANCAS=getCriancas();
   const _dHjISO=hojeISO();CRIANCAS.forEach(n=>{const medsN=getMeds(n).filter(m=>estaAtivo(m,n,_dHjISO));medsN.forEach(m=>{getPeriodosMed(m).forEach(p=>{if(!dados.some(r=>r.data===dHj&&r.nome===n&&r.remedio===m.remedio&&r.periodo===p))falta.push(n+': '+m.remedio+(getPeriodosMed(m).length>1?' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[p]||p)+')':''));});});});
@@ -3958,17 +3960,21 @@ function renderMedsAdmin(){
     let metaHtml=CRIANCAS.map(c=>{
       const mc=getMedCfg(c,nome);if(!mc)return '';
       const cfg=getCriancaConfig(c);
-      return getPeriodosMed(mc).map(p=>PERIODO_ICON[p]+' '+cfg.emoji+' '+getMedHorario(mc,p)).join(' ');
+      const susSuffix=mc.suspenso?' <span style="color:var(--red);font-size:.6rem;font-weight:700">⛔</span>':'';
+      return getPeriodosMed(mc).map(p=>PERIODO_ICON[p]+' '+cfg.emoji+susSuffix+' '+getMedHorario(mc,p)).join(' ');
     }).filter(Boolean).join(' · ');
     const suspensoAlgum=CRIANCAS.some(c=>{const mc=getMedCfg(c,nome);return mc&&mc.suspenso;});
     const suspensoTodos=CRIANCAS.every(c=>{const mc=getMedCfg(c,nome);return mc&&mc.suspenso;});
-    const susLabel=suspensoTodos?'⛔':suspensoAlgum?'⛔ parcial':'';
-    return '<div class="med-admin-item'+(suspensoAlgum?' suspenso':'')+'"><div class="mai-left">'
-      +'<span class="mai-icon">'+icon+'</span><div><div class="mai-nome">'+nome+(suspensoAlgum?'<span class="sus-badge">'+susLabel+'</span>':'')+'</div>'
+    const susLabel=suspensoTodos?'⛔':suspensoAlgum?'⛔~':'';
+    // Botão único que abre modal: ícone reflete estado geral
+    const btnIcon=suspensoAlgum?'✅':'⛔';
+    const btnTitle=suspensoAlgum?'Reativar / Suspender':'Suspender';
+    return '<div class="med-admin-item'+(suspensoTodos?' suspenso':suspensoAlgum?' suspenso-parcial':'')+'"><div class="mai-left">'
+      +'<span class="mai-icon">'+icon+'</span><div><div class="mai-nome">'+nome+(suspensoAlgum?'<span class="sus-badge">'+(suspensoTodos?'⛔':'⛔ parcial')+'</span>':'')+'</div>'
       +'<div class="mai-meta">'+metaHtml+'</div></div></div>'
       +'<div class="mai-actions">'
       +'<button class="mai-btn" onclick="abrirEditMed(\''+nome+'\')" title="Editar">✏️</button>'
-      +'<button class="mai-btn '+(suspensoAlgum?'':'del')+'" onclick="abrirSuspender(\''+nome+'\')" title="'+(suspensoAlgum?'Reativar/Suspender':'Suspender')+'">'+(suspensoAlgum?'✅':'⛔')+'</button>'
+      +'<button class="mai-btn '+(suspensoAlgum?'':'del')+'" onclick="abrirSuspender(\''+nome+'\')" title="'+btnTitle+'">'+btnIcon+'</button>'
       +'</div></div>';
   }).join('');
 }
@@ -4209,44 +4215,90 @@ function adicionarMed(){
   renderMedsAdmin();atualizarTudo();
 }
 let _susMedIdx=null;
-function abrirSuspender(nomeRemedio){
-  _susMedIdx=nomeRemedio; // agora armazena o nome
+
+// ── Atualiza o modal de suspensão de acordo com a seleção atual do dropdown ──
+function _atualizarModalSuspensao(){
+  const nomeRemedio=_susMedIdx;if(!nomeRemedio)return;
   const CRIANCAS=getCriancas();
-  const m0=getMedCfg(CRIANCAS[0],nomeRemedio)||{suspenso:false,motivoSuspensao:''};
-  // Detecta se alguma criança tem o remédio suspenso (para exibir modo reativar)
-  const algumSuspenso=CRIANCAS.some(c=>{const mc=getMedCfg(c,nomeRemedio);return mc&&mc.suspenso;});
-  const t=document.getElementById('sus-titulo');if(t)t.textContent=algumSuspenso?'✅ Reativar '+nomeRemedio:'⛔ Suspender '+nomeRemedio;
-  const motEl=document.getElementById('sus-motivo');if(motEl){motEl.value=m0.motivoSuspensao||'';motEl.style.display=algumSuspenso?'none':'block';}
-  // Mostrar/ocultar campo "Aplicar para"
-  const apWrap=document.getElementById('sus-aplicar-wrap');
   const apSel=document.getElementById('sus-aplicar');
-  if(apWrap)apWrap.style.display='block';
-  if(apSel)apSel.value='Ambos';
-  // Botão: texto dinâmico
+  const selecionado=apSel?apSel.value:'Ambos';
+  // Alvos conforme seleção
+  const alvos=selecionado==='Ambos'?CRIANCAS:CRIANCAS.filter(c=>c===selecionado);
+  // Determinar ação por alvo: cada criança tem seu próprio estado
+  // Regra: se TODOS os alvos já estão suspensos → ação = Reativar; senão → ação = Suspender
+  const todosSuspensos=alvos.every(c=>{const mc=getMedCfg(c,nomeRemedio);return mc&&mc.suspenso;});
+  const isReativar=todosSuspensos;
+  // Título
+  const t=document.getElementById('sus-titulo');
+  if(t)t.textContent=isReativar?'✅ Reativar '+nomeRemedio:'⛔ Suspender '+nomeRemedio;
+  // Botão
   const btnSus=document.querySelector('#mo-suspender .mbtn.warn');
-  if(btnSus)btnSus.textContent=algumSuspenso?'✅ Reativar':'⛔ Suspender';
+  if(btnSus)btnSus.textContent=isReativar?'✅ Reativar':'⛔ Suspender';
+  // Campo motivo: mostrar sempre para suspensão; ocultar para reativação
+  const motEl=document.getElementById('sus-motivo');
+  if(motEl){
+    if(isReativar){
+      motEl.style.display='none';
+    } else {
+      motEl.style.display='block';
+      // Se mudar para um alvo específico que já tem motivo, pré-preencher
+      if(alvos.length===1){
+        const mc=getMedCfg(alvos[0],nomeRemedio);
+        motEl.value=(mc&&mc.motivoSuspensao)||'';
+      } else {
+        motEl.value='';
+      }
+    }
+  }
+}
+
+function abrirSuspender(nomeRemedio){
+  _susMedIdx=nomeRemedio;
+  const CRIANCAS=getCriancas();
+  // Pré-selecionar dropdown: se suspensão parcial, pré-selecionar quem está suspenso
+  const apSel=document.getElementById('sus-aplicar');
+  if(apSel){
+    const suspensos=CRIANCAS.filter(c=>{const mc=getMedCfg(c,nomeRemedio);return mc&&mc.suspenso;});
+    if(suspensos.length===0){
+      apSel.value='Ambos'; // todos ativos → default Ambos para suspender
+    } else if(suspensos.length===CRIANCAS.length){
+      apSel.value='Ambos'; // todos suspensos → default Ambos para reativar
+    } else {
+      apSel.value=suspensos[0]; // suspensão parcial → pré-selecionar suspenso
+    }
+    // Listener reativo: atualiza título/botão/motivo ao mudar seleção
+    apSel.onchange=function(){ _atualizarModalSuspensao(); };
+  }
+  const apWrap=document.getElementById('sus-aplicar-wrap');
+  if(apWrap)apWrap.style.display='block';
+  // Atualizar UI com base na seleção inicial
+  _atualizarModalSuspensao();
   abrirMo('mo-suspender');
 }
+
 function confirmarSuspensao(){
   if(_susMedIdx===null)return;
   const nomeRemedio=_susMedIdx;
   const motivo=document.getElementById('sus-motivo')?.value.trim()||'';
   const aplicarPara=document.getElementById('sus-aplicar')?.value||'Ambos';
   const CRIANCAS=getCriancas();
-  // Filtra as crianças de acordo com a seleção
   const alvos=aplicarPara==='Ambos'?CRIANCAS:CRIANCAS.filter(c=>c===aplicarPara);
-  // Aplicar suspensão/reativação apenas para os alvos selecionados
+  // ── Regra por criança: cada uma age com base em SEU próprio estado ──
+  // Não usa estado global. Cada alvo decide individualmente: suspenso→reativar, ativo→suspender
   alvos.forEach(function(c){
-    const mc=getMedCfg(c,nomeRemedio);if(!mc)return;
-    const eraSuspenso=mc.suspenso;
-    if(!eraSuspenso){
-      const hist=mc.suspHist||[];
-      hist.push({de:hojeISO(),ate:null,motivo,aplicadoPara:aplicarPara});
-      setMedCfg(c,nomeRemedio,Object.assign({},mc,{suspenso:true,motivoSuspensao:motivo,suspHist:hist}));
+    // Cópia isolada para evitar referência compartilhada entre crianças
+    const mcRaw=getMedCfg(c,nomeRemedio);
+    if(!mcRaw)return;
+    const mc=Object.assign({},mcRaw,{suspHist:(mcRaw.suspHist||[]).slice()});
+    if(mc.suspenso){
+      // Reativar esta criança
+      if(mc.suspHist.length&&!mc.suspHist[mc.suspHist.length-1].ate)
+        mc.suspHist[mc.suspHist.length-1].ate=hojeISO();
+      setMedCfg(c,nomeRemedio,Object.assign({},mc,{suspenso:false,motivoSuspensao:'',suspHist:mc.suspHist}));
     } else {
-      const hist=mc.suspHist||[];
-      if(hist.length&&!hist[hist.length-1].ate) hist[hist.length-1].ate=hojeISO();
-      setMedCfg(c,nomeRemedio,Object.assign({},mc,{suspenso:false,motivoSuspensao:'',suspHist:hist}));
+      // Suspender esta criança
+      mc.suspHist.push({de:hojeISO(),ate:null,motivo,aplicadoPara:aplicarPara});
+      setMedCfg(c,nomeRemedio,Object.assign({},mc,{suspenso:true,motivoSuspensao:motivo,suspHist:mc.suspHist}));
     }
   });
   fecharMo('mo-suspender');renderMedsAdmin();atualizarTudo();
@@ -4409,7 +4461,7 @@ window.salvarEvento=salvarEvento; window.deletarEvento=deletarEvento;
 window.abrirEditMed=abrirEditMed; window.salvarMedEdit=salvarMedEdit;
 window.deletarMed=deletarMed; window.adicionarMed=adicionarMed; window.atualizarCampoHoraNm=atualizarCampoHoraNm;
 window.adicionarDoseLinha=adicionarDoseLinha; window.adicionarDoseNmLinha=adicionarDoseNmLinha;
-window.abrirSuspender=abrirSuspender; window.confirmarSuspensao=confirmarSuspensao;
+window.abrirSuspender=abrirSuspender; window.confirmarSuspensao=confirmarSuspensao; window._atualizarModalSuspensao=_atualizarModalSuspensao;
 window.atualizarCamposHorario=atualizarCamposHorario; window.sincronizarQuem=sincronizarQuem; window.addDoseRow=addDoseRow;
 window.paStep=paStep; window.paCheckStrength=paCheckStrength; window.paConfirmarSenha=paConfirmarSenha;
 window.checkStrength=checkStrength; window.salvarSenha=salvarSenha;
