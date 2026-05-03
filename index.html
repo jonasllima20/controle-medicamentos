@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Remédios">
 <meta name="theme-color" content="#6366F1">
-<meta name="description" content="Controle de remédios das crianças — Arthur e Alice - HML">
+<meta name="description" content="Controle de remédios das crianças — Arthur e Alice HML">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Remédios das Crianças HML 💊</title>
@@ -1484,9 +1484,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     <div class="field" id="sus-aplicar-wrap">
       <label>Aplicar para</label>
       <select id="sus-aplicar" onchange="_atualizarModalSuspensao()" style="width:100%;border:1.5px solid var(--border);border-radius:11px;padding:11px 13px;font-size:.88rem;outline:none;color:var(--text);background:var(--bg);transition:border-color .2s;-webkit-appearance:auto">
-        <option value="Ambos">👫 Ambos</option>
-        <option value="Arthur">🧒 Arthur</option>
-        <option value="Alice">👧 Alice</option>
+        <!-- opções geradas dinamicamente por abrirSuspender() -->
       </select>
     </div>
     <div class="field">
@@ -1760,11 +1758,11 @@ var activeUser=null, selUserKey=null;
 // ═══════════════════════════════════════════════════════════
 const _FB_CONFIG = {
   apiKey: "AIzaSyCjiG99t9e58VxxvTjLDsqTjwq54FzcIzI",
-    authDomain: "remedios-criancas-hml.firebaseapp.com",
-    projectId: "remedios-criancas-hml",
-    storageBucket: "remedios-criancas-hml.firebasestorage.app",
-    messagingSenderId: "450093689232",
-    appId: "1:450093689232:web:8638909541542970b62b15",
+authDomain: "remedios-criancas-hml.firebaseapp.com",
+projectId: "remedios-criancas-hml",
+storageBucket: "remedios-criancas-hml.firebasestorage.app",
+messagingSenderId: "450093689232",
+appId: "1:450093689232:web:8638909541542970b62b15",
   };
 
 // Guard: Firebase SDK must be loaded before init
@@ -4217,58 +4215,60 @@ function adicionarMed(){
 }
 let _susMedIdx=null;
 
-// ── Atualiza o modal de suspensão de acordo com a seleção atual do dropdown ──
+// ── Retorna emoji da criança para o dropdown ──
+function _emojiCrianca(c){
+  const cfg=getCriancaConfig(c);
+  return (cfg&&cfg.emoji)||'👤';
+}
+
+// ── Atualiza título, botão e campo motivo com base na criança selecionada ──
+// Chamada ao abrir o modal E a cada mudança no dropdown (onchange).
+// Opera exclusivamente sobre a criança selecionada — sem estado global.
 function _atualizarModalSuspensao(){
   const nomeRemedio=_susMedIdx;if(!nomeRemedio)return;
-  const CRIANCAS=getCriancas();
   const apSel=document.getElementById('sus-aplicar');
-  const selecionado=apSel?apSel.value:'Ambos';
-  // Alvos conforme seleção
-  const alvos=selecionado==='Ambos'?CRIANCAS:CRIANCAS.filter(c=>c===selecionado);
-  // Determinar ação por alvo: cada criança tem seu próprio estado
-  // Regra: se TODOS os alvos já estão suspensos → ação = Reativar; senão → ação = Suspender
-  const todosSuspensos=alvos.every(c=>{const mc=getMedCfg(c,nomeRemedio);return mc&&mc.suspenso;});
-  const isReativar=todosSuspensos;
+  const criancaSel=apSel?apSel.value:'';
+  if(!criancaSel)return;
+  // Estado isolado desta criança — cópia defensiva, sem referência compartilhada
+  const mcRaw=getMedCfg(criancaSel,nomeRemedio);
+  const isSuspenso=!!(mcRaw&&mcRaw.suspenso);
   // Título
   const t=document.getElementById('sus-titulo');
-  if(t)t.textContent=isReativar?'✅ Reativar '+nomeRemedio:'⛔ Suspender '+nomeRemedio;
+  if(t)t.textContent=isSuspenso?'✅ Reativar '+nomeRemedio:'⛔ Suspender '+nomeRemedio;
   // Botão
   const btnSus=document.querySelector('#mo-suspender .mbtn.warn');
-  if(btnSus)btnSus.textContent=isReativar?'✅ Reativar':'⛔ Suspender';
-  // Campo motivo: mostrar sempre para suspensão; ocultar para reativação
+  if(btnSus)btnSus.textContent=isSuspenso?'✅ Reativar':'⛔ Suspender';
+  // Campo motivo: visível ao suspender, oculto ao reativar
   const motEl=document.getElementById('sus-motivo');
   if(motEl){
-    if(isReativar){
+    if(isSuspenso){
       motEl.style.display='none';
+      motEl.value='';
     } else {
       motEl.style.display='block';
-      // Se mudar para um alvo específico que já tem motivo, pré-preencher
-      if(alvos.length===1){
-        const mc=getMedCfg(alvos[0],nomeRemedio);
-        motEl.value=(mc&&mc.motivoSuspensao)||'';
-      } else {
-        motEl.value='';
-      }
+      motEl.value=(mcRaw&&mcRaw.motivoSuspensao)||'';
     }
   }
 }
 
+// ── Abre o modal de suspensão/reativação para um remédio ──
 function abrirSuspender(nomeRemedio){
   _susMedIdx=nomeRemedio;
-  const CRIANCAS=getCriancas();
-  // Pré-selecionar dropdown: se suspensão parcial, pré-selecionar quem está suspenso
+  const CRIANCAS=getCriancas(); // dinâmico — não depende de nomes fixos
+  // Gerar opções do dropdown dinamicamente (sem "Ambos", sem nomes hardcoded)
   const apSel=document.getElementById('sus-aplicar');
   if(apSel){
+    apSel.innerHTML=CRIANCAS.map(c=>{
+      const emoji=_emojiCrianca(c);
+      return '<option value="'+c+'">'+emoji+' '+c+'</option>';
+    }).join('');
+    // Pré-selecionar: se há suspensão parcial, selecionar quem está suspenso;
+    // se todos ativos ou todos suspensos, selecionar o primeiro da lista
     const suspensos=CRIANCAS.filter(c=>{const mc=getMedCfg(c,nomeRemedio);return mc&&mc.suspenso;});
-    if(suspensos.length===0){
-      apSel.value='Ambos'; // todos ativos → default Ambos para suspender
-    } else if(suspensos.length===CRIANCAS.length){
-      apSel.value='Ambos'; // todos suspensos → default Ambos para reativar
-    } else {
-      apSel.value=suspensos[0]; // suspensão parcial → pré-selecionar suspenso
-    }
-    // Listener reativo: atualiza título/botão/motivo ao mudar seleção
-    apSel.onchange=function(){ _atualizarModalSuspensao(); };
+    const defaultSel=(suspensos.length>0&&suspensos.length<CRIANCAS.length)
+      ?suspensos[0]  // parcial → pré-selecionar suspenso
+      :CRIANCAS[0];  // todos ativos ou todos suspensos → primeiro
+    apSel.value=defaultSel;
   }
   const apWrap=document.getElementById('sus-aplicar-wrap');
   if(apWrap)apWrap.style.display='block';
@@ -4277,32 +4277,33 @@ function abrirSuspender(nomeRemedio){
   abrirMo('mo-suspender');
 }
 
+// ── Confirma a ação de suspender ou reativar ──
+// Atua exclusivamente na criança selecionada no dropdown.
+// A decisão (suspender/reativar) é baseada no estado REAL dessa criança — sem lógica global.
 function confirmarSuspensao(){
   if(_susMedIdx===null)return;
   const nomeRemedio=_susMedIdx;
+  const apSel=document.getElementById('sus-aplicar');
+  const criancaSel=apSel?apSel.value:'';
+  if(!criancaSel)return;
   const motivo=document.getElementById('sus-motivo')?.value.trim()||'';
-  const aplicarPara=document.getElementById('sus-aplicar')?.value||'Ambos';
-  const CRIANCAS=getCriancas();
-  const alvos=aplicarPara==='Ambos'?CRIANCAS:CRIANCAS.filter(c=>c===aplicarPara);
-  // ── Regra por criança: cada uma age com base em SEU próprio estado ──
-  // Não usa estado global. Cada alvo decide individualmente: suspenso→reativar, ativo→suspender
-  alvos.forEach(function(c){
-    // Cópia isolada para evitar referência compartilhada entre crianças
-    const mcRaw=getMedCfg(c,nomeRemedio);
-    if(!mcRaw)return;
-    const mc=Object.assign({},mcRaw,{suspHist:(mcRaw.suspHist||[]).slice()});
-    if(mc.suspenso){
-      // Reativar esta criança
-      if(mc.suspHist.length&&!mc.suspHist[mc.suspHist.length-1].ate)
-        mc.suspHist[mc.suspHist.length-1].ate=hojeISO();
-      setMedCfg(c,nomeRemedio,Object.assign({},mc,{suspenso:false,motivoSuspensao:'',suspHist:mc.suspHist}));
-    } else {
-      // Suspender esta criança
-      mc.suspHist.push({de:hojeISO(),ate:null,motivo,aplicadoPara:aplicarPara});
-      setMedCfg(c,nomeRemedio,Object.assign({},mc,{suspenso:true,motivoSuspensao:motivo,suspHist:mc.suspHist}));
-    }
-  });
-  fecharMo('mo-suspender');renderMedsAdmin();atualizarTudo();
+  // Cópia defensiva: evita referência compartilhada entre crianças
+  const mcRaw=getMedCfg(criancaSel,nomeRemedio);
+  if(!mcRaw)return;
+  const mc=Object.assign({},mcRaw,{suspHist:(mcRaw.suspHist||[]).map(h=>Object.assign({},h))});
+  if(mc.suspenso){
+    // Reativar: fechar período no histórico e limpar suspensão
+    if(mc.suspHist.length&&!mc.suspHist[mc.suspHist.length-1].ate)
+      mc.suspHist[mc.suspHist.length-1].ate=hojeISO();
+    setMedCfg(criancaSel,nomeRemedio,Object.assign({},mc,{suspenso:false,motivoSuspensao:'',suspHist:mc.suspHist}));
+  } else {
+    // Suspender: registrar no histórico
+    mc.suspHist.push({de:hojeISO(),ate:null,motivo,crianca:criancaSel});
+    setMedCfg(criancaSel,nomeRemedio,Object.assign({},mc,{suspenso:true,motivoSuspensao:motivo,suspHist:mc.suspHist}));
+  }
+  fecharMo('mo-suspender');
+  renderMedsAdmin();
+  atualizarTudo();
 }
 
 // ═══════════════ AGENDA MÉDICA ═══════════════
