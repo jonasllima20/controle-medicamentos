@@ -7,10 +7,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Remédios">
 <meta name="theme-color" content="#6366F1">
-<meta name="description" content="Controle de remédios das crianças — Arthur e Alice HML">
+<meta name="description" content="Controle de remédios das crianças — Arthur e Alice">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>Remédios das Crianças HML💊</title>
+<title>Remédios das Crianças 💊</title>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <!-- EmailJS -->
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
@@ -807,12 +807,18 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
 </head>
 <body>
 
+<!-- ── BANNER DE HOMOLOGAÇÃO ─────────────────────────────── -->
+<div id="hml-banner" style="position:fixed;top:0;left:0;right:0;z-index:99999;background:#F59E0B;color:#000;text-align:center;font-size:12px;font-weight:700;padding:5px 8px;letter-spacing:.5px;pointer-events:none">
+  ⚠️ HOMOLOGAÇÃO — Firebase: remedios-criancas-hml · dados isolados do PRD
+</div>
+<div style="height:26px" id="hml-spacer"></div>
+
 <canvas id="confetti-canvas"></canvas>
 
 <!-- SPLASH SCREEN -->
 <div id="tela-splash">
   <div class="splash-icon">💊</div>
-  <div class="splash-title">Remédios das Crianças HML</div>
+  <div class="splash-title">Remédios das Crianças</div>
   <div class="splash-sub">Arthur &amp; Alice</div>
   <div class="splash-bar"><div class="splash-bar-fill"></div></div>
 </div>
@@ -946,7 +952,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
   <!-- TOPBAR -->
   <div class="topbar">
     <div class="tb-left">
-      <h1>💊 Remédios das Crianças HML</h1>
+      <h1>💊 Remédios das Crianças</h1>
       <p id="data-hoje"></p>
       <p id="sync-status" style="font-size:.68rem;font-weight:700;margin-top:2px;color:var(--green)">☁️ Conectando…</p>
     </div>
@@ -1698,16 +1704,18 @@ var activeUser=null, selUserKey=null;
 // Funções declaradas abaixo — JS hoisting as torna acessíveis imediatamente
 
 // ═══════════════════════════════════════════════════════════
-// FIREBASE — inicialização síncrona (sem ES module)
+// FIREBASE — AMBIENTE: HOMOLOGAÇÃO (HML)
+// ⚠️  NÃO usar esta config em produção
 // ═══════════════════════════════════════════════════════════
 const _FB_CONFIG = {
-  apiKey: "AIzaSyCjiG99t9e58VxxvTjLDsqTjwq54FzcIzI",
-authDomain: "remedios-criancas-hml.firebaseapp.com",
-projectId: "remedios-criancas-hml",
-storageBucket: "remedios-criancas-hml.firebasestorage.app",
-messagingSenderId: "450093689232",
-appId: "1:450093689232:web:8638909541542970b62b15",
-  };
+  apiKey:            "AIzaSyCjiG99t9e58VxxvTjLDsqTjwq54FzcIzI",
+  authDomain:        "remedios-criancas-hml.firebaseapp.com",
+  projectId:         "remedios-criancas-hml",
+  storageBucket:     "remedios-criancas-hml.firebasestorage.app",
+  messagingSenderId: "450093689232",
+  appId:             "1:450093689232:web:8638909541542970b62b15",
+  measurementId:     "G-RBTY51F57N"
+};
 // Guard: Firebase SDK must be loaded before init
 if(typeof firebase === 'undefined'){
   console.error('Firebase SDK não carregou. Verifique a conexão com a internet.');
@@ -1717,7 +1725,33 @@ if(typeof firebase === 'undefined'){
 const _fbApp = typeof firebase !== 'undefined' ? firebase.initializeApp(_FB_CONFIG) : null;
 const _db    = _fbApp ? firebase.firestore() : null;
 window._fbDb = _db;
-window.APP_TOKEN = "rem-fam-2026-xK9mQzP4";
+window.APP_TOKEN = "rem-fam-2026-HML-xK9mQzP4";
+// ── Prefixo de localStorage isolado para HML ─────────────
+// Garante zero compartilhamento de dados com o ambiente PRD
+window.LS_PREFIX = "hml_";
+
+// ── Proxy de localStorage: prefixa todas as chaves automaticamente ──
+// Isso garante que HML nunca leia nem escreva nas chaves de PRD
+(function(){
+  const _ls = window.localStorage;
+  const P = window.LS_PREFIX;
+  const _get = _ls.getItem.bind(_ls);
+  const _set = _ls.setItem.bind(_ls);
+  const _rem = _ls.removeItem.bind(_ls);
+  const _key = _ls.key.bind(_ls);
+  Object.defineProperty(window, 'localStorage', {
+    get: function(){
+      return {
+        getItem:    function(k){ return _get(P+k); },
+        setItem:    function(k,v){ return _set(P+k,v); },
+        removeItem: function(k){ return _rem(P+k); },
+        key:        function(n){ return _key(n); },
+        get length(){ return _ls.length; },
+        clear:      function(){ _ls.clear(); }
+      };
+    }
+  });
+})();
 
 // ── Cache local ───────────────────────────────────────────
 function cacheSet(k,v){try{localStorage.setItem('fb_cache_'+k,JSON.stringify(v));}catch(e){}}
@@ -3574,17 +3608,17 @@ function detectarSuportePush(){
   };
 }
 
+// ── Service Worker: DESABILITADO no HML ──────────────────
+// Evita cache cruzado entre HML e PRD.
+// Em produção (index-PRD.html) o SW é registrado normalmente.
 async function initServiceWorker(){
-  if(!('serviceWorker' in navigator))return null;
-  const hostname=location.hostname;
-  const isPreview=hostname.includes('claudeusercontent')||hostname.includes('claude.ai');
-  if(isPreview){console.info('SW: pulado no preview');return null;}
-  try{
-    const base=location.pathname.endsWith('/')?location.pathname:location.pathname.substring(0,location.pathname.lastIndexOf('/')+1);
-    _swReg=await navigator.serviceWorker.register(base+'sw.js',{scope:base});
-    await navigator.serviceWorker.ready;
-    return _swReg;
-  }catch(e){console.warn('SW falhou:',e.message);return null;}
+  console.info('[HML] Service Worker desabilitado neste ambiente.');
+  // Limpar qualquer SW registrado anteriormente neste escopo
+  if('serviceWorker' in navigator){
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for(const reg of regs){ await reg.unregister(); }
+  }
+  return null;
 }
 
 function getNotifConfig(){
@@ -3984,7 +4018,7 @@ function expPDF(){
   const kpis=CRIANCAS.map(n=>'<div class="pct-box"><span class="pct-num" style="color:'+(getCriancaConfig(n).cor||'#6366F1')+'">'+pctC(n)+'%</span><span class="pct-lbl">'+(getCriancaConfig(n).emoji||'')+' '+n+'</span></div>').join('');
   const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório '+MESES[mes]+' '+ano+'</title>'
     +'<style>body{font-family:Arial,sans-serif;padding:32px;color:#111;max-width:750px;margin:auto;font-size:13px}h1{color:#3B82F6;margin-bottom:4px;font-size:20px}h2{color:#374151;font-size:14px;margin:20px 0 8px;border-bottom:2px solid #E5E7EB;padding-bottom:4px}.pct-box{display:inline-block;text-align:center;padding:10px 18px;border-radius:10px;border:2px solid #E5E7EB;margin:0 8px 8px 0}.pct-num{font-size:26px;font-weight:900;display:block}.pct-lbl{font-size:11px;color:#6B7280}ul{line-height:2}@media print{body{padding:16px}}</style></head><body>'
-    +'<h1>💊 Controle de Remédios das Crianças HML</h1>'
+    +'<h1>💊 Controle de Remédios das Crianças</h1>'
     +'<p style="color:#6B7280;margin-bottom:16px">Relatório de <strong>'+MESES[mes]+' '+ano+'</strong> · Gerado em '+new Date().toLocaleDateString('pt-BR')+'</p>'
     +'<h2>📊 Adesão</h2><div style="margin-bottom:14px">'+kpis+'</div>'
     +'<h2>📋 Histórico</h2>'+(histHtml||'<p>Sem registros.</p>')
