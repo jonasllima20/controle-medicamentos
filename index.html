@@ -463,6 +463,8 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
   display:flex;align-items:center;justify-content:space-between;
   padding:10px 12px;border-radius:10px;background:var(--bg);border:1.5px solid var(--border);margin-bottom:7px;
 }
+.med-admin-item.suspenso{opacity:.6}
+.med-admin-item.suspenso-parcial{opacity:.8;border-color:var(--warn);background:var(--warnl)}
 .mai-left{display:flex;align-items:center;gap:9px;flex:1;min-width:0}
 .mai-icon{font-size:1rem;flex-shrink:0}
 .mai-nome{font-size:.83rem;font-weight:700;color:var(--text)}
@@ -1010,63 +1012,13 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     </div>
   </div>
 
-  <!-- CARDS CRIANÇAS -->
-  <div class="criancas-grid">
-    <div class="crianca-card a">
-      <div class="cc-header">
-        <div class="cc-nome">
-          <div class="av" onclick="abrirAvatar('Arthur')"><div class="avph" id="av-Arthur">A</div><div class="av-hov">✏️</div></div>
-          Arthur
-        </div>
-        <div class="ptabs" id="ptabs-Arthur">
-          <button class="ptab mnh on" id="pt-Arthur-manha" onclick="setPer('Arthur','manha')">☀️ Manhã</button>
-          <button class="ptab trd"    id="pt-Arthur-tarde" onclick="setPer('Arthur','tarde')" style="display:none">🌤️ Tarde</button>
-          <button class="ptab nte"    id="pt-Arthur-noite" onclick="setPer('Arthur','noite')">🌙 Noite</button>
-        </div>
-      </div>
-      <div class="meds-list" id="ml-Arthur"></div>
-      <div class="prog-wrap">
-        <div class="prog-top"><div class="prog-lbl">Progresso hoje</div><div class="prog-pct" id="pp-Arthur">0%</div></div>
-        <div class="prog-bg"><div class="prog-fill" id="pf-Arthur" style="width:0%"></div></div>
-      </div>
-    </div>
-    <div class="crianca-card b">
-      <div class="cc-header">
-        <div class="cc-nome">
-          <div class="av" onclick="abrirAvatar('Alice')"><div class="avph" id="av-Alice">A</div><div class="av-hov">✏️</div></div>
-          Alice
-        </div>
-        <div class="ptabs" id="ptabs-Alice">
-          <button class="ptab mnh on" id="pt-Alice-manha" onclick="setPer('Alice','manha')">☀️ Manhã</button>
-          <button class="ptab trd"    id="pt-Alice-tarde" onclick="setPer('Alice','tarde')" style="display:none">🌤️ Tarde</button>
-          <button class="ptab nte"    id="pt-Alice-noite" onclick="setPer('Alice','noite')">🌙 Noite</button>
-        </div>
-      </div>
-      <div class="meds-list" id="ml-Alice"></div>
-      <div class="prog-wrap">
-        <div class="prog-top"><div class="prog-lbl">Progresso hoje</div><div class="prog-pct" id="pp-Alice">0%</div></div>
-        <div class="prog-bg"><div class="prog-fill" id="pf-Alice" style="width:0%"></div></div>
-      </div>
-    </div>
-  </div>
+  <!-- CARDS CRIANÇAS — gerado dinamicamente por renderCriancasCards() -->
+  <div class="criancas-grid" id="criancas-grid"></div>
 
-  <!-- ADESÃO -->
+  <!-- ADESÃO — gerado dinamicamente por renderAdesaoGrid() -->
   <div class="sec">
     <div class="sec-title" style="margin-bottom:13px">📊 Adesão — <span id="mes-ad"></span></div>
-    <div class="adesao-grid">
-      <div class="adesao-item ai-a">
-        <div class="ad-nome">Arthur</div>
-        <div class="ad-pct" id="ad-Arthur">—</div>
-        <div class="ad-sub" id="ads-Arthur"></div>
-        <div class="ad-bar"><div class="ad-fill" id="adf-Arthur" style="width:0%"></div></div>
-      </div>
-      <div class="adesao-item ai-b">
-        <div class="ad-nome">Alice</div>
-        <div class="ad-pct" id="ad-Alice">—</div>
-        <div class="ad-sub" id="ads-Alice"></div>
-        <div class="ad-bar"><div class="ad-fill" id="adf-Alice" style="width:0%"></div></div>
-      </div>
-    </div>
+    <div class="adesao-grid" id="adesao-grid"></div>
   </div>
 
   <!-- CALENDÁRIO -->
@@ -1080,9 +1032,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     </div>
     <div class="cal-dows"><div class="cal-dow">Dom</div><div class="cal-dow">Seg</div><div class="cal-dow">Ter</div><div class="cal-dow">Qua</div><div class="cal-dow">Qui</div><div class="cal-dow">Sex</div><div class="cal-dow">Sáb</div></div>
     <div class="cal-grid" id="cal-grid"></div>
-    <div class="legenda">
-      <div class="leg-item"><div class="leg-cor" style="background:var(--a);opacity:.5"></div>Arthur ✓</div>
-      <div class="leg-item"><div class="leg-cor" style="background:var(--b);opacity:.5"></div>Alice ✓</div>
+    <div class="legenda" id="cal-legenda">
       <div class="leg-item">📝 Obs</div>
     </div>
   </div>
@@ -1163,9 +1113,8 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     <div class="mt">👤 Perfil</div>
     <div id="perfil-info" style="margin-bottom:14px"></div>
     <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">FOTO DAS CRIANÇAS</div>
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      <button class="btn" onclick="abrirAvatar('Arthur');fecharMo('mo-perfil')">🧒 Arthur</button>
-      <button class="btn" onclick="abrirAvatar('Alice');fecharMo('mo-perfil')">👧 Alice</button>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap" id="perfil-criancas-fotos">
+      <!-- botões gerados dinamicamente -->
     </div>
     <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">FOTO DE PERFIL</div>
     <div style="display:flex;gap:8px;margin-bottom:14px">
@@ -1209,8 +1158,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
       <select class="hsel" id="hf-ano" onchange="renderHistorico()"></select>
       <select class="hsel" id="hf-cri" onchange="renderHistorico()">
         <option value="">Todos</option>
-        <option value="Arthur">Arthur</option>
-        <option value="Alice">Alice</option>
+        <!-- populado dinamicamente por popularSelectCriancas() -->
       </select>
       <select class="hsel" id="hf-usr" onchange="renderHistorico()">
         <option value="">Qualquer um</option>
@@ -1268,8 +1216,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
         <label>Aplicar para</label>
         <select id="me-quem" onchange="atualizarCamposHorario()">
           <option value="Ambos">👫 Ambos</option>
-          <option value="Arthur">🧒 Arthur</option>
-          <option value="Alice">👧 Alice</option>
+          <!-- populado dinamicamente por popularSelectCriancas() -->
         </select>
       </div>
     </div>
@@ -1411,8 +1358,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
       <div class="field">
         <label>Quem vai</label>
         <select id="ag-quem">
-          <option value="Arthur">🧒 Arthur</option>
-          <option value="Alice">👧 Alice</option>
+          <!-- populado dinamicamente por popularSelectCriancas() -->
           <option value="Ambos">👫 Ambos</option>
         </select>
       </div>
@@ -1455,8 +1401,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
         </select>
         <select class="hsel" id="ev-fil-quem" onchange="renderTodosEventos()">
           <option value="">Todos</option>
-          <option value="Arthur">Arthur</option>
-          <option value="Alice">Alice</option>
+          <!-- populado dinamicamente por popularSelectCriancas() -->
           <option value="Ambos">Ambos</option>
         </select>
         <select class="hsel" id="ev-fil-periodo" onchange="renderTodosEventos()">
@@ -1478,6 +1423,12 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     <input type="hidden" id="sus-idx">
     <div style="background:var(--warnl);border:1.5px solid var(--mnb);border-radius:11px;padding:12px;margin-bottom:13px;font-size:.82rem;color:#92400E">
       ⚠️ O remédio ficará riscado com tag ⛔. O histórico é preservado. Você pode reativar a qualquer momento.
+    </div>
+    <div class="field" id="sus-aplicar-wrap">
+      <label>Aplicar para</label>
+      <select id="sus-aplicar" onchange="_atualizarModalSuspensao()" style="width:100%;border:1.5px solid var(--border);border-radius:11px;padding:11px 13px;font-size:.88rem;outline:none;color:var(--text);background:var(--bg);transition:border-color .2s;-webkit-appearance:auto">
+        <!-- opções geradas dinamicamente por abrirSuspender() -->
+      </select>
     </div>
     <div class="field">
       <label>Motivo da suspensão (opcional)</label>
@@ -1548,9 +1499,8 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
 <div class="mo" id="mo-saude">
   <div class="mbox wide">
     <div class="mt">❤️ Perfil de Saúde</div>
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      <button class="ctab on" id="saude-tab-Arthur" onclick="setSaudeTab('Arthur')">🧒 Arthur</button>
-      <button class="ctab" id="saude-tab-Alice" onclick="setSaudeTab('Alice')">👧 Alice</button>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap" id="saude-tabs">
+      <!-- gerado dinamicamente por abrirSaude() -->
     </div>
     <div id="saude-conteudo" style="max-height:460px;overflow-y:auto"></div>
     <div class="mbtns">
@@ -1565,7 +1515,10 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
   <div class="mbox">
     <div class="mt">👶 Configurar Crianças</div>
     <div id="criancas-config-lista"></div>
-    <div class="mbtns"><button class="mbtn cancel" onclick="fecharMo('mo-criancas-config')">Fechar</button></div>
+    <div class="mbtns">
+      <button class="mbtn cancel" onclick="fecharMo('mo-criancas-config')">Fechar</button>
+      <button class="mbtn save" onclick="abrirNovaCrianca()">+ Nova criança</button>
+    </div>
   </div>
 </div>
 
@@ -1648,10 +1601,9 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
 
     <!-- Criança -->
     <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">CRIANÇA</div>
-    <div style="display:flex;gap:8px;margin-bottom:16px">
-      <button class="ctab on" id="rel-c-ambos" onclick="setRelCrianca('Ambos')">👫 Ambos</button>
-      <button class="ctab" id="rel-c-Arthur" onclick="setRelCrianca('Arthur')">🧒 Arthur</button>
-      <button class="ctab" id="rel-c-Alice" onclick="setRelCrianca('Alice')">👧 Alice</button>
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap" id="rel-criancas-wrap">
+      <button class="ctab on" id="rel-c-Ambos" onclick="setRelCrianca('Ambos')">👫 Ambos</button>
+      <!-- botões de crianças gerados dinamicamente por abrirRelatorio() -->
     </div>
 
     <!-- Preview resumo -->
@@ -1746,7 +1698,7 @@ var activeUser=null, selUserKey=null;
 // Funções declaradas abaixo — JS hoisting as torna acessíveis imediatamente
 
 // ═══════════════════════════════════════════════════════════
-// FIREBASE — inicialização síncrona (sem ES module)
+// FIREBASE — AMBIENTE: PRODUÇÃO (PRD)
 // ═══════════════════════════════════════════════════════════
 const _FB_CONFIG = {
   apiKey:            "AIzaSyCyVsra1JxICGmvJsc-8sFb49KsFfhQPWA",
@@ -1766,6 +1718,20 @@ const _fbApp = typeof firebase !== 'undefined' ? firebase.initializeApp(_FB_CONF
 const _db    = _fbApp ? firebase.firestore() : null;
 window._fbDb = _db;
 window.APP_TOKEN = "rem-fam-2026-xK9mQzP4";
+window.LS_PREFIX = ""; // PRD usa prefixo padrão (compatível com dados existentes)
+
+// ── Migração única: rm_criancas_cfg → rm_criancas (executa apenas uma vez) ──
+(function migrarLegado(){
+  try{
+    if(localStorage.getItem('rm_criancas'))return;
+    const old=JSON.parse(localStorage.getItem('rm_criancas_cfg')||'{}');
+    if(Object.keys(old).length){
+      localStorage.setItem('rm_criancas',JSON.stringify(old));
+      localStorage.removeItem('rm_criancas_cfg');
+      console.info('[PRD] Migração concluída: rm_criancas_cfg → rm_criancas');
+    }
+  }catch(e){console.warn('[PRD] Falha na migração:',e);}
+})();
 
 // ── Cache local ───────────────────────────────────────────
 function cacheSet(k,v){try{localStorage.setItem('fb_cache_'+k,JSON.stringify(v));}catch(e){}}
@@ -2002,11 +1968,27 @@ const MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agos
 
 function getCriancasConfig(){
   const s=JSON.parse(localStorage.getItem('rm_criancas')||'null');
-  if(s&&Object.keys(s).length>=2)return s;
+  if(s&&Object.keys(s).length>=1)return s;
   return{Arthur:{nome:'Arthur',emoji:'🧒',cor:'#3B82F6'},Alice:{nome:'Alice',emoji:'👧',cor:'#EC4899'}};
 }
-function setCriancasConfig(c){localStorage.setItem('rm_criancas',JSON.stringify(c));fbSaveCriancas(c);}
+function setCriancasConfig(c){
+  localStorage.setItem('rm_criancas',JSON.stringify(c));
+  fbSaveCriancas(c);
+}
 function getCriancas(){return Object.keys(getCriancasConfig());}
+function removerCrianca(nome){
+  if(!confirm('Remover '+nome+' do sistema? Esta ação não pode ser desfeita.'))return;
+  const cfg=getCriancasConfig();
+  delete cfg[nome];
+  setCriancasConfig(cfg);
+  const medsCfg=getMedsCfg();
+  Object.keys(medsCfg).filter(k=>k.startsWith(nome+'_')).forEach(k=>delete medsCfg[k]);
+  setMedsCfg(medsCfg);
+  try{localStorage.removeItem('rm_av_'+nome);}catch(e){}
+  renderCriancasCards();renderAdesaoGrid();popularTodosSelects();
+  aplicarNomesCriancas();atualizarTudo();abrirCriancasConfig();
+}
+window.removerCrianca=removerCrianca;
 function fbSaveCriancas(c){if(!window._db&&!_db)return;_db.collection('config').doc('criancas').set({data:c,_t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(e){console.warn('[FB] fbSaveCriancas:',e);});}
 function fbLoadCriancas(){_db.collection('config').doc('criancas').get().then(function(snap){if(snap.exists&&snap.data().data){localStorage.setItem('rm_criancas',JSON.stringify(snap.data().data));if(typeof aplicarNomesCriancas==='function')aplicarNomesCriancas();}}).catch(function(e){console.warn('[FB] fbLoadCriancas:',e);});}
 function getSaude(){return JSON.parse(localStorage.getItem('rm_saude')||'{}');}
@@ -2099,7 +2081,7 @@ function migrarMedsAntigos(arr){
 function getMeds(crianca){
   const cfg=getMedsCfg();
   const criancas=getCriancas();
-  const c=crianca||criancas[0]||'Arthur';
+  const c=crianca||criancas[0];
   // Retorna todos os remédios desta criança (sem duplicatas de nome)
   const vistos={};
   return Object.values(cfg)
@@ -2195,7 +2177,7 @@ const PERIODO_ICON={'manha':'☀️','tarde':'🌤️','noite':'🌙'};
 const PERIODO_LABEL={'manha':'manhã','tarde':'tarde','noite':'noite'};
 function totalDoses(crianca,dataISO){
   const criancas=getCriancas();
-  const c=crianca||criancas[0]||'Arthur';
+  const c=crianca||criancas[0];
   const d=dataISO||hojeISO();
   return getMeds(c).filter(function(m){return estaAtivo(m,c,d);}).reduce(function(s,m){return s+migrarParaDoses(m).doses.length;},0);
 }
@@ -2546,8 +2528,8 @@ function tocarFanfarra(){
 }
 
 // ═══════════════ WIDGET + STATS ═══════════════
-function atualizarWidget(){const dados=getHist();const dHj=hoje();const CRIANCAS=getCriancas();const total=totalDoses()*CRIANCAS.length;const feitas=dados.filter(r=>r.data===dHj).length;const pct=total>0?Math.round(feitas/total*100):0;const el=document.getElementById('wd-title');const sub=document.getElementById('wd-sub');if(el)el.textContent=pct===100?'🎉 Tudo feito hoje!':feitas+' de '+total+' doses hoje';if(sub)sub.textContent=pct===100?'Parabéns pelo cuidado!':(total-feitas)+' dose'+(total-feitas!==1?'s':'')+' pendente'+(total-feitas!==1?'s':'');const badges=document.getElementById('wd-badges');if(badges)badges.innerHTML=CRIANCAS.map(n=>{const f=dados.filter(r=>r.data===dHj&&r.nome===n).length;const t=totalDoses();return '<div class="wd-badge"><div class="bdot '+(f>=t?'ok':'pend')+'"></div>'+n+': '+f+'/'+t+'</div>';}).join('');}
-function atualizarStatHoje(){const dados=getHist();const dHj=hoje();const CRIANS_=getCriancas();const total=CRIANS_.reduce((s,c)=>s+totalDoses(c),0);const el=document.getElementById('sv-hoje');if(el)el.textContent=dados.filter(r=>r.data===dHj).length+'/'+total;}
+function atualizarWidget(){const dados=getHist();const dHj=hoje();const CRIANCAS=getCriancas();const total=totalDosesDiario();const feitas=dados.filter(r=>r.data===dHj&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;const pct=total>0?Math.round(feitas/total*100):0;const el=document.getElementById('wd-title');const sub=document.getElementById('wd-sub');if(el)el.textContent=pct===100?'🎉 Tudo feito hoje!':feitas+' de '+total+' doses hoje';if(sub)sub.textContent=pct===100?'Parabéns pelo cuidado!':(total-feitas)+' dose'+(total-feitas!==1?'s':'')+' pendente'+(total-feitas!==1?'s':'');const badges=document.getElementById('wd-badges');if(badges)badges.innerHTML=CRIANCAS.map(n=>{const f=dados.filter(r=>r.data===dHj&&r.nome===n&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;const t=totalDoses(n);return '<div class="wd-badge"><div class="bdot '+(f>=t?'ok':'pend')+'"></div>'+n+': '+f+'/'+t+'</div>';}).join('');}
+function atualizarStatHoje(){const dados=getHist();const dHj=hoje();const CRIANS_=getCriancas();const total=CRIANS_.reduce((s,c)=>s+totalDoses(c),0);const el=document.getElementById('sv-hoje');if(el)el.textContent=dados.filter(r=>r.data===dHj&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length+'/'+total;}
 function verificarPendencias(){
   const dados=getHist();const dHj=hoje();const falta=[];const CRIANCAS=getCriancas();
   const _dHjISO=hojeISO();CRIANCAS.forEach(n=>{const medsN=getMeds(n).filter(m=>estaAtivo(m,n,_dHjISO));medsN.forEach(m=>{getPeriodosMed(m).forEach(p=>{if(!dados.some(r=>r.data===dHj&&r.nome===n&&r.remedio===m.remedio&&r.periodo===p))falta.push(n+': '+m.remedio+(getPeriodosMed(m).length>1?' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[p]||p)+')':''));});});});
@@ -2566,13 +2548,17 @@ function atualizarAdesao(){
   const dados=getHist();const now=new Date();const ano=now.getFullYear(),mes=now.getMonth(),diasP=now.getDate();
   const madEl=document.getElementById('mes-ad');if(madEl)madEl.textContent=MESES[mes]+' '+ano;
   const CRIANCAS=getCriancas();
+  // Garantir que a grade de adesão esteja renderizada antes de popular
+  if(!document.getElementById('ad-'+CRIANCAS[0]))renderAdesaoGrid();
   CRIANCAS.forEach(nome=>{
-    const esp=totalDoses()*diasP;const f=dados.filter(r=>{if(r.nome!==nome)return false;const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes;}).length;
+    const esp=totalDoses(nome)*diasP; // por criança individualmente
+    const f=dados.filter(r=>{if(r.nome!==nome)return false;const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes;}).length;
     const pct=esp>0?Math.round(f/esp*100):0;
     const ad=document.getElementById('ad-'+nome);const ads=document.getElementById('ads-'+nome);const adf=document.getElementById('adf-'+nome);
     if(ad)ad.textContent=pct+'%';if(ads)ads.textContent=f+' de '+esp+' doses';if(adf)adf.style.width=pct+'%';
   });
-  const espG=totalDoses()*diasP*CRIANCAS.length;const fG=dados.filter(r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes;}).length;
+  const espG=CRIANCAS.reduce((s,c)=>s+totalDoses(c)*diasP,0);
+  const fG=dados.filter(r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes;}).length;
   const pG=espG>0?Math.round(fG/espG*100):0;const svmes=document.getElementById('sv-mes');const ssmes=document.getElementById('ss-mes');if(svmes)svmes.textContent=pG+'%';if(ssmes)ssmes.textContent=MESES[mes];
 }
 
@@ -2608,17 +2594,21 @@ function gerarCal(){
     const df=String(d).padStart(2,'0')+'/'+String(_calMes+1).padStart(2,'0')+'/'+_calAno;
     const isoKey=_calAno+'-'+String(_calMes+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
     const liveInfo=mapa[df]||{};const persisted=JSON.parse(localStorage.getItem('rm_cal_done_'+df)||'{}');
-    const _rA=getResumoDiaCrianca(dados,df,'Arthur');
-    const _rB=getResumoDiaCrianca(dados,df,'Alice');
-    const aOk=(_rA.tomadas>0&&_rA.esperado>0&&_rA.concluido)||persisted['Arthur'];
-    const bOk=(_rB.tomadas>0&&_rB.esperado>0&&_rB.concluido)||persisted['Alice'];
+    const CRIANCAS_CAL=getCriancas();
+    const criancaOks=CRIANCAS_CAL.map(c=>{
+      const _r=getResumoDiaCrianca(dados,df,c);
+      return (_r.tomadas>0&&_r.esperado>0&&_r.concluido)||persisted[c];
+    });
+    const todosOk=criancaOks.every(Boolean);
+    const algumOk=criancaOks.some(Boolean);
+    const primeiroOk=criancaOks[0];const segundoOk=criancaOks[1];
     const cell=document.createElement('div');
     const isHj=d===now.getDate()&&_calMes===now.getMonth()&&_calAno===now.getFullYear();
     cell.className='cal-day'+(isHj?' hoje':'');
     cell.onclick=()=>abrirDiaCal(df,isoKey);
-    if(aOk&&bOk)cell.innerHTML='<div class="split-bg"><div class="lado azul"></div><div class="lado rosa"></div></div>';
-    else if(aOk){cell.classList.add('fa');cell.innerHTML='<div class="full-bg"></div>';}
-    else if(bOk){cell.classList.add('fb');cell.innerHTML='<div class="full-bg"></div>';}
+    if(CRIANCAS_CAL.length>=2&&todosOk)cell.innerHTML='<div class="split-bg"><div class="lado azul"></div><div class="lado rosa"></div></div>';
+    else if(primeiroOk){cell.classList.add('fa');cell.innerHTML='<div class="full-bg"></div>';}
+    else if(segundoOk){cell.classList.add('fb');cell.innerHTML='<div class="full-bg"></div>';}
     const obs=localStorage.getItem('obs_'+df);
     const evsDia=(getEventos()||[]).filter(e=>e.dataISO===isoKey);
     const dots=evsDia.length?'<div class="cal-ev-dots">'+[...new Set(evsDia.map(e=>e.tipo))].map(t=>'<div class="cal-ev-dot dot-'+t+'"></div>').join('')+'</div>':'';
@@ -2640,7 +2630,7 @@ function abrirDiaCal(df,isoKey){
     evHtml='<div style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:7px">EVENTOS DO DIA</div>'
       +evsDia.map(e=>'<div class="ev-card" style="margin-bottom:6px"><div class="ev-card-top" style="padding:9px 11px"><div class="ev-card-left">'
         +'<div class="ev-titulo"><span class="ev-tipo-pill '+TIPO_CLS[e.tipo]+'">'+TIPO_LABELS[e.tipo]+'</span> <strong>'+e.titulo+'</strong></div>'
-        +'<div class="ev-detalhe" style="margin-top:4px">'+(e.hora?'<span>🕐 '+e.hora+'</span>':'')+(e.local?'<span>📍 '+e.local+'</span>':'')+'<span>'+(e.quem==='Ambos'?'👫 Ambos':e.quem==='Arthur'?'🧒 Arthur':'👧 Alice')+'</span></div></div>'
+        +'<div class="ev-detalhe" style="margin-top:4px">'+(e.hora?'<span>🕐 '+e.hora+'</span>':'')+(e.local?'<span>📍 '+e.local+'</span>':'')+'<span>'+_quemLabel(e.quem)+'</span></div></div>'
         +'<button class="ev-btn" onclick="abrirEditEvento(\''+e.id+'\');fecharMo(\'mo-obs\')">✏️</button></div></div>').join('');
   }
   const dados=getHist();const dosesHoje=dados.filter(r=>r.data===df||normalizarDataISO(r)===isoKey);
@@ -2877,31 +2867,135 @@ function marcarRecuperacao(i){
   setTimeout(()=>{fecharMo('mo-recuperacao');atualizarTudo();},600);
 }
 
-// ═══════════════ CRIANÇAS CONFIGURÁVEIS ═══════════════
-function getCriancaConfig(nome){
-  const cfg=JSON.parse(localStorage.getItem('rm_criancas_cfg')||'{}');
-  const defaults={Arthur:{nome:'Arthur',emoji:'🧒',cor:'#3B82F6'},Alice:{nome:'Alice',emoji:'👧',cor:'#EC4899'}};
-  return cfg[nome]||defaults[nome]||{nome,emoji:'👤',cor:'#6366F1'};
+// ═══════════════ RENDERIZAÇÃO DINÂMICA DE CRIANÇAS ═══════════════
+
+// Gera os cards de crianças na tela principal — totalmente dinâmico
+function renderCriancasCards(){
+  const CRIANCAS=getCriancas();
+  const grid=document.getElementById('criancas-grid');if(!grid)return;
+  const CORES_CLS=['a','b','c','d','e','f'];
+  grid.innerHTML=CRIANCAS.map((key,idx)=>{
+    const cfg=getCriancaConfig(key);
+    const cls=CORES_CLS[idx%CORES_CLS.length];
+    const corStyle=idx>1?'border-color:'+cfg.cor:'';
+    const progStyle=idx>1?'background:'+cfg.cor:'';
+    return `<div class="crianca-card ${cls}" style="${corStyle}">
+      <div class="cc-header">
+        <div class="cc-nome">
+          <div class="av" onclick="abrirAvatar('${key}')"><div class="avph" id="av-${key}" style="${idx>1?'background:'+cfg.cor:''}">${cfg.nome.charAt(0)}</div><div class="av-hov">✏️</div></div>
+          <span id="cc-nome-${key}">${cfg.nome}</span>
+        </div>
+        <div class="ptabs" id="ptabs-${key}">
+          <button class="ptab mnh on" id="pt-${key}-manha" onclick="setPer('${key}','manha')">☀️ Manhã</button>
+          <button class="ptab trd" id="pt-${key}-tarde" onclick="setPer('${key}','tarde')" style="display:none">🌤️ Tarde</button>
+          <button class="ptab nte" id="pt-${key}-noite" onclick="setPer('${key}','noite')">🌙 Noite</button>
+        </div>
+      </div>
+      <div class="meds-list" id="ml-${key}"></div>
+      <div class="prog-wrap">
+        <div class="prog-top"><div class="prog-lbl">Progresso hoje</div><div class="prog-pct" id="pp-${key}">0%</div></div>
+        <div class="prog-bg"><div class="prog-fill" id="pf-${key}" style="width:0%;${progStyle}"></div></div>
+      </div>
+    </div>`;
+  }).join('');
+  // Aplicar fotos salvas
+  CRIANCAS.forEach(key=>{
+    const avSrc=localStorage.getItem('rm_av_'+key);
+    const avEl=document.getElementById('av-'+key);
+    if(avEl&&avSrc)avEl.innerHTML='<img src="'+avSrc+'" alt="'+key+'">';
+  });
 }
-function setCriancasCfg(cfg){
-  localStorage.setItem('rm_criancas_cfg',JSON.stringify(cfg));
-  if(typeof _db!=='undefined')_db.collection('config').doc('criancas').set({cfg,_t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(e){console.warn('[FB] setCriancasCfg:',e);});
+
+// Gera a grade de adesão dinamicamente
+function renderAdesaoGrid(){
+  const CRIANCAS=getCriancas();
+  const grid=document.getElementById('adesao-grid');if(!grid)return;
+  const CORES_CLS=['ai-a','ai-b','ai-c','ai-d'];
+  grid.innerHTML=CRIANCAS.map((nome,idx)=>{
+    const cfg=getCriancaConfig(nome);
+    const cls=CORES_CLS[idx%CORES_CLS.length];
+    const corStyle=idx>1?'--ad-cor:'+cfg.cor:'';
+    return `<div class="adesao-item ${cls}" style="${corStyle}">
+      <div class="ad-nome">${cfg.nome}</div>
+      <div class="ad-pct" id="ad-${nome}">—</div>
+      <div class="ad-sub" id="ads-${nome}"></div>
+      <div class="ad-bar"><div class="ad-fill" id="adf-${nome}" style="width:0%${idx>1?';background:'+cfg.cor:''}"></div></div>
+    </div>`;
+  }).join('');
 }
+
+// Popula selects de crianças dinamicamente (sem "Ambos", apenas crianças reais)
+// selectId: id do elemento select; prependAmbos: adicionar opção Ambos antes
+function popularSelectCriancas(selectId, prependAmbos=false, incluirTodos=false){
+  const el=document.getElementById(selectId);if(!el)return;
+  const CRIANCAS=getCriancas();
+  const anterior=el.value;
+  const extras=[];
+  if(incluirTodos)extras.push('<option value="">Todos</option>');
+  if(prependAmbos)extras.push('<option value="Ambos">👫 Ambos</option>');
+  el.innerHTML=extras.join('')+CRIANCAS.map(c=>{
+    const cfg=getCriancaConfig(c);
+    return '<option value="'+c+'">'+cfg.emoji+' '+cfg.nome+'</option>';
+  }).join('');
+  // Restaurar seleção anterior se ainda existir
+  if(anterior&&[...el.options].some(o=>o.value===anterior))el.value=anterior;
+}
+
+// Popula a legenda do calendário
+function renderCalLegenda(){
+  const CRIANCAS=getCriancas();
+  const CORES=['var(--a)','var(--b)','#10B981','#F59E0B','#8B5CF6','#EF4444'];
+  const leg=document.getElementById('cal-legenda');if(!leg)return;
+  leg.innerHTML=CRIANCAS.map((c,i)=>{
+    const cfg=getCriancaConfig(c);
+    const cor=i<2?CORES[i]:getCriancaConfig(c).cor;
+    return '<div class="leg-item"><div class="leg-cor" style="background:'+cor+';opacity:.5"></div>'+cfg.nome+' ✓</div>';
+  }).join('')+'<div class="leg-item">📝 Obs</div>';
+}
+
+// Popula botões de foto no modal de perfil
+function renderPerfilFotos(){
+  const CRIANCAS=getCriancas();
+  const wrap=document.getElementById('perfil-criancas-fotos');if(!wrap)return;
+  wrap.innerHTML=CRIANCAS.map(c=>{
+    const cfg=getCriancaConfig(c);
+    return '<button class="btn" onclick="abrirAvatar(\''+c+'\');fecharMo(\'mo-perfil\')">'+cfg.emoji+' '+cfg.nome+'</button>';
+  }).join('');
+}
+
+// Chamada única para re-popular todos os selects estáticos após mudança de crianças
+function popularTodosSelects(){
+  popularSelectCriancas('hf-cri', false, true);   // histórico: Todos + crianças
+  popularSelectCriancas('me-quem', true, false);   // editar med: Ambos + crianças
+  popularSelectCriancas('ag-quem', true, false);   // agenda: Ambos + crianças (Ambos ao final)
+  popularSelectCriancas('ev-fil-quem', true, true);// eventos: Todos + crianças + Ambos
+  renderCalLegenda();
+  renderPerfilFotos();
+}
+
 function abrirCriancasConfig(){
   fecharMenus();
   const CRIANCAS=getCriancas();const div=document.getElementById('criancas-config-lista');if(!div){abrirMo('mo-criancas-config');return;}
   div.innerHTML=CRIANCAS.map(nome=>{
     const cfg=getCriancaConfig(nome);
-    return `<div class="crianca-config-card" onclick="abrirEditCrianca('${nome}')">
+    return `<div class="crianca-config-card" data-key="${nome}" onclick="abrirEditCrianca('${nome}')">
       <div class="ccc-av" style="background:${cfg.cor}">${cfg.emoji}</div>
       <div class="ccc-body"><div class="ccc-nome">${cfg.nome}</div><div class="ccc-info">${cfg.cor}</div></div>
-      <span style="color:var(--muted)">✏️</span></div>`;
+      <div style="display:flex;gap:4px;align-items:center"><span style="color:var(--muted)">✏️</span><button onclick="event.stopPropagation();removerCrianca('${nome}')" style="background:none;border:none;cursor:pointer;color:#EF4444;font-size:.9rem;padding:2px 4px" title="Remover">🗑️</button></div></div>`;
   }).join('');
   abrirMo('mo-criancas-config');
 }
-let _ceKey=null,_ceCor='#3B82F6';
+let _ceKey=null,_ceCor='#3B82F6',_ceIsNew=false;
+function abrirNovaCrianca(){
+  _ceIsNew=true;_ceKey=null;_ceCor='#6366F1';
+  const t=document.getElementById('ce-titulo');if(t)t.textContent='➕ Nova criança';
+  const em=document.getElementById('ce-emoji');if(em)em.value='👤';
+  const nm=document.getElementById('ce-nome');if(nm){nm.value='';nm.placeholder='Nome da criança';}
+  document.querySelectorAll('.cor-opt').forEach(el=>{el.style.border=el.dataset.cor===_ceCor?'3px solid var(--text)':'3px solid transparent';});
+  fecharMo('mo-criancas-config');abrirMo('mo-crianca-edit');
+}
 function abrirEditCrianca(key){
-  _ceKey=key;const cfg=getCriancaConfig(key);
+  _ceIsNew=false;_ceKey=key;const cfg=getCriancaConfig(key);
   _ceCor=cfg.cor;
   const t=document.getElementById('ce-titulo');if(t)t.textContent='✏️ Editar — '+cfg.nome;
   const em=document.getElementById('ce-emoji');if(em)em.value=cfg.emoji;
@@ -2915,16 +3009,50 @@ function selCorCrianca(el){
   el.style.border='3px solid var(--text)';
 }
 function salvarCriancaEdit(){
-  if(!_ceKey)return;
-  const cfg=JSON.parse(localStorage.getItem('rm_criancas_cfg')||'{}');
-  cfg[_ceKey]={nome:document.getElementById('ce-nome')?.value.trim()||_ceKey,emoji:document.getElementById('ce-emoji')?.value||'👤',cor:_ceCor};
-  setCriancasCfg(cfg);fecharMo('mo-crianca-edit');
-  aplicarNomesCriancas();atualizarTudo();
-  mostrarNotifInApp('✅ Salvo!','Configurações da criança atualizadas.','ok');
+  const nomeValor=document.getElementById('ce-nome')?.value.trim();
+  const emojiValor=document.getElementById('ce-emoji')?.value.trim()||'👤';
+  if(!nomeValor){mostrarNotifInApp('❌ Nome obrigatório','Informe o nome da criança.','err');return;}
+  // Fonte única de verdade: rm_criancas (lida e escrita por getCriancasConfig/setCriancasConfig)
+  const criancasCfg=getCriancasConfig();
+  if(_ceIsNew){
+    // Nova criança
+    const chave=nomeValor.replace(/\s+/g,'_');
+    if(criancasCfg[chave]){mostrarNotifInApp('❌ Já existe','Uma criança com esse nome já existe.','err');return;}
+    criancasCfg[chave]={nome:nomeValor,emoji:emojiValor,cor:_ceCor};
+    setCriancasConfig(criancasCfg);
+    // Criar entradas de medicamentos padrão para a nova criança
+    const medsCfg=getMedsCfg();
+    const key0=getCriancas().find(k=>k!==chave)||'';
+    getMedsNomes().forEach(mn=>{
+      const base=key0?Object.assign({},medsCfg[key0+'_'+mn.nome]||{}):{};
+      medsCfg[chave+'_'+mn.nome]=Object.assign({},base,{crianca:chave,remedio:mn.nome,suspenso:false,suspHist:[],motivoSuspensao:''});
+    });
+    setMedsCfg(medsCfg);
+    mostrarNotifInApp('✅ Criança adicionada!',nomeValor+' foi incluída no sistema.','ok');
+  } else {
+    // Editar criança existente — preserva todos os campos, só atualiza nome/emoji/cor
+    if(!_ceKey)return;
+    criancasCfg[_ceKey]=Object.assign({},criancasCfg[_ceKey],{nome:nomeValor,emoji:emojiValor,cor:_ceCor});
+    setCriancasConfig(criancasCfg);
+    mostrarNotifInApp('✅ Salvo!','Configurações de '+nomeValor+' atualizadas.','ok');
+  }
+  fecharMo('mo-crianca-edit');
+  renderCriancasCards();
+  renderAdesaoGrid();
+  popularTodosSelects();
+  aplicarNomesCriancas();
+  atualizarTudo();
+  // Reabrir lista para feedback visual imediato
+  abrirCriancasConfig();
+}
+function getCriancaConfig(nome){
+  const cfg=getCriancasConfig();
+  return cfg[nome]||{nome,emoji:'👤',cor:'#6366F1'};
 }
 function aplicarNomesCriancas(){
   const CRIANCAS=getCriancas();
-  CRIANCAS.forEach(key=>{
+  const COR_VARS=['a','b','c','d','e','f'];
+  CRIANCAS.forEach((key,idx)=>{
     const cfg=getCriancaConfig(key);
     // Avatar da criança — só atualizar se não houver foto salva
     const avPh=document.getElementById('av-'+key);
@@ -2938,20 +3066,38 @@ function aplicarNomesCriancas(){
         avPh.style.background=cfg.cor;
       }
     }
+    // Nome no card (elemento span dinâmico)
+    const ccNome=document.getElementById('cc-nome-'+key);
+    if(ccNome)ccNome.textContent=cfg.nome;
     // Nome no card de login
     const ucr=document.getElementById('uc-r-'+key);if(ucr)ucr.textContent=cfg.nome;
-    // Nome no cartão de doses
-    const cc=document.querySelector('.crianca-card.'+( CRIANCAS.indexOf(key)===0?'a':'b')+' .cc-nome');
-    if(cc){const last=cc.childNodes[cc.childNodes.length-1];if(last)last.textContent=' '+cfg.nome;}
-    // Cor CSS
-    document.documentElement.style.setProperty('--'+(CRIANCAS.indexOf(key)===0?'a':'b'),cfg.cor);
+    // Cor CSS — as duas primeiras crianças usam --a e --b (padrão do tema)
+    if(idx<COR_VARS.length){
+      document.documentElement.style.setProperty('--'+COR_VARS[idx],cfg.cor);
+    }
   });
 }
 
 // ═══════════════ PERFIL SAÚDE ═══════════════
-let _saudeTab='Arthur';
+let _saudeTab=null;
+function _getNomeCrianca(key){return getCriancaConfig(key)?.nome||key;}
+function _getEmojicrianca(key){return getCriancaConfig(key)?.emoji||'👤';}
+function _quemLabel(quem){
+  if(!quem||quem==='Ambos')return '👫 Todos';
+  return _getEmojicrianca(quem)+' '+_getNomeCrianca(quem);
+}
 function abrirSaude(nome){
-  fecharMenus();_saudeTab=nome||'Arthur';
+  fecharMenus();
+  const CRIANCAS=getCriancas();
+  _saudeTab=nome||CRIANCAS[0];
+  // Gerar abas dinamicamente
+  const tabsWrap=document.getElementById('saude-tabs');
+  if(tabsWrap){
+    tabsWrap.innerHTML=CRIANCAS.map(c=>{
+      const cfg=getCriancaConfig(c);
+      return '<button class="ctab'+(c===_saudeTab?' on':'')+'" id="saude-tab-'+c+'" onclick="setSaudeTab(\''+c+'\')">'+cfg.emoji+' '+cfg.nome+'</button>';
+    }).join('');
+  }
   setSaudeTab(_saudeTab);abrirMo('mo-saude');
 }
 function setSaudeTab(nome){
@@ -3216,11 +3362,14 @@ function atualizarStatEvento(){
 
 // ═══════════════ ATUALIZARTUDO + ENTRAR ═══════════════
 function atualizarTudo(){
-  renderCards();verificarPendencias();atualizarStreak();atualizarAdesao();
+  // Garantir que os componentes dinâmicos existam antes de popular
+  if(!document.getElementById('av-'+getCriancas()[0]))renderCriancasCards();
+  if(!document.getElementById('ad-'+getCriancas()[0]))renderAdesaoGrid();
+  renderCards();verificarPendencias();atualizarWidget();atualizarStreak();atualizarAdesao();
   atualizarGrafico();gerarCal();calcPatterns();renderProximos();atualizarStatEvento();
   atualizarPizza();atualizarDashboardExtra();verificarPeriodoAlertas();
   atualizarTendencia();atualizarRecordes();atualizarSemanaResumo();
-  atualizarBadgePWA();
+  atualizarBadgePWA();atualizarStatHoje();
 }
 window.atualizarTudo=atualizarTudo;
 function entrar(){
@@ -3228,7 +3377,9 @@ function entrar(){
   document.getElementById('tela-login').style.display='none';
   document.getElementById('tela-app').style.display='block';
   document.querySelector('.agenda-fab')?.style&&(document.querySelector('.agenda-fab').style.display='flex');
-  initDark();aplicarAvatares();atualizarHeaderUser();aplicarNomesCriancas();
+  initDark();aplicarAvatares();atualizarHeaderUser();
+  renderCriancasCards();renderAdesaoGrid();popularTodosSelects();
+  aplicarNomesCriancas();
   document.getElementById('data-hoje').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   if(window.fbStartListeners)window.fbStartListeners();
   if(window.fbLoadEventos)window.fbLoadEventos();
@@ -3819,7 +3970,7 @@ function renderTodosEventos(){
     return '<div class="ev-card'+(passado?' ev-vencido':'')+'"><div class="ev-card-top"><div class="ev-card-left">'
       +'<div class="ev-titulo"><span class="ev-tipo-pill '+TIPO_CLS[e.tipo]+'">'+TIPO_LABELS[e.tipo]+'</span> <strong>'+e.titulo+'</strong>'+badge+'</div>'
       +'<div class="ev-detalhe"><span>📅 '+d+'/'+m+'/'+y+(e.hora?' às '+e.hora:'')+'</span>'+(e.local?'<span>📍 '+e.local+'</span>':'')
-      +'<span>'+(e.quem==='Ambos'?'👫 Ambos':e.quem==='Arthur'?'🧒 Arthur':'👧 Alice')+'</span>'+(e.obs?'<span>📋 '+e.obs+'</span>':'')+'</div></div>'
+      +'<span>'+_quemLabel(e.quem)+'</span>'+(e.obs?'<span>📋 '+e.obs+'</span>':'')+'</div></div>'
       +'<div class="ev-actions"><button class="ev-btn" onclick="abrirEditEvento(\''+e.id+'\');fecharMo(\'mo-todos-eventos\')">✏️</button></div>'
       +'</div></div>';
   }).join('');
@@ -3869,15 +4020,31 @@ function abrirRelatorio(){
   fecharMenus();
   const meds=getMedsNomes();
   const lista=document.getElementById('rel-med-lista');
-  if(lista){lista.innerHTML=meds.map((m,i)=>'<div class="rel-med-card'+(i===0?' sel':'')+'" onclick="selRelMed(this,\''+m.nome+'\')" ><span class="rmc-icon">'+m.icon+'</span><div><div class="rmc-nome">'+m.nome+'</div><div class="rmc-per">'+getPeriodosMed(getMedCfg(getCriancas()[0]||'Arthur',m.nome)||{}).map(p=>PERIODO_ICON[p]||'💊').join('')+'</div></div></div>').join('');_relMed=meds[0]?.nome||null;}
+  if(lista){lista.innerHTML=meds.map((m,i)=>'<div class="rel-med-card'+(i===0?' sel':'')+'" onclick="selRelMed(this,\''+m.nome+'\')" ><span class="rmc-icon">'+m.icon+'</span><div><div class="rmc-nome">'+m.nome+'</div><div class="rmc-per">'+getPeriodosMed(getMedCfg(getCriancas()[0]||'',m.nome)||{}).map(p=>PERIODO_ICON[p]||'💊').join('')+'</div></div></div>').join('');_relMed=meds[0]?.nome||null;}
   _relPeriodo=30;_relCrianca='Ambos';
   ['30','60','90'].forEach(p=>document.getElementById('rel-p-'+p)?.classList.toggle('on',p==='30'));
-  ['Ambos','Arthur','Alice'].forEach(c=>document.getElementById('rel-c-'+c)?.classList.toggle('on',c==='Ambos'));
+  // Gerar botões de crianças dinamicamente
+  const wrap=document.getElementById('rel-criancas-wrap');
+  if(wrap){
+    const CRIANCAS=getCriancas();
+    const btnAmbos='<button class="ctab on" id="rel-c-Ambos" onclick="setRelCrianca(\'Ambos\')">👫 Ambos</button>';
+    const btnsCriancas=CRIANCAS.map(c=>{
+      const cfg=getCriancaConfig(c);
+      return '<button class="ctab" id="rel-c-'+c+'" onclick="setRelCrianca(\''+c+'\')">'+cfg.emoji+' '+cfg.nome+'</button>';
+    }).join('');
+    wrap.innerHTML=btnAmbos+btnsCriancas;
+  }
   atualizarRelPreview();abrirMo('mo-relatorio');
 }
 function selRelMed(el,nome){document.querySelectorAll('.rel-med-card').forEach(c=>c.classList.remove('sel'));el.classList.add('sel');_relMed=nome;atualizarRelPreview();}
 function setRelPeriodo(p){_relPeriodo=p;['30','60','90'].forEach(n=>document.getElementById('rel-p-'+n)?.classList.toggle('on',n===String(p)));atualizarRelPreview();}
-function setRelCrianca(c){_relCrianca=c;['Ambos','Arthur','Alice'].forEach(n=>document.getElementById('rel-c-'+n)?.classList.toggle('on',n===c));atualizarRelPreview();}
+function setRelCrianca(c){
+  _relCrianca=c;
+  // Toggle dinâmico: usar todos os botões rel-c-* presentes no DOM
+  const CRIANCAS=getCriancas();
+  ['Ambos',...CRIANCAS].forEach(n=>{document.getElementById('rel-c-'+n)?.classList.toggle('on',n===c);});
+  atualizarRelPreview();
+}
 function atualizarRelPreview(){
   const prev=document.getElementById('rel-preview');if(!prev)return;
   if(!_relMed){prev.textContent='Selecione um remédio.';return;}
@@ -3894,7 +4061,7 @@ function gerarRelatorioMedico(){
   if(!_relMed){alert('Selecione um remédio.');return;}
   const dados=getHist();const log=getLog()||[];const now=new Date();
   const inicio=new Date(now);inicio.setDate(inicio.getDate()-_relPeriodo);
-  const _relCrsList=_relCrianca==='Ambos'?getCriancas():[_relCrianca];const med=getMedCfg(_relCrsList[0]||'Arthur',_relMed)||{icon:'💊',remedio:_relMed,periodos:['manha'],horaManha:'08:00',horaNoite:''};
+  const _relCrsList=_relCrianca==='Ambos'?getCriancas():[_relCrianca];const med=getMedCfg(_relCrsList[0]||getCriancas()[0]||'',_relMed)||{icon:'💊',remedio:_relMed,periodos:['manha'],horaManha:'08:00',horaNoite:''};
   const filtrado=dados.filter(r=>{const d=parseDate(r.data);return r.remedio===_relMed&&d>=inicio&&d<=now&&(_relCrianca==='Ambos'||r.nome===_relCrianca);}).sort((a,b)=>parseDate(a.data)-parseDate(b.data));
   const naotomou=log.filter(l=>{const d=l.data?parseDate(l.data):null;return d&&d>=inicio&&d<=now&&l.acao&&l.acao.includes('Não tomou')&&l.acao.includes(_relMed);});
   const criancas=_relCrianca==='Ambos'?getCriancas().length:1;const totalEsp=(med.periodos.length)*_relPeriodo*criancas;const pct=totalEsp>0?Math.round(filtrado.length/totalEsp*100):0;
@@ -3904,7 +4071,7 @@ function gerarRelatorioMedico(){
   const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório — '+(med.nome||_relMed)+'</title>'
     +'<style>body{font-family:Arial,sans-serif;padding:32px;color:#111;max-width:700px;margin:auto;font-size:13px}h1{color:#3B82F6;font-size:18px}h2{color:#374151;font-size:14px;margin:18px 0 6px;border-bottom:2px solid #E5E7EB;padding-bottom:4px}.kpi{display:inline-block;text-align:center;padding:10px 16px;border-radius:10px;border:2px solid #E5E7EB;margin:0 8px 8px 0}.kn{font-size:24px;font-weight:900;display:block}ul{line-height:2}@media print{body{padding:16px}}</style></head><body>'
     +'<h1>'+(med.icon||'💊')+' Relatório — '+(med.nome||_relMed)+'</h1>'
-    +'<p style="color:#6B7280;margin-bottom:12px">Período: <strong>'+inicio.toLocaleDateString('pt-BR')+'</strong> a <strong>'+now.toLocaleDateString('pt-BR')+'</strong> ('+_relPeriodo+' dias) · Paciente: <strong>'+(_relCrianca==='Ambos'?'Arthur e Alice':_relCrianca)+'</strong></p>'
+    +'<p style="color:#6B7280;margin-bottom:12px">Período: <strong>'+inicio.toLocaleDateString('pt-BR')+'</strong> a <strong>'+now.toLocaleDateString('pt-BR')+'</strong> ('+_relPeriodo+' dias) · Paciente: <strong>'+(_relCrianca==='Ambos'?_relCrsList.map(c=>getCriancaConfig(c).nome).join(' e '):getCriancaConfig(_relCrianca).nome)+'</strong></p>'
     +'<h2>📊 Resumo</h2><div style="margin-bottom:14px">'
     +'<div class="kpi"><span class="kn" style="color:#6366F1">'+pct+'%</span><span style="font-size:11px;color:#6B7280">adesão</span></div>'
     +'<div class="kpi"><span class="kn" style="color:#10B981">'+filtrado.length+'</span><span style="font-size:11px;color:#6B7280">doses tomadas</span></div>'
@@ -3922,7 +4089,7 @@ function gerarRelatorioMedico(){
 // ═══════════════ SAÚDE — SALVAR DADOS ═══════════════
 function salvarSaudeAtual(){
   // Lê os campos visíveis e salva
-  const nome=_saudeTab||'Arthur';
+  const nome=_saudeTab||getCriancas()[0];
   const nasc=document.getElementById('saude-nasc')?.value||'';
   const sexo=document.getElementById('saude-sexo')?.value||'';
   const medico=document.getElementById('saude-medico')?.value||'';
@@ -3950,15 +4117,21 @@ function renderMedsAdmin(){
     let metaHtml=CRIANCAS.map(c=>{
       const mc=getMedCfg(c,nome);if(!mc)return '';
       const cfg=getCriancaConfig(c);
-      return getPeriodosMed(mc).map(p=>PERIODO_ICON[p]+' '+cfg.emoji+' '+getMedHorario(mc,p)).join(' ');
+      const susSuffix=mc.suspenso?' <span style="color:var(--red);font-size:.6rem;font-weight:700">⛔</span>':'';
+      return getPeriodosMed(mc).map(p=>PERIODO_ICON[p]+' '+cfg.emoji+susSuffix+' '+getMedHorario(mc,p)).join(' ');
     }).filter(Boolean).join(' · ');
     const suspensoAlgum=CRIANCAS.some(c=>{const mc=getMedCfg(c,nome);return mc&&mc.suspenso;});
-    return '<div class="med-admin-item'+(suspensoAlgum?' suspenso':'')+'"><div class="mai-left">'
-      +'<span class="mai-icon">'+icon+'</span><div><div class="mai-nome">'+nome+(suspensoAlgum?'<span class="sus-badge">⛔</span>':'')+'</div>'
+    const suspensoTodos=CRIANCAS.every(c=>{const mc=getMedCfg(c,nome);return mc&&mc.suspenso;});
+    const susLabel=suspensoTodos?'⛔':suspensoAlgum?'⛔~':'';
+    // Botão único que abre modal: ícone reflete estado geral
+    const btnIcon=suspensoAlgum?'✅':'⛔';
+    const btnTitle=suspensoAlgum?'Reativar / Suspender':'Suspender';
+    return '<div class="med-admin-item'+(suspensoTodos?' suspenso':suspensoAlgum?' suspenso-parcial':'')+'"><div class="mai-left">'
+      +'<span class="mai-icon">'+icon+'</span><div><div class="mai-nome">'+nome+(suspensoAlgum?'<span class="sus-badge">'+(suspensoTodos?'⛔':'⛔ parcial')+'</span>':'')+'</div>'
       +'<div class="mai-meta">'+metaHtml+'</div></div></div>'
       +'<div class="mai-actions">'
       +'<button class="mai-btn" onclick="abrirEditMed(\''+nome+'\')" title="Editar">✏️</button>'
-      +'<button class="mai-btn '+(suspensoAlgum?'':'del')+'" onclick="abrirSuspender(\''+nome+'\')" title="'+(suspensoAlgum?'Reativar':'Suspender')+'">'+(suspensoAlgum?'✅':'⛔')+'</button>'
+      +'<button class="mai-btn '+(suspensoAlgum?'':'del')+'" onclick="abrirSuspender(\''+nome+'\')" title="'+btnTitle+'">'+btnIcon+'</button>'
       +'</div></div>';
   }).join('');
 }
@@ -3992,7 +4165,7 @@ function atualizarCamposHorario(){
     if(rFr) rFr.style.display='block';
     if(avisoInd) avisoInd.style.display='none';
     // Carregar doses Ambos (primeira criança como referência)
-    const c0=getCriancas()[0]||'Arthur';
+    const c0=getCriancas()[0];
     const m0=getMedCfg(c0,nomeRemedio);
     if(m0) renderDosesEditor(migrarParaDoses(m0).doses||[]);
     // Restaurar datas geral
@@ -4199,34 +4372,96 @@ function adicionarMed(){
   renderMedsAdmin();atualizarTudo();
 }
 let _susMedIdx=null;
+
+// ── Retorna emoji da criança para o dropdown ──
+function _emojiCrianca(c){
+  const cfg=getCriancaConfig(c);
+  return (cfg&&cfg.emoji)||'👤';
+}
+
+// ── Atualiza título, botão e campo motivo com base na criança selecionada ──
+// Chamada ao abrir o modal E a cada mudança no dropdown (onchange).
+// Opera exclusivamente sobre a criança selecionada — sem estado global.
+function _atualizarModalSuspensao(){
+  const nomeRemedio=_susMedIdx;if(!nomeRemedio)return;
+  const apSel=document.getElementById('sus-aplicar');
+  const criancaSel=apSel?apSel.value:'';
+  if(!criancaSel)return;
+  // Estado isolado desta criança — cópia defensiva, sem referência compartilhada
+  const mcRaw=getMedCfg(criancaSel,nomeRemedio);
+  const isSuspenso=!!(mcRaw&&mcRaw.suspenso);
+  // Título
+  const t=document.getElementById('sus-titulo');
+  if(t)t.textContent=isSuspenso?'✅ Reativar '+nomeRemedio:'⛔ Suspender '+nomeRemedio;
+  // Botão
+  const btnSus=document.querySelector('#mo-suspender .mbtn.warn');
+  if(btnSus)btnSus.textContent=isSuspenso?'✅ Reativar':'⛔ Suspender';
+  // Campo motivo: visível ao suspender, oculto ao reativar
+  const motEl=document.getElementById('sus-motivo');
+  if(motEl){
+    if(isSuspenso){
+      motEl.style.display='none';
+      motEl.value='';
+    } else {
+      motEl.style.display='block';
+      motEl.value=(mcRaw&&mcRaw.motivoSuspensao)||'';
+    }
+  }
+}
+
+// ── Abre o modal de suspensão/reativação para um remédio ──
 function abrirSuspender(nomeRemedio){
-  _susMedIdx=nomeRemedio; // agora armazena o nome
-  const CRIANCAS=getCriancas();
-  const m0=getMedCfg(CRIANCAS[0],nomeRemedio)||{suspenso:false,motivoSuspensao:''};
-  const t=document.getElementById('sus-titulo');if(t)t.textContent=m0.suspenso?'✅ Reativar '+nomeRemedio:'⛔ Suspender '+nomeRemedio;
-  const motEl=document.getElementById('sus-motivo');if(motEl){motEl.value=m0.motivoSuspensao||'';motEl.style.display=m0.suspenso?'none':'block';}
+  _susMedIdx=nomeRemedio;
+  const CRIANCAS=getCriancas(); // dinâmico — não depende de nomes fixos
+  // Gerar opções do dropdown dinamicamente (sem "Ambos", sem nomes hardcoded)
+  const apSel=document.getElementById('sus-aplicar');
+  if(apSel){
+    apSel.innerHTML=CRIANCAS.map(c=>{
+      const emoji=_emojiCrianca(c);
+      return '<option value="'+c+'">'+emoji+' '+c+'</option>';
+    }).join('');
+    // Pré-selecionar: se há suspensão parcial, selecionar quem está suspenso;
+    // se todos ativos ou todos suspensos, selecionar o primeiro da lista
+    const suspensos=CRIANCAS.filter(c=>{const mc=getMedCfg(c,nomeRemedio);return mc&&mc.suspenso;});
+    const defaultSel=(suspensos.length>0&&suspensos.length<CRIANCAS.length)
+      ?suspensos[0]  // parcial → pré-selecionar suspenso
+      :CRIANCAS[0];  // todos ativos ou todos suspensos → primeiro
+    apSel.value=defaultSel;
+  }
+  const apWrap=document.getElementById('sus-aplicar-wrap');
+  if(apWrap)apWrap.style.display='block';
+  // Atualizar UI com base na seleção inicial
+  _atualizarModalSuspensao();
   abrirMo('mo-suspender');
 }
+
+// ── Confirma a ação de suspender ou reativar ──
+// Atua exclusivamente na criança selecionada no dropdown.
+// A decisão (suspender/reativar) é baseada no estado REAL dessa criança — sem lógica global.
 function confirmarSuspensao(){
   if(_susMedIdx===null)return;
   const nomeRemedio=_susMedIdx;
+  const apSel=document.getElementById('sus-aplicar');
+  const criancaSel=apSel?apSel.value:'';
+  if(!criancaSel)return;
   const motivo=document.getElementById('sus-motivo')?.value.trim()||'';
-  const CRIANCAS=getCriancas();
-  // Aplicar suspensão/reativação para CADA criança independentemente
-  CRIANCAS.forEach(function(c){
-    const mc=getMedCfg(c,nomeRemedio);if(!mc)return;
-    const eraSuspenso=mc.suspenso;
-    if(!eraSuspenso){
-      const hist=mc.suspHist||[];
-      hist.push({de:hojeISO(),ate:null,motivo});
-      setMedCfg(c,nomeRemedio,Object.assign({},mc,{suspenso:true,motivoSuspensao:motivo,suspHist:hist}));
-    } else {
-      const hist=mc.suspHist||[];
-      if(hist.length&&!hist[hist.length-1].ate) hist[hist.length-1].ate=hojeISO();
-      setMedCfg(c,nomeRemedio,Object.assign({},mc,{suspenso:false,motivoSuspensao:'',suspHist:hist}));
-    }
-  });
-  fecharMo('mo-suspender');renderMedsAdmin();atualizarTudo();
+  // Cópia defensiva: evita referência compartilhada entre crianças
+  const mcRaw=getMedCfg(criancaSel,nomeRemedio);
+  if(!mcRaw)return;
+  const mc=Object.assign({},mcRaw,{suspHist:(mcRaw.suspHist||[]).map(h=>Object.assign({},h))});
+  if(mc.suspenso){
+    // Reativar: fechar período no histórico e limpar suspensão
+    if(mc.suspHist.length&&!mc.suspHist[mc.suspHist.length-1].ate)
+      mc.suspHist[mc.suspHist.length-1].ate=hojeISO();
+    setMedCfg(criancaSel,nomeRemedio,Object.assign({},mc,{suspenso:false,motivoSuspensao:'',suspHist:mc.suspHist}));
+  } else {
+    // Suspender: registrar no histórico
+    mc.suspHist.push({de:hojeISO(),ate:null,motivo,crianca:criancaSel});
+    setMedCfg(criancaSel,nomeRemedio,Object.assign({},mc,{suspenso:true,motivoSuspensao:motivo,suspHist:mc.suspHist}));
+  }
+  fecharMo('mo-suspender');
+  renderMedsAdmin();
+  atualizarTudo();
 }
 
 // ═══════════════ AGENDA MÉDICA ═══════════════
@@ -4246,7 +4481,7 @@ function abrirNovoEvento(){
   const bdel=document.getElementById('ag-btn-del');if(bdel)bdel.style.display='none';
   const tipo=document.getElementById('ag-tipo');if(tipo)tipo.value='consulta';
   ['ag-local','ag-obs'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  const aq=document.getElementById('ag-quem');if(aq)aq.value='Arthur';
+  const aq=document.getElementById('ag-quem');if(aq)aq.value=getCriancas()[0]||'Ambos';
   const ad=document.getElementById('ag-data');if(ad)ad.value=hojeISO();
   const ah=document.getElementById('ag-hora');if(ah)ah.value='';
   const ae=document.getElementById('ag-err');if(ae)ae.style.display='none';
@@ -4263,7 +4498,7 @@ function abrirEditEvento(id){
   if(ev.tipo==='exame'){const te=document.getElementById('ag-tipo-exame');if(te)te.value=ev.tipoExame||'Sangue';}
   if(ev.tipo==='vacina'){const vn=document.getElementById('ag-vacina-nome');if(vn)vn.value=ev.vacinaNome||'';}
   const al=document.getElementById('ag-local');if(al)al.value=ev.local||'';
-  const aq=document.getElementById('ag-quem');if(aq)aq.value=ev.quem||'Arthur';
+  const aq=document.getElementById('ag-quem');if(aq)aq.value=ev.quem||getCriancas()[0]||'Ambos';
   const ad=document.getElementById('ag-data');if(ad)ad.value=ev.dataISO||'';
   const ah=document.getElementById('ag-hora');if(ah)ah.value=ev.hora||'';
   const ao=document.getElementById('ag-obs');if(ao)ao.value=ev.obs||'';
@@ -4279,7 +4514,7 @@ function salvarEvento(){
     id:document.getElementById('ag-edit-id')?.value||'ev_'+Date.now(),
     tipo,
     local:document.getElementById('ag-local')?.value.trim()||'',
-    quem:document.getElementById('ag-quem')?.value||'Arthur',
+    quem:document.getElementById('ag-quem')?.value||getCriancas()[0]||'',
     dataISO:dataVal,
     hora:document.getElementById('ag-hora')?.value||'',
     obs:document.getElementById('ag-obs')?.value.trim()||''
@@ -4315,7 +4550,7 @@ function renderProximos(){
       +'<div class="ev-titulo"><span class="ev-tipo-pill '+TIPO_CLS[e.tipo]+'">'+TIPO_LABELS[e.tipo]+'</span> <strong>'+e.titulo+'</strong>'+badge+'</div>'
       +'<div class="ev-detalhe"><span>📅 '+d+'/'+m+'/'+y+(e.hora?' às '+e.hora:'')+'</span>'
       +(e.local?'<span>📍 '+e.local+'</span>':'')
-      +'<span>'+(e.quem==='Ambos'?'👫 Ambos':e.quem==='Arthur'?'🧒 Arthur':'👧 Alice')+'</span>'
+      +'<span>'+_quemLabel(e.quem)+'</span>'
       +(e.obs?'<span>📋 '+e.obs+'</span>':'')+'</div></div>'
       +'<div class="ev-actions"><button class="ev-btn" onclick="abrirEditEvento(\''+e.id+'\')">✏️</button></div>'
       +'</div></div>';
@@ -4386,14 +4621,17 @@ window.salvarEvento=salvarEvento; window.deletarEvento=deletarEvento;
 window.abrirEditMed=abrirEditMed; window.salvarMedEdit=salvarMedEdit;
 window.deletarMed=deletarMed; window.adicionarMed=adicionarMed; window.atualizarCampoHoraNm=atualizarCampoHoraNm;
 window.adicionarDoseLinha=adicionarDoseLinha; window.adicionarDoseNmLinha=adicionarDoseNmLinha;
-window.abrirSuspender=abrirSuspender; window.confirmarSuspensao=confirmarSuspensao;
-//window.atualizarCamposHorario=atualizarCamposHorario; window.sincronizarQuem=sincronizarQuem; window.addDoseRow=addDoseRow;
+window.abrirSuspender=abrirSuspender; window.confirmarSuspensao=confirmarSuspensao; window._atualizarModalSuspensao=_atualizarModalSuspensao;
+window.atualizarCamposHorario=atualizarCamposHorario; window.sincronizarQuem=sincronizarQuem; window.addDoseRow=addDoseRow;
 window.paStep=paStep; window.paCheckStrength=paCheckStrength; window.paConfirmarSenha=paConfirmarSenha;
 window.checkStrength=checkStrength; window.salvarSenha=salvarSenha;
 window.abrirSaude=abrirSaude; window.setSaudeTab=setSaudeTab; window.salvarSaudeAtual=salvarSaudeAtual;
 window.abrirMedicao=abrirMedicao; window.salvarMedicao=salvarMedicao; window.deletarMedicao=deletarMedicao;
 window.abrirCriancasConfig=abrirCriancasConfig; window.abrirEditCrianca=abrirEditCrianca;
+window.abrirNovaCrianca=abrirNovaCrianca;
 window.selCorCrianca=selCorCrianca; window.salvarCriancaEdit=salvarCriancaEdit;
+window.renderCriancasCards=renderCriancasCards; window.renderAdesaoGrid=renderAdesaoGrid;
+window.popularTodosSelects=popularTodosSelects; window._quemLabel=_quemLabel;
 window.setChartMode=setChartMode; window.calcPatterns=calcPatterns;
 window.abrirRelatorio=abrirRelatorio; window.selRelMed=selRelMed;
 window.setRelPeriodo=setRelPeriodo; window.setRelCrianca=setRelCrianca;
