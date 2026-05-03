@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Remédios">
 <meta name="theme-color" content="#6366F1">
-<meta name="description" content="Controle de remédios das crianças HML— Arthur e Alice">
+<meta name="description" content="Controle de remédios das crianças — Arthur e Alice HML">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Remédios das Crianças HML💊</title>
@@ -1701,7 +1701,7 @@ var activeUser=null, selUserKey=null;
 // FIREBASE — inicialização síncrona (sem ES module)
 // ═══════════════════════════════════════════════════════════
 const _FB_CONFIG = {
-  apiKey: "AIzaSyCjiG99t9e58VxxvTjLDsqTjwq54FzcIzI",
+apiKey: "AIzaSyCjiG99t9e58VxxvTjLDsqTjwq54FzcIzI",
 authDomain: "remedios-criancas-hml.firebaseapp.com",
 projectId: "remedios-criancas-hml",
 storageBucket: "remedios-criancas-hml.firebasestorage.app",
@@ -1959,7 +1959,12 @@ function getCriancasConfig(){
   // Default inicial — apenas ponto de partida, pode ser editado em Configurar Crianças
   return{Arthur:{nome:'Arthur',emoji:'🧒',cor:'#3B82F6'},Alice:{nome:'Alice',emoji:'👧',cor:'#EC4899'}};
 }
-function setCriancasConfig(c){localStorage.setItem('rm_criancas',JSON.stringify(c));fbSaveCriancas(c);}
+function setCriancasConfig(c){
+  localStorage.setItem('rm_criancas',JSON.stringify(c));
+  // Migrar também para rm_criancas_cfg para compatibilidade
+  localStorage.setItem('rm_criancas_cfg',JSON.stringify(c));
+  fbSaveCriancas(c);
+}
 function getCriancas(){return Object.keys(getCriancasConfig());}
 function fbSaveCriancas(c){if(!window._db&&!_db)return;_db.collection('config').doc('criancas').set({data:c,_t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(e){console.warn('[FB] fbSaveCriancas:',e);});}
 function fbLoadCriancas(){_db.collection('config').doc('criancas').get().then(function(snap){if(snap.exists&&snap.data().data){localStorage.setItem('rm_criancas',JSON.stringify(snap.data().data));if(typeof aplicarNomesCriancas==='function')aplicarNomesCriancas();}}).catch(function(e){console.warn('[FB] fbLoadCriancas:',e);});}
@@ -2982,94 +2987,51 @@ function selCorCrianca(el){
 }
 function salvarCriancaEdit(){
   const nomeValor=document.getElementById('ce-nome')?.value.trim();
-  const emojiValor=document.getElementById('ce-emoji')?.value||'👤';
+  const emojiValor=document.getElementById('ce-emoji')?.value.trim()||'👤';
   if(!nomeValor){mostrarNotifInApp('❌ Nome obrigatório','Informe o nome da criança.','err');return;}
+  // Fonte única de verdade: rm_criancas (lida e escrita por getCriancasConfig/setCriancasConfig)
   const criancasCfg=getCriancasConfig();
   if(_ceIsNew){
-    // Nova criança: chave = nome (sanitizado), sem duplicatas
+    // Nova criança
     const chave=nomeValor.replace(/\s+/g,'_');
     if(criancasCfg[chave]){mostrarNotifInApp('❌ Já existe','Uma criança com esse nome já existe.','err');return;}
-    // Adicionar à config principal
     criancasCfg[chave]={nome:nomeValor,emoji:emojiValor,cor:_ceCor};
     setCriancasConfig(criancasCfg);
-    // Criar config visual
-    const cfgVis=JSON.parse(localStorage.getItem('rm_criancas_cfg')||'{}');
-    cfgVis[chave]={nome:nomeValor,emoji:emojiValor,cor:_ceCor};
-    setCriancasCfg(cfgVis);
     // Criar entradas de medicamentos padrão para a nova criança
     const medsCfg=getMedsCfg();
+    const key0=getCriancas().find(k=>k!==chave)||'';
     getMedsNomes().forEach(mn=>{
-      const key0=getCriancas()[0]; // copiar estrutura da primeira criança como base
-      const base=medsCfg[key0+'_'+mn.nome]||{};
-      const entry=Object.assign({},base,{crianca:chave,remedio:mn.nome,suspenso:false,suspHist:[],motivoSuspensao:'',periodo:{geral:{inicio:null,fim:null},criancas:{}}});
-      medsCfg[chave+'_'+mn.nome]=entry;
+      const base=key0?Object.assign({},medsCfg[key0+'_'+mn.nome]||{}):{};
+      medsCfg[chave+'_'+mn.nome]=Object.assign({},base,{crianca:chave,remedio:mn.nome,suspenso:false,suspHist:[],motivoSuspensao:''});
     });
     setMedsCfg(medsCfg);
     mostrarNotifInApp('✅ Criança adicionada!',nomeValor+' foi incluída no sistema.','ok');
   } else {
+    // Editar criança existente — preserva todos os campos, só atualiza nome/emoji/cor
     if(!_ceKey)return;
-    const cfg=JSON.parse(localStorage.getItem('rm_criancas_cfg')||'{}');
-    cfg[_ceKey]={nome:nomeValor,emoji:emojiValor,cor:_ceCor};
-    setCriancasCfg(cfg);
-    // Atualizar também em getCriancasConfig
-    if(criancasCfg[_ceKey])criancasCfg[_ceKey]=Object.assign({},criancasCfg[_ceKey],{nome:nomeValor,emoji:emojiValor,cor:_ceCor});
+    criancasCfg[_ceKey]=Object.assign({},criancasCfg[_ceKey],{nome:nomeValor,emoji:emojiValor,cor:_ceCor});
     setCriancasConfig(criancasCfg);
     mostrarNotifInApp('✅ Salvo!','Configurações de '+nomeValor+' atualizadas.','ok');
   }
   fecharMo('mo-crianca-edit');
-  // Re-render completo de todos os componentes dinâmicos
   renderCriancasCards();
   renderAdesaoGrid();
   popularTodosSelects();
   aplicarNomesCriancas();
   atualizarTudo();
+  // Reabrir lista para feedback visual imediato
+  abrirCriancasConfig();
 }
 function getCriancaConfig(nome){
-  const cfg=JSON.parse(localStorage.getItem('rm_criancas_cfg')||'{}');
-  // Fallback: tenta pegar do rm_criancas (fonte principal de crianças)
-  const criancasCfg=JSON.parse(localStorage.getItem('rm_criancas')||'{}');
-  const fromMain=criancasCfg[nome];
-  if(cfg[nome])return cfg[nome];
-  if(fromMain)return{nome:fromMain.nome||nome,emoji:fromMain.emoji||'👤',cor:fromMain.cor||'#6366F1'};
+  // Fonte única: rm_criancas (onde getCriancasConfig salva tudo)
+  const main=getCriancasConfig();
+  if(main[nome])return main[nome];
+  // Fallback se a chave não existir (não deve acontecer em uso normal)
   return{nome,emoji:'👤',cor:'#6366F1'};
 }
 function setCriancasCfg(cfg){
   localStorage.setItem('rm_criancas_cfg',JSON.stringify(cfg));
   if(typeof _db!=='undefined')_db.collection('config').doc('criancas').set({cfg,_t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(e){console.warn('[FB] setCriancasCfg:',e);});
-}
-function abrirCriancasConfig(){
-  fecharMenus();
-  const CRIANCAS=getCriancas();const div=document.getElementById('criancas-config-lista');if(!div){abrirMo('mo-criancas-config');return;}
-  div.innerHTML=CRIANCAS.map(nome=>{
-    const cfg=getCriancaConfig(nome);
-    return `<div class="crianca-config-card" onclick="abrirEditCrianca('${nome}')">
-      <div class="ccc-av" style="background:${cfg.cor}">${cfg.emoji}</div>
-      <div class="ccc-body"><div class="ccc-nome">${cfg.nome}</div><div class="ccc-info">${cfg.cor}</div></div>
-      <span style="color:var(--muted)">✏️</span></div>`;
-  }).join('');
-  abrirMo('mo-criancas-config');
-}
-function abrirEditCrianca(key){
-  _ceKey=key;const cfg=getCriancaConfig(key);
-  _ceCor=cfg.cor;
-  const t=document.getElementById('ce-titulo');if(t)t.textContent='✏️ Editar — '+cfg.nome;
-  const em=document.getElementById('ce-emoji');if(em)em.value=cfg.emoji;
-  const nm=document.getElementById('ce-nome');if(nm)nm.value=cfg.nome;
-  document.querySelectorAll('.cor-opt').forEach(el=>{el.style.border=el.dataset.cor===_ceCor?'3px solid var(--text)':'3px solid transparent';});
-  fecharMo('mo-criancas-config');abrirMo('mo-crianca-edit');
-}
-function selCorCrianca(el){
-  _ceCor=el.dataset.cor;
-  document.querySelectorAll('.cor-opt').forEach(o=>o.style.border='3px solid transparent');
-  el.style.border='3px solid var(--text)';
-}
-function salvarCriancaEdit(){
-  if(!_ceKey)return;
-  const cfg=JSON.parse(localStorage.getItem('rm_criancas_cfg')||'{}');
-  cfg[_ceKey]={nome:document.getElementById('ce-nome')?.value.trim()||_ceKey,emoji:document.getElementById('ce-emoji')?.value||'👤',cor:_ceCor};
-  setCriancasCfg(cfg);fecharMo('mo-crianca-edit');
-  aplicarNomesCriancas();atualizarTudo();
-  mostrarNotifInApp('✅ Salvo!','Configurações da criança atualizadas.','ok');
 }
 function aplicarNomesCriancas(){
   const CRIANCAS=getCriancas();
