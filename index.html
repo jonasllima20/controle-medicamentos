@@ -2440,11 +2440,12 @@ function renderCards(){
         else if(!done&&horaAlvo&&nowMin()>horaToMin(horaAlvo)+30)timeStatus='<span class="late">⚠️ passou das '+horaAlvo+'</span>';
         else if(!done&&horaAlvo)timeStatus='<span style="color:var(--muted)">⏰ '+horaAlvo+'</span>';
       }
-      const badge=getPeriodosMed(med).length>1?'<span class="med-badge b'+cls+'">'+(PERIODO_LABEL[per]||per)+'</span>':'';
+      const criancaCor=getCriancaConfig(nome).cor||'#6366F1';const criancaCorL=criancaCor+'22';
+      const badge=getPeriodosMed(med).length>1?'<span class="med-badge" style="background:'+criancaCor+'22;color:'+criancaCor+'">'+(PERIODO_LABEL[per]||per)+'</span>':'';
       const susBadge=suspenso?'<span class="sus-badge">⛔ suspenso</span>':'';
-      const item=document.createElement('div');item.className='med-item'+(done&&!suspenso?' d'+cls:'')+(suspenso?' suspenso':'');
+      const item=document.createElement('div');item.className='med-item'+(suspenso?' suspenso':'');if(done&&!suspenso){item.style.background=criancaCorL;item.style.borderColor=criancaCor+'55';}
       item.innerHTML='<div class="med-main"><div class="med-left"><span class="med-icon">'+med.icon+'</span><div><div class="med-nome">'+med.remedio+badge+susBadge+'</div><div class="med-meta">'+(suspenso?'suspenso':done?'✓ '+reg.hora+' — '+(USERS[reg.usuario]?.nome||''):'pendente')+' '+timeStatus+'</div></div></div>'
-        +(!suspenso?'<button class="med-btn'+(done?' d'+cls:'')+'" onclick="clicarMed(\''+nome+'\',\''+med.remedio+'\',\''+per+'\',this)">'+(done?'✓':'')+'</button>':'<div style="width:30px"></div>')
+        +(!suspenso?'<button class="med-btn" style="'+(done?'background:'+criancaCor+';border-color:'+criancaCor+';color:white':'')+'" onclick="clicarMed(\''+nome+'\',\''+med.remedio+'\',\''+per+'\',this)">'+(done?'✓':'')+'</button>':'<div style="width:30px"></div>')
         +'</div>'+(done&&reg.nota?'<div class="med-nota">'+reg.nota+'</div>':'')+(suspenso&&med.motivoSuspensao?'<div class="med-nota">⛔ '+med.motivoSuspensao+'</div>':'');
       cont.appendChild(item);
     });
@@ -2904,8 +2905,7 @@ function renderCriancasCards(){
     const cfg=getCriancaConfig(key);
     const cls=CORES_CLS[idx%CORES_CLS.length];
     const corStyle=idx>1?'border-color:'+cfg.cor:'';
-    const progStyle=idx>1?'background:'+cfg.cor:'';
-    return `<div class="crianca-card ${cls}" style="${corStyle}">
+        return `<div class="crianca-card ${cls}" style="${corStyle}">
       <div class="cc-header">
         <div class="cc-nome">
           <div class="av" onclick="abrirAvatar('${key}')"><div class="avph" id="av-${key}" style="${idx>1?'background:'+cfg.cor:''}">${cfg.nome.charAt(0)}</div><div class="av-hov">✏️</div></div>
@@ -2920,7 +2920,7 @@ function renderCriancasCards(){
       <div class="meds-list" id="ml-${key}"></div>
       <div class="prog-wrap">
         <div class="prog-top"><div class="prog-lbl">Progresso hoje</div><div class="prog-pct" id="pp-${key}">0%</div></div>
-        <div class="prog-bg"><div class="prog-fill" id="pf-${key}" style="width:0%;${progStyle}"></div></div>
+        <div class="prog-bg"><div class="prog-fill" id="pf-${key}" style="width:0%;background:${cfg.cor}"></div></div>
       </div>
     </div>`;
   }).join('');
@@ -2945,7 +2945,7 @@ function renderAdesaoGrid(){
       <div class="ad-nome">${cfg.nome}</div>
       <div class="ad-pct" id="ad-${nome}">—</div>
       <div class="ad-sub" id="ads-${nome}"></div>
-      <div class="ad-bar"><div class="ad-fill" id="adf-${nome}" style="width:0%${idx>1?';background:'+cfg.cor:''}"></div></div>
+      <div class="ad-bar"><div class="ad-fill" id="adf-${nome}" style="width:0%;background:${cfg.cor}"></div></div>
     </div>`;
   }).join('');
 }
@@ -2970,11 +2970,11 @@ function popularSelectCriancas(selectId, prependAmbos=false, incluirTodos=false)
 // Popula a legenda do calendário
 function renderCalLegenda(){
   const CRIANCAS=getCriancas();
-  const CORES=['var(--a)','var(--b)','#10B981','#F59E0B','#8B5CF6','#EF4444'];
+  
   const leg=document.getElementById('cal-legenda');if(!leg)return;
   leg.innerHTML=CRIANCAS.map((c,i)=>{
     const cfg=getCriancaConfig(c);
-    const cor=i<2?CORES[i]:getCriancaConfig(c).cor;
+    const cor=getCriancaConfig(c).cor||'#6366F1';
     return '<div class="leg-item"><div class="leg-cor" style="background:'+cor+';opacity:.5"></div>'+cfg.nome+' ✓</div>';
   }).join('')+'<div class="leg-item">📝 Obs</div>';
 }
@@ -3245,7 +3245,7 @@ function atualizarGrafico(){
   const ctx=document.getElementById('grafico')?.getContext('2d');if(!ctx)return;
   if(chartInst)chartInst.destroy();
   const CRIANCAS=getCriancas();
-  const cores=['rgba(59,130,246,.8)','rgba(236,72,153,.8)','rgba(16,185,129,.8)'];
+  const cores=getCriancas().map(n=>{const c=getCriancaConfig(n).cor||'#6366F1';const r=parseInt(c.slice(1,3),16),g=parseInt(c.slice(3,5),16),b=parseInt(c.slice(5,7),16);return 'rgba('+r+','+g+','+b+',.8)';});
   if(chartMode==='14'){
     const maps=CRIANCAS.map(()=>({}));
     dados.forEach(r=>{const i=CRIANCAS.indexOf(r.nome);if(i>=0)maps[i][r.data]=(maps[i][r.data]||0)+1;});
@@ -3964,7 +3964,7 @@ function renderHistorico(){
     const pills=ag[d].map(r=>{
       const icon=getIconRemedio(r.remedio);
       const per=({'manha':'☀️','tarde':'🌤️','noite':'🌙'}[r.periodo]||'💊');const u=USERS[r.usuario];const nota=r.nota?' 💬':'';
-      return '<span class="hpill h'+(r.nome===getCriancas()[0]?'a':'b')+'" title="'+(r.nota||'')+'">'+icon+' '+r.remedio+' '+per+' '+(u?.emoji||'')+nota+'</span>';
+      const _hcfg=getCriancaConfig(r.nome);const _hcor=_hcfg.cor||'#6366F1';return '<span class="hpill" style="background:'+_hcor+'22;color:'+_hcor+'" title="'+(r.nota||'')+'">'+icon+' '+r.remedio+' '+per+' '+(u?.emoji||'')+nota+'</span>';
     }).join('');
     return '<div class="hdia"><div class="hdata">📅 '+d+'</div><div class="hitems">'+pills+'</div></div>';
   }).join('');
