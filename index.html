@@ -1726,6 +1726,7 @@ const _fbApp = typeof firebase !== 'undefined' ? firebase.initializeApp(_FB_CONF
 const _db    = _fbApp ? firebase.firestore() : null;
 window._fbDb = _db;
 window.APP_TOKEN = "rem-fam-2026-HML-xK9mQzP4";
+window.HML_DEBUG=true; // Logs de integridade ativos no HML
 // ── Prefixo de localStorage isolado para HML ─────────────
 // Garante zero compartilhamento de dados com o ambiente PRD
 window.LS_PREFIX = "hml_";
@@ -2002,19 +2003,112 @@ function setCriancasConfig(c){
   fbSaveCriancas(c);
 }
 function getCriancas(){return Object.keys(getCriancasConfig());}
+// ── Cascade Delete: remove criança e TODOS os dados vinculados ──────────────
 function removerCrianca(nome){
-  if(!confirm('Remover '+nome+' do sistema? Esta ação não pode ser desfeita.'))return;
+  if(!confirm('Remover '+nome+' do sistema? Esta ação não pode ser desfeita.\n\nTodo o histórico, logs e eventos relacionados serão removidos.'))return;
+
+  // 1. Remover da config de crianças
   const cfg=getCriancasConfig();
   delete cfg[nome];
   setCriancasConfig(cfg);
+
+  // 2. Remover medicamentos vinculados
   const medsCfg=getMedsCfg();
   Object.keys(medsCfg).filter(k=>k.startsWith(nome+'_')).forEach(k=>delete medsCfg[k]);
   setMedsCfg(medsCfg);
+
+  // 3. Remover histórico de doses (memória + Firebase)
+  const histAntes=window._fbHist||[];
+  const histDepois=histAntes.filter(r=>r.nome!==nome);
+  window._fbHist=histDepois;
+  if(_db){
+    histAntes.filter(r=>r.nome===nome).forEach(r=>{
+      try{
+        const p=(r.data||'').split('/');
+        const iso=p.length===3?p[2]+'-'+String(p[1]).padStart(2,'0')+'-'+String(p[0]).padStart(2,'0'):(r.dataISO||'');
+        const id=iso+'_'+r.nome+'_'+r.remedio+'_'+r.periodo;
+        _db.collection('historico').doc(id).delete().catch(()=>{});
+      }catch(e){}
+    });
+  }
+
+  // 4. Remover logs (memória)
+  window._fbLog=(window._fbLog||[]).filter(r=>!r.acao||!r.acao.includes(nome));
+
+  // 5. Remover eventos médicos
+  const evs=getEventos().filter(e=>e.quem!==nome&&e.quem!==nome);
+  setEventos(evs);
+  if(window.fbSaveEventos)window.fbSaveEventos(evs);
+
+  // 6. Remover saúde vinculada
+  try{
+    const saude=getSaude();
+    delete saude[nome];
+    setSaude(saude);
+  }catch(e){}
+
+  // 7. Remover avatar
   try{localStorage.removeItem('rm_av_'+nome);}catch(e){}
+
+  // 8. Limpar dados órfãos residuais
+  limparDadosOrfaos();
+
+  mostrarNotifInApp('✅ Removido',''+nome+' e todos os dados vinculados foram removidos.','ok');
   renderCriancasCards();renderAdesaoGrid();popularTodosSelects();
   aplicarNomesCriancas();atualizarTudo();abrirCriancasConfig();
 }
 window.removerCrianca=removerCrianca;
+
+// ══════════════════════════════════════════════════════════════
+// INTEGRIDADE DE DADOS — limpa referências órfãs ao iniciar
+// ══════════════════════════════════════════════════════════════
+function limparDadosOrfaos(){
+  try{
+    const criancasValidas=new Set(getCriancas());
+    if(!criancasValidas.size)return;
+
+    // 1. Histórico de doses — remover entradas de crianças inexistentes
+    const histAntes=window._fbHist||[];
+    const histDepois=histAntes.filter(r=>r&&r.nome&&criancasValidas.has(r.nome));
+    if(histDepois.length!==histAntes.length){
+      window._fbHist=histDepois;
+      console.info('[integridade] Histórico: removidas '+(histAntes.length-histDepois.length)+' entradas órfãs');
+    }
+
+    // 2. Log de atividades — remover menções a crianças inexistentes
+    const nomesCriancas=[...criancasValidas];
+    window._fbLog=(window._fbLog||[]).filter(r=>{
+      if(!r||!r.acao)return false;
+      // Manter entradas que não mencionem nomes inválidos
+      const nomesInvalidos=histAntes.map(h=>h.nome).filter(n=>!criancasValidas.has(n));
+      return !nomesInvalidos.some(n=>r.acao.includes(n));
+    });
+
+    // 3. Eventos médicos — remover eventos de crianças inexistentes
+    const evsAntes=getEventos()||[];
+    const evsDepois=evsAntes.filter(e=>
+      !e.quem||e.quem==='Ambos'||criancasValidas.has(e.quem)
+    );
+    if(evsDepois.length!==evsAntes.length){
+      setEventos(evsDepois);
+      if(window.fbSaveEventos)window.fbSaveEventos(evsDepois);
+      console.info('[integridade] Eventos: removidos '+(evsAntes.length-evsDepois.length)+' órfãos');
+    }
+
+    // 4. Medicamentos — remover entradas de crianças inexistentes
+    const medsCfg=getMedsCfg();
+    let medsDirty=false;
+    Object.keys(medsCfg).forEach(k=>{
+      const criancaKey=k.split('_')[0];
+      if(!criancasValidas.has(criancaKey)){delete medsCfg[k];medsDirty=true;}
+    });
+    if(medsDirty){
+      setMedsCfg(medsCfg);
+      console.info('[integridade] Medicamentos: entradas órfãs removidas');
+    }
+  }catch(e){console.warn('[integridade] Erro em limparDadosOrfaos:',e);}
+}
+window.limparDadosOrfaos=limparDadosOrfaos;
 function fbSaveCriancas(c){if(!window._db&&!_db)return;_db.collection('config').doc('criancas').set({data:c,_t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(e){console.warn('[FB] fbSaveCriancas:',e);});}
 function fbLoadCriancas(){_db.collection('config').doc('criancas').get().then(function(snap){if(snap.exists&&snap.data().data){localStorage.setItem('rm_criancas',JSON.stringify(snap.data().data));if(typeof aplicarNomesCriancas==='function')aplicarNomesCriancas();}}).catch(function(e){console.warn('[FB] fbLoadCriancas:',e);});}
 function getSaude(){return JSON.parse(localStorage.getItem('rm_saude')||'{}');}
@@ -3239,7 +3333,8 @@ function setChartMode(m){
   atualizarGrafico();
 }
 function atualizarGrafico(){
-  const dados=getHist();
+  const _grafCriancas=new Set(getCriancas());
+  const dados=(getHist()||[]).filter(r=>!r.nome||_grafCriancas.has(r.nome));
   const dark=document.documentElement.getAttribute('data-theme')==='dark';
   const gc=dark?'#334155':'#F3F4F6',tc=dark?'#94A3B8':'#6B7280';
   const ctx=document.getElementById('grafico')?.getContext('2d');if(!ctx)return;
@@ -3408,6 +3503,8 @@ function entrar(){
   aplicarNomesCriancas();
   document.getElementById('data-hoje').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   if(window.fbStartListeners)window.fbStartListeners();
+  // Limpeza de dados órfãos ao iniciar sessão
+  setTimeout(function(){if(typeof limparDadosOrfaos==='function')limparDadosOrfaos();},2000);
   if(window.fbLoadEventos)window.fbLoadEventos();
   if(window.fbLoadCriancas)window.fbLoadCriancas();
   if(window.fbLoadSaude)window.fbLoadSaude();
@@ -3923,6 +4020,7 @@ function abrirLog(){
   renderLog();abrirMo('mo-log');
 }
 function renderLog(){
+  const _logCriancasOk=new Set(getCriancas());
   const log=getLog();const fil=document.getElementById('log-fil-data')?.value||'';
   const sorted=[...(fil?log.filter(l=>l.data===fil):log)].sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,120);
   const div=document.getElementById('log-lista');if(!div)return;
@@ -3945,6 +4043,7 @@ function abrirHistorico(){
   renderHistorico();abrirMo('mo-hist');
 }
 function renderHistorico(){
+  const _criancasValidas=new Set(getCriancas());
   const dados=getHist();
   const mes=parseInt(document.getElementById('hf-mes')?.value??new Date().getMonth());
   const ano=parseInt(document.getElementById('hf-ano')?.value??new Date().getFullYear());
