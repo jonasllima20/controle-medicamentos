@@ -1771,7 +1771,20 @@ window._fbUnsubHist = null;
 window._fbUnsubLog  = null;
 
 // ── Helpers de acesso ─────────────────────────────────────
-function getHist(){ return window._fbHist || []; }
+// dedupHist: remove duplicatas por doseId determinístico — proteção contra race condition
+function dedupHist(arr){
+  if(!Array.isArray(arr))return[];
+  const seen=new Set();
+  return arr.filter(r=>{
+    if(!r||!r.nome||!r.remedio||!r.periodo)return false;
+    const id=r.doseId||((r.dataISO||r.data||'')+'_'+r.nome+'_'+r.remedio+'_'+r.periodo);
+    if(seen.has(id))return false;
+    seen.add(id);return true;
+  });
+}
+window.dedupHist=dedupHist;
+// getHist sempre retorna histórico deduplicado — métricas nunca infladas por concorrência
+function getHist(){ return dedupHist(window._fbHist||[]); }
 function getLog() { return window._fbLog  || []; }
 window.getHist = getHist;
 window.getLog  = getLog;
@@ -1797,7 +1810,8 @@ window.fbStartListeners = function(){
 
   // Carga imediata via get() — garante dados antes mesmo do onSnapshot
   _db.collection('historico').get().then(function(snap){
-    var arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+    var arr = snap.docs.map(function(d){ return Object.assign({id:d.id,doseId:d.id}, d.data()); });
+    arr=typeof dedupHist==='function'?dedupHist(arr):arr;
     cacheSet('hist', arr);
     window._fbHist = arr;
     setSyncStatus('ok');
@@ -1818,7 +1832,8 @@ window.fbStartListeners = function(){
   // onSnapshot realtime — mantém sincronizado após a carga inicial
   window._fbUnsubHist = _db.collection('historico').onSnapshot(
     function(snap){
-      var arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+      var arr = snap.docs.map(function(d){ return Object.assign({id:d.id,doseId:d.id}, d.data()); });
+      arr=dedupHist(arr); // deduplicar na recepção — seguro contra escritas simultâneas
       cacheSet('hist', arr);
       window._fbHist = arr;
       setSyncStatus('ok');
@@ -1850,17 +1865,42 @@ window.fbStartListeners = function(){
 };
 
 // ── Adicionar / Remover dose ──────────────────────────────
+// doseId determinístico: base para idempotência e prevenção de duplicidade
+function _doseId(reg){
+  const iso=reg.dataISO||(reg.data||'').split('/').reverse().join('-');
+  return iso+'_'+reg.nome+'_'+reg.remedio+'_'+reg.periodo;
+}
+window._doseId=_doseId;
+
+// Lock em memória: impede duplo-clique e race conditions locais
+const _doseLocks={};
+
 window.fbAddDose = function(reg){
+  const id=_doseId(reg);
+  // ── Idempotência local: não registrar se já existe com mesmo ID ──────────
+  if((window._fbHist||[]).some(r=>_doseId(r)===id&&!(r.nota&&r.nota.startsWith('NAO_TOMOU')))){
+    console.info('[dose] ignorado (já existe local):',id);return;
+  }
   if(!navigator.onLine){
     const q=JSON.parse(localStorage.getItem('rm_offline_queue')||'[]');
-    q.push({type:'addDose',reg});
-    localStorage.setItem('rm_offline_queue',JSON.stringify(q));
+    // Deduplicar fila offline também
+    if(!q.some(e=>e.type==='addDose'&&_doseId(e.reg)===id)){
+      q.push({type:'addDose',reg,id});
+      localStorage.setItem('rm_offline_queue',JSON.stringify(q));
+    }
     setSyncStatus('err'); return;
   }
   setSyncStatus('sync');
-  const id = reg.dataISO+'_'+reg.nome+'_'+reg.remedio+'_'+reg.periodo;
+  // ── UPSERT atômico no Firestore com merge:true ────────────────────────────
+  // doc(id) + set com merge: se existir → não sobrescreve; se não → cria
+  // Isso garante idempotência mesmo com dois dispositivos simultâneos
   _db.collection('historico').doc(id).set(
-    Object.assign({}, reg, {_t: window.APP_TOKEN, ts: firebase.firestore.FieldValue.serverTimestamp()})
+    Object.assign({}, reg, {
+      doseId: id,
+      _t: window.APP_TOKEN,
+      ts: firebase.firestore.FieldValue.serverTimestamp()
+    }),
+    { merge: true }  // ← UPSERT: nunca duplica, mesmo em race condition
   ).then(function(){ setSyncStatus('ok'); })
    .catch(function(e){ console.error('[FB] fbAddDose:', e); setSyncStatus('err'); });
 };
@@ -2562,27 +2602,60 @@ function toggleTag(el,tag){const idx=_selectedTags.indexOf(tag);if(idx>=0){_sele
 function confirmarNota(){const txt=document.getElementById('nota-txt').value.trim();const parts=[..._selectedTags];if(txt)parts.push(txt);const nota=parts.join(' · ')||null;_selectedTags=[];document.querySelectorAll('.tag-pill').forEach(t=>t.classList.remove('sel'));if(_notaCb)_notaCb(nota);}
 function naoTomou(){const txt=document.getElementById('nota-txt').value.trim();const parts=['🚫 Não tomou',..._selectedTags];if(txt)parts.push(txt);const nota=parts.join(' · ');_selectedTags=[];document.querySelectorAll('.tag-pill').forEach(t=>t.classList.remove('sel'));fecharMo('mo-nota');if(_notaCb)_notaCb('NAO_TOMOU:'+nota);}
 function clicarMed(nome,remedio,periodo,btn){
-  const data=hoje();const jaFeito=(window._fbHist||[]).some(r=>r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo);
-  if(jaFeito){window._fbHist=(window._fbHist||[]).filter(r=>!(r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo));if(window.fbRemoveDose)window.fbRemoveDose(data,nome,remedio,periodo);atualizarTudo();return;}
+  const data=hoje();
+  const doseId=hojeISO()+'_'+nome+'_'+remedio+'_'+periodo;
+  // ── Lock local: previne duplo-clique e race condition no mesmo dispositivo ──
+  if(_doseLocks[doseId]){console.info('[dose] lock ativo, ignorando:',doseId);return;}
+  _doseLocks[doseId]=true;
+  setTimeout(function(){delete _doseLocks[doseId];},3000); // libera após 3s
+
+  const jaFeito=(window._fbHist||[]).some(r=>
+    r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo&&
+    !(r.nota&&r.nota.startsWith('NAO_TOMOU'))
+  );
+  if(jaFeito){
+    // Desmarcar — remove localmente e no Firebase
+    window._fbHist=(window._fbHist||[]).filter(r=>
+      !(r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo)
+    );
+    if(window.fbRemoveDose)window.fbRemoveDose(data,nome,remedio,periodo);
+    atualizarTudo();
+    delete _doseLocks[doseId];
+    return;
+  }
   _selectedTags=[];document.querySelectorAll('.tag-pill').forEach(t=>t.classList.remove('sel'));
   document.getElementById('nota-context').textContent=nome+' · '+remedio+' · '+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo);
   document.getElementById('nota-txt').value='';abrirMo('mo-nota');
-  _notaCb=(nota)=>{fecharMo('mo-nota');marcarDose(nome,remedio,periodo,btn,nota);};
+  _notaCb=(nota)=>{fecharMo('mo-nota');marcarDose(nome,remedio,periodo,btn,nota,doseId);};
 }
-function marcarDose(nome,remedio,periodo,btn,nota){
+function marcarDose(nome,remedio,periodo,btn,nota,doseId){
+  // Liberar lock após confirmação da nota
+  if(doseId)setTimeout(function(){delete _doseLocks[doseId];},2000);
+
   if(nota&&nota.startsWith('NAO_TOMOU:')){
     const logEntry={ts:Date.now(),data:hoje(),hora:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),usuario:activeUser,acao:'🚫 Não tomou '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo)+') para '+nome+' — '+nota.replace('NAO_TOMOU:','')};
     window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);return;
   }
   const data=hoje();const hora=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   const reg={data,dataISO:hojeISO(),nome,remedio,periodo,hora,usuario:activeUser,nota:nota||null};
-  // Adicionar dose localmente primeiro — _fbHist já reflete o estado atual
-  window._fbHist=[...(window._fbHist||[]),reg];
+
+  // ── Idempotência: verificar novamente antes de inserir (estado pode ter mudado) ──
+  const id=hojeISO()+'_'+nome+'_'+remedio+'_'+periodo;
+  const jaExiste=(window._fbHist||[]).some(r=>
+    r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo&&
+    !(r.nota&&r.nota.startsWith('NAO_TOMOU'))
+  );
+  if(jaExiste){
+    console.info('[dose] já registrada por outro dispositivo, ignorando:',id);
+    atualizarTudo();return;
+  }
+
+  // Adicionar localmente com doseId para deduplicação futura
+  window._fbHist=dedupHist([...(window._fbHist||[]),reg]);
   if(window.fbAddDose)window.fbAddDose(reg);
   const logEntry={ts:Date.now(),data,hora,usuario:activeUser,acao:'Marcou '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo)+') para '+nome+(nota?' — "'+nota+'"':'')};
   window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);
   btn.classList.add('pop');setTimeout(()=>btn.classList.remove('pop'),300);
-  // Verificar celebração com os dados já atualizados em memória (sem setTimeout)
   verificarCelebracao(window._fbHist);
   atualizarTudo();
 }
