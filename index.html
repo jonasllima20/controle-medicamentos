@@ -1221,7 +1221,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
       <div class="field" style="flex:1">
         <label>Aplicar para</label>
         <select id="me-quem" onchange="atualizarCamposHorario()">
-          <option value="Ambos">👫 Ambos</option>
+          <option value="all">👨‍👩‍👧‍👦 Todos</option>
           <!-- populado dinamicamente por popularSelectCriancas() -->
         </select>
       </div>
@@ -1241,7 +1241,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
         🗓️ Controle de período (frasco/cartucho)
       </div>
       <div style="font-size:.75rem;color:var(--muted);margin-bottom:10px">
-        Defina quando o tratamento começa e termina. No modo "Ambos", aplica para as duas crianças.
+        Defina quando o tratamento começa e termina. No modo "Todos", aplica para todas as crianças.
       </div>
       <div class="field-row">
         <div class="field"><label>Data de início</label><input type="date" id="me-periodo-inicio"></div>
@@ -1405,7 +1405,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
         <label>Quem vai</label>
         <select id="ag-quem">
           <!-- populado dinamicamente por popularSelectCriancas() -->
-          <option value="Ambos">👫 Ambos</option>
+          <option value="all">👨‍👩‍👧‍👦 Todos</option>
         </select>
       </div>
     </div>
@@ -1448,7 +1448,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
         <select class="hsel" id="ev-fil-quem" onchange="renderTodosEventos()">
           <option value="">Todos</option>
           <!-- populado dinamicamente por popularSelectCriancas() -->
-          <option value="Ambos">Ambos</option>
+          <option value="all">👨‍👩‍👧‍👦 Todos</option>
         </select>
         <select class="hsel" id="ev-fil-periodo" onchange="renderTodosEventos()">
           <option value="proximos">Próximos</option>
@@ -1648,7 +1648,7 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     <!-- Criança -->
     <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">CRIANÇA</div>
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap" id="rel-criancas-wrap">
-      <button class="ctab on" id="rel-c-Ambos" onclick="setRelCrianca('Ambos')">👫 Ambos</button>
+      <button class="ctab on" id="rel-c-all" onclick="setRelCrianca('all')">👨‍👩‍👧‍👦 Todos</button>
       <!-- botões de crianças gerados dinamicamente por abrirRelatorio() -->
     </div>
 
@@ -1823,6 +1823,10 @@ function dedupHist(arr){
   });
 }
 window.dedupHist=dedupHist;
+// ── Helper: compatibilidade entre valor legado 'all' e novo 'all' ───────
+function _isAll(v){ return !v||v==='all'||v==='all'; }
+window._isAll=_isAll;
+
 // getHist: apenas doses ativas (status!='removida') — usado em métricas e cards
 function getHist(){ return dedupHist((window._fbHist||[]).filter(r=>r.status!=='removida')); }
 // getHistCompleto: inclui doses removidas — usado no histórico completo com badge de status
@@ -2170,7 +2174,7 @@ function limparDadosOrfaos(){
     // 3. Eventos médicos — remover eventos de crianças inexistentes
     const evsAntes=getEventos()||[];
     const evsDepois=evsAntes.filter(e=>
-      !e.quem||e.quem==='Ambos'||criancasValidas.has(e.quem)
+      !e.quem||_isAll(e.quem)||criancasValidas.has(e.quem)
     );
     if(evsDepois.length!==evsAntes.length){
       setEventos(evsDepois);
@@ -3270,15 +3274,15 @@ function renderAdesaoGrid(){
   }).join('');
 }
 
-// Popula selects de crianças dinamicamente (sem "Ambos", apenas crianças reais)
+// Popula selects de crianças dinamicamente (sem "all", apenas crianças reais)
 // selectId: id do elemento select; prependAmbos: adicionar opção Ambos antes
-function popularSelectCriancas(selectId, prependAmbos=false, incluirTodos=false){
+function popularSelectCriancas(selectId, prependTodos=false, incluirTodos=false){
   const el=document.getElementById(selectId);if(!el)return;
   const CRIANCAS=getCriancas();
   const anterior=el.value;
   const extras=[];
   if(incluirTodos)extras.push('<option value="">Todos</option>');
-  if(prependAmbos)extras.push('<option value="Ambos">👫 Ambos</option>');
+  if(prependTodos)extras.push('<option value="all">👨‍👩‍👧‍👦 Todos</option>');
   el.innerHTML=extras.join('')+CRIANCAS.map(c=>{
     const cfg=getCriancaConfig(c);
     return '<option value="'+c+'">'+cfg.emoji+' '+cfg.nome+'</option>';
@@ -3312,9 +3316,9 @@ function renderPerfilFotos(){
 // Chamada única para re-popular todos os selects estáticos após mudança de crianças
 function popularTodosSelects(){
   popularSelectCriancas('hf-cri', false, true);   // histórico: Todos + crianças
-  popularSelectCriancas('me-quem', true, false);   // editar med: Ambos + crianças
-  popularSelectCriancas('ag-quem', true, false);   // agenda: Ambos + crianças (Ambos ao final)
-  popularSelectCriancas('ev-fil-quem', true, true);// eventos: Todos + crianças + Ambos
+  popularSelectCriancas('me-quem', true, false);   // editar med: Todos + crianças
+  popularSelectCriancas('ag-quem', true, false);   // agenda: Todos + crianças
+  popularSelectCriancas('ev-fil-quem', true, true);// eventos: Todos + crianças
   renderCalLegenda();
   renderPerfilFotos();
 }
@@ -3429,7 +3433,7 @@ let _saudeTab=null;
 function _getNomeCrianca(key){return getCriancaConfig(key)?.nome||key;}
 function _getEmojicrianca(key){return getCriancaConfig(key)?.emoji||'👤';}
 function _quemLabel(quem){
-  if(!quem||quem==='Ambos')return '👫 Todos';
+  if(!quem||_isAll(quem))return '👨‍👩‍👧‍👦 Todos';
   return _getEmojicrianca(quem)+' '+_getNomeCrianca(quem);
 }
 function abrirSaude(nome){
@@ -3998,7 +4002,7 @@ function calcularNotificacoesPendentes(){
   evs.forEach(ev=>{
     const[y,m,d]=ev.dataISO.split('-');const evDate=new Date(+y,+m-1,+d,9,0,0);
     const icon={consulta:'🩺',retorno:'🔄',exame:'🔬',vacina:'💉'}[ev.tipo]||'🏥';
-    const quem=ev.quem==='Ambos'?'Arthur e Alice':ev.quem;
+    const quem=ev._isAll(quem)?'Arthur e Alice':ev.quem;
     const loc=ev.local?' em '+ev.local:'';
     const dtxt=d+'/'+m+'/'+y+(ev.hora?' às '+ev.hora:'');
     [[3,9,1],[2,9,2],[2,15,3],[1,9,4],[0,8,5]].forEach(([dias,hora,seq])=>{
@@ -4326,7 +4330,7 @@ function abrirTodosEventos(){
 function renderTodosEventos(){
   const filTipo=document.getElementById('ev-fil-tipo')?.value||'';
   const filQuem=document.getElementById('ev-fil-quem')?.value||'';
-  const evs=getEventos().filter(e=>(!filTipo||e.tipo===filTipo)&&(!filQuem||e.quem===filQuem||e.quem==='Ambos'));
+  const evs=getEventos().filter(e=>(!filTipo||e.tipo===filTipo)&&(!filQuem||e.quem===filQuem||_isAll(e.quem)));
   const div=document.getElementById('todos-eventos-lista');if(!div)return;
   const hoje2=new Date();hoje2.setHours(0,0,0,0);
   if(!evs.length){div.innerHTML='<p style="color:var(--muted);font-size:.8rem;text-align:center;padding:16px">Nenhum evento.</p>';return;}
@@ -4382,24 +4386,24 @@ function expPDF(){
 }
 
 // ═══════════════ RELATÓRIO MÉDICO ═══════════════
-let _relMed=null,_relPeriodo=30,_relCrianca='Ambos';
+let _relMed=null,_relPeriodo=30,_relCrianca='all';
 function abrirRelatorio(){
   fecharMenus();
   const meds=getMedsNomes();
   const lista=document.getElementById('rel-med-lista');
   if(lista){lista.innerHTML=meds.map((m,i)=>'<div class="rel-med-card'+(i===0?' sel':'')+'" onclick="selRelMed(this,\''+m.nome+'\')" ><span class="rmc-icon">'+m.icon+'</span><div><div class="rmc-nome">'+m.nome+'</div><div class="rmc-per">'+getPeriodosMed(getMedCfg(getCriancas()[0]||'',m.nome)||{}).map(p=>PERIODO_ICON[p]||'💊').join('')+'</div></div></div>').join('');_relMed=meds[0]?.nome||null;}
-  _relPeriodo=30;_relCrianca='Ambos';
+  _relPeriodo=30;_relCrianca='all';
   ['30','60','90'].forEach(p=>document.getElementById('rel-p-'+p)?.classList.toggle('on',p==='30'));
   // Gerar botões de crianças dinamicamente
   const wrap=document.getElementById('rel-criancas-wrap');
   if(wrap){
     const CRIANCAS=getCriancas();
-    const btnAmbos='<button class="ctab on" id="rel-c-Ambos" onclick="setRelCrianca(\'Ambos\')">👫 Ambos</button>';
+    const btnTodos='<button class="ctab on" id="rel-c-all" onclick="setRelCrianca(\'all\')">👨‍👩‍👧‍👦 Todos</button>';
     const btnsCriancas=CRIANCAS.map(c=>{
       const cfg=getCriancaConfig(c);
       return '<button class="ctab" id="rel-c-'+c+'" onclick="setRelCrianca(\''+c+'\')">'+cfg.emoji+' '+cfg.nome+'</button>';
     }).join('');
-    wrap.innerHTML=btnAmbos+btnsCriancas;
+    wrap.innerHTML=btnTodos+btnsCriancas;
   }
   atualizarRelPreview();abrirMo('mo-relatorio');
 }
@@ -4409,16 +4413,16 @@ function setRelCrianca(c){
   _relCrianca=c;
   // Toggle dinâmico: usar todos os botões rel-c-* presentes no DOM
   const CRIANCAS=getCriancas();
-  ['Ambos',...CRIANCAS].forEach(n=>{document.getElementById('rel-c-'+n)?.classList.toggle('on',n===c);});
+  ['all',...CRIANCAS].forEach(n=>{document.getElementById('rel-c-'+n)?.classList.toggle('on',n===c);});
   atualizarRelPreview();
 }
 function atualizarRelPreview(){
   const prev=document.getElementById('rel-preview');if(!prev)return;
   if(!_relMed){prev.textContent='Selecione um remédio.';return;}
   const dados=getHist();const now=new Date();const inicio=new Date(now);inicio.setDate(inicio.getDate()-_relPeriodo);
-  const fil=dados.filter(r=>{const d=parseDate(r.data);return r.remedio===_relMed&&d>=inicio&&d<=now&&(_relCrianca==='Ambos'||r.nome===_relCrianca);});
-  const med=getMedsNomes().find(m=>m.nome===_relMed);const criancas=_relCrianca==='Ambos'?getCriancas().length:1;
-  const criancasList=_relCrianca==='Ambos'?getCriancas():[_relCrianca];const totalEsp=criancasList.reduce((s,c)=>{const mc=getMedCfg(c,_relMed||'');return s+(mc&&!mc.suspenso?getPeriodosMed(mc).length*_relPeriodo:0);},0)||_relPeriodo;const pct=totalEsp>0?Math.round(fil.length/totalEsp*100):0;
+  const fil=dados.filter(r=>{const d=parseDate(r.data);return r.remedio===_relMed&&d>=inicio&&d<=now&&(_isAll(_relCrianca)||r.nome===_relCrianca);});
+  const med=getMedsNomes().find(m=>m.nome===_relMed);const criancas=_isAll(_relCrianca)?getCriancas().length:1;
+  const criancasList=_isAll(_relCrianca)?getCriancas():[_relCrianca];const totalEsp=criancasList.reduce((s,c)=>{const mc=getMedCfg(c,_relMed||'');return s+(mc&&!mc.suspenso?getPeriodosMed(mc).length*_relPeriodo:0);},0)||_relPeriodo;const pct=totalEsp>0?Math.round(fil.length/totalEsp*100):0;
   prev.innerHTML='<div style="display:flex;gap:16px;flex-wrap:wrap">'
     +'<div><span style="font-family:\'Nunito\',sans-serif;font-size:1.4rem;font-weight:900;color:var(--ind)">'+pct+'%</span><br><span style="font-size:.7rem;color:var(--muted)">adesão</span></div>'
     +'<div><span style="font-family:\'Nunito\',sans-serif;font-size:1.4rem;font-weight:900;color:var(--green)">'+fil.length+'</span><br><span style="font-size:.7rem;color:var(--muted)">tomadas</span></div>'
@@ -4428,17 +4432,17 @@ function gerarRelatorioMedico(){
   if(!_relMed){alert('Selecione um remédio.');return;}
   const dados=getHist();const log=getLog()||[];const now=new Date();
   const inicio=new Date(now);inicio.setDate(inicio.getDate()-_relPeriodo);
-  const _relCrsList=_relCrianca==='Ambos'?getCriancas():[_relCrianca];const med=getMedCfg(_relCrsList[0]||getCriancas()[0]||'',_relMed)||{icon:'💊',remedio:_relMed,periodos:['manha'],horaManha:'08:00',horaNoite:''};
-  const filtrado=dados.filter(r=>{const d=parseDate(r.data);return r.remedio===_relMed&&d>=inicio&&d<=now&&(_relCrianca==='Ambos'||r.nome===_relCrianca);}).sort((a,b)=>parseDate(a.data)-parseDate(b.data));
+  const _relCrsList=_isAll(_relCrianca)?getCriancas():[_relCrianca];const med=getMedCfg(_relCrsList[0]||getCriancas()[0]||'',_relMed)||{icon:'💊',remedio:_relMed,periodos:['manha'],horaManha:'08:00',horaNoite:''};
+  const filtrado=dados.filter(r=>{const d=parseDate(r.data);return r.remedio===_relMed&&d>=inicio&&d<=now&&(_isAll(_relCrianca)||r.nome===_relCrianca);}).sort((a,b)=>parseDate(a.data)-parseDate(b.data));
   const naotomou=log.filter(l=>{const d=l.data?parseDate(l.data):null;return d&&d>=inicio&&d<=now&&l.acao&&l.acao.includes('Não tomou')&&l.acao.includes(_relMed);});
-  const criancas=_relCrianca==='Ambos'?getCriancas().length:1;const totalEsp=(med.periodos.length)*_relPeriodo*criancas;const pct=totalEsp>0?Math.round(filtrado.length/totalEsp*100):0;
+  const criancas=_isAll(_relCrianca)?getCriancas().length:1;const totalEsp=(med.periodos.length)*_relPeriodo*criancas;const pct=totalEsp>0?Math.round(filtrado.length/totalEsp*100):0;
   const ag={};filtrado.forEach(r=>{if(!ag[r.data])ag[r.data]=[];ag[r.data].push(r);});naotomou.forEach(l=>{if(!ag[l.data])ag[l.data]=[];ag[l.data].push({...l,_naotomou:true});});
   const datas=Object.keys(ag).sort((a,b)=>parseDate(a)-parseDate(b));
   const histHtml=datas.map(d=>{const items=ag[d].map(r=>{if(r._naotomou)return'<li style="color:#EF4444">🚫 '+r.acao+'</li>';const per=({'manha':'☀️','tarde':'🌤️','noite':'🌙'}[r.periodo]||'💊');const who=(USERS[r.usuario]||{}).nome||'?';return'<li>'+r.nome+' — '+per+' às '+r.hora+' — '+who+(r.nota?' ('+r.nota+')':'')+'</li>';}).join('');return'<div style="margin-bottom:10px"><strong>📅 '+d+'</strong><ul style="margin-top:4px;padding-left:16px;line-height:1.9">'+items+'</ul></div>';}).join('');
   const html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório — '+(med.nome||_relMed)+'</title>'
     +'<style>body{font-family:Arial,sans-serif;padding:32px;color:#111;max-width:700px;margin:auto;font-size:13px}h1{color:#3B82F6;font-size:18px}h2{color:#374151;font-size:14px;margin:18px 0 6px;border-bottom:2px solid #E5E7EB;padding-bottom:4px}.kpi{display:inline-block;text-align:center;padding:10px 16px;border-radius:10px;border:2px solid #E5E7EB;margin:0 8px 8px 0}.kn{font-size:24px;font-weight:900;display:block}ul{line-height:2}@media print{body{padding:16px}}</style></head><body>'
     +'<h1>'+(med.icon||'💊')+' Relatório — '+(med.nome||_relMed)+'</h1>'
-    +'<p style="color:#6B7280;margin-bottom:12px">Período: <strong>'+inicio.toLocaleDateString('pt-BR')+'</strong> a <strong>'+now.toLocaleDateString('pt-BR')+'</strong> ('+_relPeriodo+' dias) · Paciente: <strong>'+(_relCrianca==='Ambos'?_relCrsList.map(c=>getCriancaConfig(c).nome).join(' e '):getCriancaConfig(_relCrianca).nome)+'</strong></p>'
+    +'<p style="color:#6B7280;margin-bottom:12px">Período: <strong>'+inicio.toLocaleDateString('pt-BR')+'</strong> a <strong>'+now.toLocaleDateString('pt-BR')+'</strong> ('+_relPeriodo+' dias) · Paciente: <strong>'+(_isAll(_relCrianca)?_relCrsList.map(c=>getCriancaConfig(c).nome).join(' e '):getCriancaConfig(_relCrianca).nome)+'</strong></p>'
     +'<h2>📊 Resumo</h2><div style="margin-bottom:14px">'
     +'<div class="kpi"><span class="kn" style="color:#6366F1">'+pct+'%</span><span style="font-size:11px;color:#6B7280">adesão</span></div>'
     +'<div class="kpi"><span class="kn" style="color:#10B981">'+filtrado.length+'</span><span style="font-size:11px;color:#6B7280">doses tomadas</span></div>'
@@ -4522,12 +4526,12 @@ function normalizarDoses(doses){
   return deduped.length?deduped:[{periodo:'manha',hora:'08:00'}];
 }
 function atualizarCamposHorario(){
-  const quem=document.getElementById('me-quem')?.value||'Ambos';
+  const quem=document.getElementById('me-quem')?.value||'all';
   const nomeRemedio=document.getElementById('me-idx')?.value||'';
   const rIn=document.getElementById('me-row-icone-nome');
   const rFr=document.getElementById('me-secao-frasco');
   const avisoInd=document.getElementById('me-aviso-individual');
-  if(quem==='Ambos'){
+  if(_isAll(quem)){
     if(rIn) rIn.style.display='grid';
     if(rFr) rFr.style.display='block';
     if(avisoInd) avisoInd.style.display='none';
@@ -4571,7 +4575,7 @@ function abrirEditMed(nomeRemedio){
 
   // Resetar "Aplicar para" para Ambos
   const quemEl=document.getElementById('me-quem');
-  if(quemEl) quemEl.value='Ambos';
+  if(quemEl) quemEl.value='all';
 
   // Ocultar aviso individual
   const avisoEl=document.getElementById('me-aviso-individual');
@@ -4606,7 +4610,7 @@ function _renderHorariosIndividuais(m, idx){
 
 function salvarMedEdit(){
   const nomeRemedio=document.getElementById('me-idx').value;
-  const quem=document.getElementById('me-quem')?.value||'Ambos';
+  const quem=document.getElementById('me-quem')?.value||'all';
   const CRIANCAS=getCriancas();
   const icon=document.getElementById('me-icon').value||'💊';
   const novoNome=document.getElementById('me-nome').value||nomeRemedio;
@@ -4626,7 +4630,7 @@ function salvarMedEdit(){
   const horaManhaSave=(dosesParaSalvar.find(d=>d.periodo==='manha')||dosesParaSalvar.find(d=>d.periodo==='tarde'))?.hora||'';
   const horaNoiteSave=dosesParaSalvar.find(d=>d.periodo==='noite')?.hora||'';
 
-  if(quem==='Ambos'){
+  if(_isAll(quem)){
     CRIANCAS.forEach(function(c){
       const atual=getMedCfg(c,nomeRemedio)||{suspenso:false,suspHist:[],motivoSuspensao:''};
       const periodoAtual=atual.periodo||{geral:{inicio:null,fim:null},criancas:{}};
@@ -4780,7 +4784,7 @@ function _atualizarModalSuspensao(){
 function abrirSuspender(nomeRemedio){
   _susMedIdx=nomeRemedio;
   const CRIANCAS=getCriancas(); // dinâmico — não depende de nomes fixos
-  // Gerar opções do dropdown dinamicamente (sem "Ambos", sem nomes hardcoded)
+  // Gerar opções do dropdown dinamicamente (sem "all", sem nomes hardcoded)
   const apSel=document.getElementById('sus-aplicar');
   if(apSel){
     apSel.innerHTML=CRIANCAS.map(c=>{
@@ -4848,7 +4852,7 @@ function abrirNovoEvento(){
   const bdel=document.getElementById('ag-btn-del');if(bdel)bdel.style.display='none';
   const tipo=document.getElementById('ag-tipo');if(tipo)tipo.value='consulta';
   ['ag-local','ag-obs'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  const aq=document.getElementById('ag-quem');if(aq)aq.value=getCriancas()[0]||'Ambos';
+  const aq=document.getElementById('ag-quem');if(aq)aq.value=getCriancas()[0]||'all';
   const ad=document.getElementById('ag-data');if(ad)ad.value=hojeISO();
   const ah=document.getElementById('ag-hora');if(ah)ah.value='';
   const ae=document.getElementById('ag-err');if(ae)ae.style.display='none';
@@ -4865,7 +4869,7 @@ function abrirEditEvento(id){
   if(ev.tipo==='exame'){const te=document.getElementById('ag-tipo-exame');if(te)te.value=ev.tipoExame||'Sangue';}
   if(ev.tipo==='vacina'){const vn=document.getElementById('ag-vacina-nome');if(vn)vn.value=ev.vacinaNome||'';}
   const al=document.getElementById('ag-local');if(al)al.value=ev.local||'';
-  const aq=document.getElementById('ag-quem');if(aq)aq.value=ev.quem||getCriancas()[0]||'Ambos';
+  const aq=document.getElementById('ag-quem');if(aq)aq.value=ev.quem||getCriancas()[0]||'all';
   const ad=document.getElementById('ag-data');if(ad)ad.value=ev.dataISO||'';
   const ah=document.getElementById('ag-hora');if(ah)ah.value=ev.hora||'';
   const ao=document.getElementById('ag-obs');if(ao)ao.value=ev.obs||'';
