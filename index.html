@@ -1288,6 +1288,46 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
   </div>
 </div>
 
+<!-- MODAL — DOSE JÁ REGISTRADA -->
+<div class="mo" id="mo-dose-existente">
+  <div class="mbox">
+    <div class="mt">✅ Dose já registrada</div>
+    <div id="dose-exist-info" style="font-size:.85rem;color:var(--muted);margin-bottom:14px;line-height:1.5"></div>
+    <div class="mbtns" style="flex-wrap:wrap;gap:8px">
+      <button class="mbtn cancel" onclick="fecharMo('mo-dose-existente')">Cancelar</button>
+      <button class="mbtn" onclick="_doseExistVer()" style="background:var(--border);color:var(--text)">👁️ Ver detalhes</button>
+      <button class="mbtn warn" onclick="_doseExistDesfazer()">↩️ Desfazer dose</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL — CONFIRMAR DESFAZER DOSE -->
+<div class="mo" id="mo-desfazer-dose">
+  <div class="mbox">
+    <div class="mt">↩️ Desfazer dose</div>
+    <div id="desfazer-info" style="font-size:.85rem;color:var(--muted);margin-bottom:12px;line-height:1.5"></div>
+    <div class="field">
+      <label>Motivo (opcional)</label>
+      <select id="desfazer-motivo" style="width:100%;border:1.5px solid var(--border);border-radius:11px;padding:10px 12px;font-size:.85rem;background:var(--bg);color:var(--text)">
+        <option value="">Selecione um motivo…</option>
+        <option value="Registro incorreto">Registro incorreto</option>
+        <option value="Dose não administrada">Dose não foi administrada</option>
+        <option value="Criança recusou">Criança recusou</option>
+        <option value="Vomitou após tomar">Vomitou após tomar</option>
+        <option value="Outro">Outro motivo</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Observação (opcional)</label>
+      <textarea id="desfazer-obs" placeholder="Detalhe adicional…" style="min-height:52px"></textarea>
+    </div>
+    <div class="mbtns">
+      <button class="mbtn cancel" onclick="fecharMo('mo-desfazer-dose')">Cancelar</button>
+      <button class="mbtn del" onclick="_confirmarDesfazer()">↩️ Confirmar desfazer</button>
+    </div>
+  </div>
+</div>
+
 <!-- OBS / DETALHE DIA CALENDÁRIO -->
 <div class="mo" id="mo-obs">
   <div class="mbox wide">
@@ -1783,10 +1823,13 @@ function dedupHist(arr){
   });
 }
 window.dedupHist=dedupHist;
-// getHist sempre retorna histórico deduplicado — métricas nunca infladas por concorrência
-function getHist(){ return dedupHist(window._fbHist||[]); }
+// getHist: apenas doses ativas (status!='removida') — usado em métricas e cards
+function getHist(){ return dedupHist((window._fbHist||[]).filter(r=>r.status!=='removida')); }
+// getHistCompleto: inclui doses removidas — usado no histórico completo com badge de status
+function getHistCompleto(){ return dedupHist(window._fbHist||[]); }
 function getLog() { return window._fbLog  || []; }
 window.getHist = getHist;
+window.getHistCompleto = getHistCompleto;
 window.getLog  = getLog;
 
 // ── Indicador de sync ─────────────────────────────────────
@@ -2601,64 +2644,174 @@ let _notaCb=null,_selectedTags=[];
 function toggleTag(el,tag){const idx=_selectedTags.indexOf(tag);if(idx>=0){_selectedTags.splice(idx,1);el.classList.remove('sel');}else{_selectedTags.push(tag);el.classList.add('sel');}}
 function confirmarNota(){const txt=document.getElementById('nota-txt').value.trim();const parts=[..._selectedTags];if(txt)parts.push(txt);const nota=parts.join(' · ')||null;_selectedTags=[];document.querySelectorAll('.tag-pill').forEach(t=>t.classList.remove('sel'));if(_notaCb)_notaCb(nota);}
 function naoTomou(){const txt=document.getElementById('nota-txt').value.trim();const parts=['🚫 Não tomou',..._selectedTags];if(txt)parts.push(txt);const nota=parts.join(' · ');_selectedTags=[];document.querySelectorAll('.tag-pill').forEach(t=>t.classList.remove('sel'));fecharMo('mo-nota');if(_notaCb)_notaCb('NAO_TOMOU:'+nota);}
+// ═══════════════ REGISTRO DE DOSES ═══════════════
+
+// Estado do modal de dose existente / desfazer
+let _doseCtx=null; // contexto atual: {nome, remedio, periodo, btn, doseId, regExistente}
+
 function clicarMed(nome,remedio,periodo,btn){
   const data=hoje();
   const doseId=hojeISO()+'_'+nome+'_'+remedio+'_'+periodo;
+
   // ── Lock local: previne duplo-clique e race condition no mesmo dispositivo ──
   if(_doseLocks[doseId]){console.info('[dose] lock ativo, ignorando:',doseId);return;}
   _doseLocks[doseId]=true;
-  setTimeout(function(){delete _doseLocks[doseId];},3000); // libera após 3s
+  setTimeout(function(){delete _doseLocks[doseId];},3000);
 
-  const jaFeito=(window._fbHist||[]).some(r=>
+  const regExistente=(window._fbHist||[]).find(r=>
     r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo&&
-    !(r.nota&&r.nota.startsWith('NAO_TOMOU'))
+    !(r.nota&&r.nota.startsWith('NAO_TOMOU'))&&r.status!=='removida'
   );
-  if(jaFeito){
-    // Desmarcar — remove localmente e no Firebase
-    window._fbHist=(window._fbHist||[]).filter(r=>
-      !(r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo)
-    );
-    if(window.fbRemoveDose)window.fbRemoveDose(data,nome,remedio,periodo);
-    atualizarTudo();
-    delete _doseLocks[doseId];
+
+  if(regExistente){
+    // Dose já registrada — mostrar modal informativo em vez de desmarcar silenciosamente
+    delete _doseLocks[doseId]; // libera lock pois não vai escrever agora
+    _doseCtx={nome,remedio,periodo,btn,doseId,regExistente};
+    const per={'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo;
+    const quemReg=regExistente.usuario||'—';
+    const hora=regExistente.hora||'—';
+    const nota=regExistente.nota?(' — "'+regExistente.nota+'"'):'';
+    document.getElementById('dose-exist-info').innerHTML=
+      '<strong>'+nome+' · '+remedio+' · '+per+'</strong><br>'+
+      '⏰ Registrada às <strong>'+hora+'</strong> por <strong>'+quemReg+'</strong>'+nota+
+      '<br><small style="color:var(--muted)">Escolha uma ação abaixo:</small>';
+    abrirMo('mo-dose-existente');
     return;
   }
-  _selectedTags=[];document.querySelectorAll('.tag-pill').forEach(t=>t.classList.remove('sel'));
-  document.getElementById('nota-context').textContent=nome+' · '+remedio+' · '+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo);
-  document.getElementById('nota-txt').value='';abrirMo('mo-nota');
+
+  // Dose ainda não registrada — abrir modal de nota normalmente
+  _doseCtx={nome,remedio,periodo,btn,doseId,regExistente:null};
+  _selectedTags=[];
+  document.querySelectorAll('.tag-pill').forEach(t=>t.classList.remove('sel'));
+  document.getElementById('nota-context').textContent=
+    nome+' · '+remedio+' · '+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo);
+  document.getElementById('nota-txt').value='';
+  abrirMo('mo-nota');
   _notaCb=(nota)=>{fecharMo('mo-nota');marcarDose(nome,remedio,periodo,btn,nota,doseId);};
 }
+
+// ── Handlers do modal "dose já existente" ─────────────────────────────────
+function _doseExistVer(){
+  // Fechar modal e rolar para a entrada no histórico
+  fecharMo('mo-dose-existente');
+  abrirHistorico&&abrirHistorico();
+}
+function _doseExistDesfazer(){
+  fecharMo('mo-dose-existente');
+  if(!_doseCtx)return;
+  const {nome,remedio,periodo,regExistente}=_doseCtx;
+  const per={'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo;
+  document.getElementById('desfazer-info').innerHTML=
+    'Você está desfazendo: <strong>'+nome+' · '+remedio+' · '+per+'</strong><br>'+
+    'Registrada às <strong>'+(regExistente?.hora||'—')+'</strong> por <strong>'+(regExistente?.usuario||'—')+'</strong>';
+  document.getElementById('desfazer-motivo').value='';
+  document.getElementById('desfazer-obs').value='';
+  abrirMo('mo-desfazer-dose');
+}
+
+function _confirmarDesfazer(){
+  if(!_doseCtx)return;
+  const {nome,remedio,periodo,btn,doseId}=_doseCtx;
+  const motivo=document.getElementById('desfazer-motivo').value;
+  const obs=document.getElementById('desfazer-obs').value.trim();
+  const motivoFull=[motivo,obs].filter(Boolean).join(' — ')||'Sem motivo informado';
+  fecharMo('mo-desfazer-dose');
+
+  const data=hoje();
+  // Marcar dose como status='removida' em vez de deletar — audit trail
+  window._fbHist=(window._fbHist||[]).map(r=>{
+    if(r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo&&r.status!=='removida'){
+      return Object.assign({},r,{status:'removida',motivoRemocao:motivoFull,removidaPor:activeUser,removidaEm:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})});
+    }
+    return r;
+  });
+
+  // Atualizar no Firestore com status='removida' (não deletar)
+  if(window._db){
+    window._db.collection('historico').doc(doseId).set(
+      {status:'removida',motivoRemocao:motivoFull,removidaPor:activeUser,
+       removidaEm:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),
+       _t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()},
+      {merge:true}
+    ).catch(function(e){console.error('[FB] desfazer dose:',e);});
+  }
+
+  // Log com tipo='desfeita' — não gera nova entrada de "marcou"
+  _registrarLog({
+    tipo:'desfeita',
+    acao:'↩️ Desfez '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo)+') para '+nome+' — '+motivoFull,
+    nome,remedio,periodo,doseId
+  });
+
+  mostrarNotifInApp('↩️ Dose desfeita',remedio+' de '+nome+' foi desfeito.','ok');
+  _doseCtx=null;
+  atualizarTudo();
+}
+
+// ── marcarDose: registrar dose nova ──────────────────────────────────────
 function marcarDose(nome,remedio,periodo,btn,nota,doseId){
-  // Liberar lock após confirmação da nota
+  // Liberar lock após confirmação
   if(doseId)setTimeout(function(){delete _doseLocks[doseId];},2000);
 
   if(nota&&nota.startsWith('NAO_TOMOU:')){
-    const logEntry={ts:Date.now(),data:hoje(),hora:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),usuario:activeUser,acao:'🚫 Não tomou '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo)+') para '+nome+' — '+nota.replace('NAO_TOMOU:','')};
-    window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);return;
+    _registrarLog({
+      tipo:'nao_tomou',
+      acao:'🚫 Não tomou '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo)+') para '+nome+' — '+nota.replace('NAO_TOMOU:',''),
+      nome,remedio,periodo,doseId
+    });
+    return;
   }
-  const data=hoje();const hora=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-  const reg={data,dataISO:hojeISO(),nome,remedio,periodo,hora,usuario:activeUser,nota:nota||null};
 
-  // ── Idempotência: verificar novamente antes de inserir (estado pode ter mudado) ──
-  const id=hojeISO()+'_'+nome+'_'+remedio+'_'+periodo;
+  const data=hoje();const hora=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  const reg={data,dataISO:hojeISO(),nome,remedio,periodo,hora,usuario:activeUser,nota:nota||null,status:'ativa'};
+
+  // ── Idempotência: verificar novamente (outro dispositivo pode ter registrado) ──
   const jaExiste=(window._fbHist||[]).some(r=>
     r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo&&
-    !(r.nota&&r.nota.startsWith('NAO_TOMOU'))
+    !(r.nota&&r.nota.startsWith('NAO_TOMOU'))&&r.status!=='removida'
   );
   if(jaExiste){
-    console.info('[dose] já registrada por outro dispositivo, ignorando:',id);
+    // Tentativa ignorada — log sem criar entrada duplicada
+    _registrarLog({
+      tipo:'tentativa_ignorada',
+      acao:'⚠️ Tentativa ignorada — dose já existia: '+remedio+' para '+nome,
+      nome,remedio,periodo,doseId
+    });
     atualizarTudo();return;
   }
 
-  // Adicionar localmente com doseId para deduplicação futura
   window._fbHist=dedupHist([...(window._fbHist||[]),reg]);
   if(window.fbAddDose)window.fbAddDose(reg);
-  const logEntry={ts:Date.now(),data,hora,usuario:activeUser,acao:'Marcou '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo)+') para '+nome+(nota?' — "'+nota+'"':'')};
-  window._fbLog=[...(window._fbLog||[]),logEntry];if(window.fbAddLog)window.fbAddLog(logEntry);
+
+  // Log com tipo='registro' — apenas um por dose
+  _registrarLog({
+    tipo:'registro',
+    acao:'✅ Marcou '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo)+') para '+nome+(nota?' — "'+nota+'"':''),
+    nome,remedio,periodo,doseId
+  });
+
   btn.classList.add('pop');setTimeout(()=>btn.classList.remove('pop'),300);
   verificarCelebracao(window._fbHist);
   atualizarTudo();
 }
+
+// ── _registrarLog: função centralizada para log — evita duplicatas ────────
+function _registrarLog({tipo,acao,nome,remedio,periodo,doseId}){
+  const data=hoje();const hora=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  // Não registrar log de 'tentativa_ignorada' se já existe log do tipo 'registro' para o mesmo doseId
+  if(tipo==='tentativa_ignorada'&&doseId){
+    const jaLogado=(window._fbLog||[]).some(l=>l.doseId===doseId&&l.tipo==='registro');
+    if(jaLogado){console.info('[log] tentativa ignorada silenciosamente:',doseId);return;}
+  }
+  const entry={ts:Date.now(),data,hora,usuario:activeUser,acao,tipo:tipo||'registro',
+    nome:nome||null,remedio:remedio||null,periodo:periodo||null,doseId:doseId||null};
+  window._fbLog=[...(window._fbLog||[]),entry];
+  if(window.fbAddLog)window.fbAddLog(entry);
+}
+window._registrarLog=_registrarLog;
+window._confirmarDesfazer=_confirmarDesfazer;
+window._doseExistVer=_doseExistVer;
+window._doseExistDesfazer=_doseExistDesfazer;
 
 // ═══════════════ CELEBRAÇÃO ═══════════════
 // Lock em memória para evitar race condition se chamado múltiplas vezes em sequência
@@ -4094,15 +4247,31 @@ function abrirLog(){
 }
 function renderLog(){
   const _logCriancasOk=new Set(getCriancas());
-  const log=getLog();const fil=document.getElementById('log-fil-data')?.value||'';
-  const sorted=[...(fil?log.filter(l=>l.data===fil):log)].sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,120);
+  const log=getLog();const filData=document.getElementById('log-fil-data')?.value||'';
+  let entries=filData?log.filter(l=>l.data===filData):log;
+  // Deduplicar: para mesmo doseId, ocultar tentativas_ignoradas se já há um registro
+  const doseIdTipos={};
+  entries.forEach(l=>{if(l.doseId&&l.tipo){if(!doseIdTipos[l.doseId])doseIdTipos[l.doseId]=[];doseIdTipos[l.doseId].push(l.tipo);}});
+  entries=entries.filter(l=>{
+    if(!l.doseId)return true;
+    if(l.tipo==='tentativa_ignorada'&&doseIdTipos[l.doseId]?.includes('registro'))return false;
+    return true;
+  });
+  const sorted=[...entries].sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,120);
   const div=document.getElementById('log-lista');if(!div)return;
   if(!sorted.length){div.innerHTML='<div class="log-empty">Nenhuma atividade ainda.</div>';return;}
+  const tipoBadges={
+    'desfeita':'<span style="font-size:.6rem;background:#FEF3C7;color:#B45309;border-radius:6px;padding:1px 5px;margin-left:4px">DESFEITA</span>',
+    'tentativa_ignorada':'<span style="font-size:.6rem;background:#F3F4F6;color:#9CA3AF;border-radius:6px;padding:1px 5px;margin-left:4px">IGNORADA</span>',
+    'nao_tomou':'<span style="font-size:.6rem;background:#FEE2E2;color:#DC2626;border-radius:6px;padding:1px 5px;margin-left:4px">NÃO TOMOU</span>',
+    'atualizacao':'<span style="font-size:.6rem;background:#EDE9FE;color:#7C3AED;border-radius:6px;padding:1px 5px;margin-left:4px">ATUALIZADA</span>',
+  };
   div.innerHTML=sorted.map(l=>{
     const u=USERS[l.usuario]||{nome:'?',emoji:'👤',cor:'#888'};
     const avSrc=localStorage.getItem('rm_av_u_'+(l.usuario||''));
+    const badge=tipoBadges[l.tipo||'registro']||'';
     return '<div class="log-item"><div class="log-av" style="background:'+(avSrc?'transparent':u.cor)+'">'+(avSrc?'<img src="'+avSrc+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%">':u.emoji)+'</div>'
-      +'<div><div class="log-who">'+u.nome+'</div><div class="log-what">'+l.acao+'</div><div class="log-when">📅 '+(l.data||'')+(l.hora?' às '+l.hora:'')+'</div></div></div>';
+      +'<div><div class="log-who">'+u.nome+badge+'</div><div class="log-what">'+l.acao+'</div><div class="log-when">📅 '+(l.data||'')+(l.hora?' às '+l.hora:'')+'</div></div></div>';
   }).join('');
 }
 
