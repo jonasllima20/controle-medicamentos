@@ -1828,7 +1828,8 @@ function _isAll(v){ return !v||v==='all'||v==='all'; }
 window._isAll=_isAll;
 
 // getHist: apenas doses ativas (status!='removida') — usado em métricas e cards
-function getHist(){ return dedupHist((window._fbHist||[]).filter(r=>r.status!=='removida')); }
+// status===undefined significa dose ativa (dados antigos não têm o campo)
+function getHist(){ return dedupHist((window._fbHist||[]).filter(r=>!r.status||r.status==='ativa')); }
 // getHistCompleto: inclui doses removidas — usado no histórico completo com badge de status
 function getHistCompleto(){ return dedupHist(window._fbHist||[]); }
 function getLog() { return window._fbLog  || []; }
@@ -1855,26 +1856,38 @@ window.fbStartListeners = function(){
   if(window._fbUnsubHist){ try{ window._fbUnsubHist(); }catch(e){} window._fbUnsubHist=null; }
   if(window._fbUnsubLog) { try{ window._fbUnsubLog();  }catch(e){} window._fbUnsubLog=null;  }
 
-  // Carga imediata via get() — garante dados antes mesmo do onSnapshot
-  _db.collection('historico').get().then(function(snap){
-    var arr = snap.docs.map(function(d){ return Object.assign({id:d.id,doseId:d.id}, d.data()); });
-    arr=typeof dedupHist==='function'?dedupHist(arr):arr;
-    cacheSet('hist', arr);
-    window._fbHist = arr;
+  // ── Carga inicial: get() + log em paralelo, atualizarTudo() APENAS após dados prontos ──
+  var _histLoaded=false, _logLoaded=false;
+  function _onBothLoaded(){
+    if(!_histLoaded||!_logLoaded)return; // aguardar as duas coleções
     setSyncStatus('ok');
-    // Chamar as funções de dashboard diretamente (sem depender de atualizarTudo completo)
-    try{ if(typeof atualizarTendencia==='function') atualizarTendencia(); }catch(e){ console.error('tend:',e); }
-    try{ if(typeof atualizarRecordes==='function') atualizarRecordes(); }catch(e){ console.error('rec:',e); }
-    try{ if(typeof atualizarSemanaResumo==='function') atualizarSemanaResumo(); }catch(e){ console.error('sem:',e); }
-    // Atualizar o resto do app também
-    try{ if(typeof atualizarTudo==='function') atualizarTudo(); }catch(e){ console.error('tudo:',e); }
-  }).catch(function(e){ console.error('[FB] get historico:', e); setSyncStatus('err'); });
-
+    // Limpeza de órfãos antes de renderizar
+    try{if(typeof limparDadosOrfaos==='function')limparDadosOrfaos();}catch(e){}
+    try{if(typeof renderCriancasCards==='function')renderCriancasCards();}catch(e){}
+    try{if(typeof atualizarTudo==='function')atualizarTudo();}catch(e){console.error('[FB] atualizarTudo:',e);}
+    try{if(typeof atualizarTendencia==='function')atualizarTendencia();}catch(e){}
+    try{if(typeof atualizarRecordes==='function')atualizarRecordes();}catch(e){}
+    try{if(typeof atualizarSemanaResumo==='function')atualizarSemanaResumo();}catch(e){}
+  }
+  _db.collection('historico').get().then(function(snap){
+    var arr=snap.docs.map(function(d){return Object.assign({id:d.id,doseId:d.id},d.data());});
+    arr=typeof dedupHist==='function'?dedupHist(arr):arr;
+    cacheSet('hist',arr);
+    window._fbHist=arr;
+    _histLoaded=true;
+    _onBothLoaded();
+  }).catch(function(e){console.error('[FB] get historico:',e);setSyncStatus('err');
+    _histLoaded=true;_onBothLoaded(); // continuar mesmo com erro
+  });
   _db.collection('log').get().then(function(snap){
-    var arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
-    cacheSet('log', arr);
-    window._fbLog = arr;
-  }).catch(function(e){ console.warn('[FB] get log:', e); });
+    var arr=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
+    cacheSet('log',arr);
+    window._fbLog=arr;
+    _logLoaded=true;
+    _onBothLoaded();
+  }).catch(function(e){console.warn('[FB] get log:',e);
+    _logLoaded=true;_onBothLoaded();
+  });
 
   // onSnapshot realtime — mantém sincronizado após a carga inicial
   window._fbUnsubHist = _db.collection('historico').onSnapshot(
@@ -2505,7 +2518,23 @@ async function doLogin(){
 }
 async function doUnlock(){const err=document.getElementById('lock-err');const h=await hashPwd(document.getElementById('lock-senha').value);if(h!==getHashes()[activeUser]){err.style.display='block';err.textContent='❌ Senha incorreta.';document.getElementById('lock-senha').value='';return;}err.style.display='none';document.getElementById('lock-senha').value='';document.getElementById('tela-bloqueada').style.display='none';resetTimeout();}
 function bloquear(){fecharMenus();document.getElementById('lock-user-txt').textContent=USERS[activeUser].emoji+' '+USERS[activeUser].nome+' — senha para continuar';document.getElementById('tela-bloqueada').style.display='flex';document.getElementById('lock-senha').focus();}
-function fazerLogout(){activeUser=null;selUserKey=null;clearTimeout(_toTimer);clearTimeout(_toBanner);document.getElementById('timeout-banner').style.display='none';document.getElementById('l-senha').value='';document.getElementById('tela-app').style.display='none';document.getElementById('tela-bloqueada').style.display='none';document.getElementById('tela-login').style.display='flex';document.querySelector('.agenda-fab').style.display='none';document.documentElement.removeAttribute('data-user');selUser('pai');fecharMenus();}
+function fazerLogout(){
+  // Cancelar listeners Firebase ANTES de limpar estado
+  if(window._fbUnsubHist){try{window._fbUnsubHist();}catch(e){}window._fbUnsubHist=null;}
+  if(window._fbUnsubLog) {try{window._fbUnsubLog(); }catch(e){}window._fbUnsubLog=null;}
+  // Limpar estado em memória para o próximo login começar limpo
+  window._fbHist=[]; window._fbLog=[];
+  activeUser=null;selUserKey=null;
+  clearTimeout(_toTimer);clearTimeout(_toBanner);
+  document.getElementById('timeout-banner').style.display='none';
+  document.getElementById('l-senha').value='';
+  document.getElementById('tela-app').style.display='none';
+  document.getElementById('tela-bloqueada').style.display='none';
+  document.getElementById('tela-login').style.display='flex';
+  document.querySelector('.agenda-fab').style.display='none';
+  document.documentElement.removeAttribute('data-user');
+  selUser('pai');fecharMenus();
+}
 function checkStrength(){const v=document.getElementById('cp-nova').value;const fill=document.getElementById('ps-fill');const txt=document.getElementById('ps-txt');let s=0;if(v.length>=8)s++;if(v.length>=12)s++;if(/[A-Z]/.test(v))s++;if(/[0-9]/.test(v))s++;if(/[^A-Za-z0-9]/.test(v))s++;const pcts=['0%','20%','40%','60%','80%','100%'];const cols=['#EF4444','#F59E0B','#F59E0B','#10B981','#10B981','#10B981'];const txts=['','Muito fraca','Fraca','Razoável','Boa','Forte','Muito forte'];if(fill){fill.style.width=pcts[s];fill.style.background=cols[s];}if(txt){txt.textContent=txts[s];txt.style.color=cols[s];}}
 async function salvarSenha(){const err=document.getElementById('cp-err');const atual=document.getElementById('cp-atual').value,nova=document.getElementById('cp-nova').value,conf=document.getElementById('cp-conf').value;if(!atual||!nova||!conf){err.style.display='block';err.textContent='❌ Preencha todos.';return;}if(nova!==conf){err.style.display='block';err.textContent='❌ As senhas não coincidem.';return;}if(nova.length<8){err.style.display='block';err.textContent='❌ Mínimo 8 caracteres.';return;}if(await hashPwd(atual)!==getHashes()[activeUser]){err.style.display='block';err.textContent='❌ Senha atual incorreta.';return;}const h=getHashes();h[activeUser]=await hashPwd(nova);setHashes(h);_db.collection('config').doc('hashes').set({pai:h.pai,mae:h.mae,_t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()}).catch(function(e){console.warn('[FB] salvarSenha:',e);});err.style.display='none';['cp-atual','cp-nova','cp-conf'].forEach(id=>document.getElementById(id).value='');alert('✅ Senha alterada!');fecharMo('mo-perfil');}
 
@@ -2664,7 +2693,7 @@ function clicarMed(nome,remedio,periodo,btn){
 
   const regExistente=(window._fbHist||[]).find(r=>
     r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo&&
-    !(r.nota&&r.nota.startsWith('NAO_TOMOU'))&&r.status!=='removida'
+    !(r.nota&&r.nota.startsWith('NAO_TOMOU'))&&(!r.status||r.status==='ativa')
   );
 
   if(regExistente){
@@ -2772,7 +2801,7 @@ function marcarDose(nome,remedio,periodo,btn,nota,doseId){
   // ── Idempotência: verificar novamente (outro dispositivo pode ter registrado) ──
   const jaExiste=(window._fbHist||[]).some(r=>
     r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo&&
-    !(r.nota&&r.nota.startsWith('NAO_TOMOU'))&&r.status!=='removida'
+    !(r.nota&&r.nota.startsWith('NAO_TOMOU'))&&(!r.status||r.status==='ativa')
   );
   if(jaExiste){
     // Tentativa ignorada — log sem criar entrada duplicada
@@ -3732,22 +3761,25 @@ function entrar(){
   renderCriancasCards();renderAdesaoGrid();popularTodosSelects();
   aplicarNomesCriancas();
   document.getElementById('data-hoje').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  // Iniciar listeners Firebase — eles chamam atualizarTudo() quando os dados chegarem
   if(window.fbStartListeners)window.fbStartListeners();
-  // Limpeza de dados órfãos ao iniciar sessão
-  setTimeout(function(){if(typeof limparDadosOrfaos==='function')limparDadosOrfaos();},2000);
   if(window.fbLoadEventos)window.fbLoadEventos();
   if(window.fbLoadCriancas)window.fbLoadCriancas();
   if(window.fbLoadSaude)window.fbLoadSaude();
-  atualizarTudo();resetTimeout();
+  // Limpeza de dados órfãos APÓS dados carregarem
+  setTimeout(function(){if(typeof limparDadosOrfaos==='function')limparDadosOrfaos();},3000);
+  resetTimeout();
   initEmailJS();
   if(!localStorage.getItem('rm_notif_config')){const cfg=getNotifConfig();cfg.emailOn=true;setNotifConfig(cfg);}
   verificarBannerNotif();
-  // Retries de segurança — garantem dashboards mesmo se get() for lento
-  [1000,3000,6000].forEach(function(ms){
+  // Retries de segurança — só atualizam se _fbHist já tiver dados
+  [2000,5000,10000].forEach(function(ms){
     setTimeout(function(){
-      if(typeof atualizarTendencia==='function') try{atualizarTendencia();}catch(e){}
-      if(typeof atualizarRecordes==='function')  try{atualizarRecordes();}catch(e){}
-      if(typeof atualizarSemanaResumo==='function') try{atualizarSemanaResumo();}catch(e){}
+      if(!(window._fbHist||[]).length)return; // não renderizar com histórico vazio
+      try{if(typeof atualizarTudo==='function')atualizarTudo();}catch(e){}
+      try{if(typeof atualizarTendencia==='function')atualizarTendencia();}catch(e){}
+      try{if(typeof atualizarRecordes==='function')atualizarRecordes();}catch(e){}
+      try{if(typeof atualizarSemanaResumo==='function')atualizarSemanaResumo();}catch(e){}
     }, ms);
   });
   setTimeout(()=>{
@@ -4290,18 +4322,24 @@ function abrirHistorico(){
 }
 function renderHistorico(){
   const _criancasValidas=new Set(getCriancas());
-  const dados=getHist();
+  // Usar getHistCompleto para mostrar todas as doses (ativas e removidas)
+  const todosReg=(getHistCompleto()||[]).filter(r=>r&&r.nome&&_criancasValidas.has(r.nome));
+  const dados=todosReg.filter(r=>!r.status||r.status==='ativa');
   const mes=parseInt(document.getElementById('hf-mes')?.value??new Date().getMonth());
   const ano=parseInt(document.getElementById('hf-ano')?.value??new Date().getFullYear());
   const cri=document.getElementById('hf-cri')?.value||'';
   const usr=document.getElementById('hf-usr')?.value||'';
-  const fil=dados.filter(r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes&&(!cri||r.nome===cri)&&(!usr||r.usuario===usr);});
-  const diasM=new Date(ano,mes+1,0).getDate();const espT=totalDoses()*diasM*(cri?1:getCriancas().length);
-  const pctM=espT>0?Math.round(fil.length/espT*100):0;
+  const filtro=r=>{const d=parseDate(r.data);return d.getFullYear()===ano&&d.getMonth()===mes&&(!cri||r.nome===cri)&&(!usr||r.usuario===usr);};
+  const filAtivos=(todosReg||[]).filter(r=>(!r.status||r.status==='ativa')&&filtro(r));
+  const filTodos=(todosReg||[]).filter(filtro);
+  const diasM=new Date(ano,mes+1,0).getDate();
+  const criancasFil=cri?[cri]:getCriancas();
+  const espT=criancasFil.reduce((s,c)=>s+totalDoses(c)*diasM,0);
+  const pctM=espT>0?Math.round(filAtivos.length/espT*100):0;
   const hres=document.getElementById('hres');
-  if(hres&&fil.length)hres.innerHTML='<div class="hres-grid"><div class="hres-item"><div class="hres-val" style="color:var(--ind)">'+pctM+'%</div><div class="hres-lbl">Adesão</div></div><div class="hres-item"><div class="hres-val" style="color:var(--green)">'+fil.length+'</div><div class="hres-lbl">Doses feitas</div></div><div class="hres-item"><div class="hres-val" style="color:var(--red)">'+Math.max(0,espT-fil.length)+'</div><div class="hres-lbl">Faltantes</div></div></div>';
+  if(hres&&filTodos.length)hres.innerHTML='<div class="hres-grid"><div class="hres-item"><div class="hres-val" style="color:var(--ind)">'+pctM+'%</div><div class="hres-lbl">Adesão</div></div><div class="hres-item"><div class="hres-val" style="color:var(--green)">'+filAtivos.length+'</div><div class="hres-lbl">Doses feitas</div></div><div class="hres-item"><div class="hres-val" style="color:var(--red)">'+Math.max(0,espT-filAtivos.length)+'</div><div class="hres-lbl">Faltantes</div></div></div>';
   else if(hres)hres.innerHTML='';
-  const ag={};fil.forEach(r=>{if(!ag[r.data])ag[r.data]=[];ag[r.data].push(r);});
+  const ag={};filTodos.forEach(r=>{if(!ag[r.data])ag[r.data]=[];ag[r.data].push(r);});
   const datas=Object.keys(ag).sort((a,b)=>parseDate(b)-parseDate(a));
   const div=document.getElementById('hlista');if(!div)return;
   if(!datas.length){div.innerHTML='<p style="color:var(--muted);font-size:.8rem;text-align:center;padding:14px">Sem registros neste período.</p>';return;}
@@ -4309,7 +4347,11 @@ function renderHistorico(){
     const pills=ag[d].map(r=>{
       const icon=getIconRemedio(r.remedio);
       const per=({'manha':'☀️','tarde':'🌤️','noite':'🌙'}[r.periodo]||'💊');const u=USERS[r.usuario];const nota=r.nota?' 💬':'';
-      const _hcfg=getCriancaConfig(r.nome);const _hcor=_hcfg.cor||'#6366F1';return '<span class="hpill" style="background:'+_hcor+'22;color:'+_hcor+'" title="'+(r.nota||'')+'">'+icon+' '+r.remedio+' '+per+' '+(u?.emoji||'')+nota+'</span>';
+      const _hcfg=getCriancaConfig(r.nome);const _hcor=_hcfg.cor||'#6366F1';
+      const isRemovida=r.status==='removida';
+      const motivoTitle=isRemovida&&r.motivoRemocao?' | Desfeita — '+r.motivoRemocao:'';
+      const estilo=isRemovida?'background:#F3F4F6;color:#9CA3AF;text-decoration:line-through;opacity:.65':'background:'+_hcor+'22;color:'+_hcor;
+      return '<span class="hpill" style="'+estilo+'" title="'+(r.nota||'')+motivoTitle+'">'+icon+' '+r.remedio+' '+per+' '+(u?.emoji||'')+nota+(isRemovida?' ↩️':'')+'</span>';
     }).join('');
     return '<div class="hdia"><div class="hdata">📅 '+d+'</div><div class="hitems">'+pills+'</div></div>';
   }).join('');
