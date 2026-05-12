@@ -1824,7 +1824,7 @@ function dedupHist(arr){
 }
 window.dedupHist=dedupHist;
 // ── Helper: compatibilidade entre valor legado 'all' e novo 'all' ───────
-function _isAll(v){ return !v||v==='all'||v==='all'; }
+function _isAll(v){ return !v||v==='all'||v==='Ambos'; }
 window._isAll=_isAll;
 
 // getHist: apenas doses ativas (status!='removida') — usado em métricas e cards
@@ -1847,21 +1847,38 @@ function setSyncStatus(s){
 }
 window.setSyncStatus = setSyncStatus;
 
-// ── Carregar histórico (getDocs + onSnapshot) ─────────────
+// ── Carregar histórico (onSnapshot only — get() causava race condition) ────
 window.fbStartListeners = function(){
   if(!_db){ console.warn('[FB] Firestore não disponível'); setSyncStatus('err'); return; }
   setSyncStatus('sync');
 
-  // Cancelar listeners anteriores
+  // Cancelar listeners anteriores ANTES de criar novos
   if(window._fbUnsubHist){ try{ window._fbUnsubHist(); }catch(e){} window._fbUnsubHist=null; }
   if(window._fbUnsubLog) { try{ window._fbUnsubLog();  }catch(e){} window._fbUnsubLog=null;  }
 
-  // ── Carga inicial: get() + log em paralelo, atualizarTudo() APENAS após dados prontos ──
-  var _histLoaded=false, _logLoaded=false;
-  function _onBothLoaded(){
-    if(!_histLoaded||!_logLoaded)return; // aguardar as duas coleções
+  // Limpar estado ao iniciar nova sessão de listeners
+  window._fbHist=[];
+  window._fbLog=[];
+  var _histReady=false, _logReady=false;
+
+  function _sanitizeDoc(data){
+    // Remover campos Firestore Timestamp não serializáveis que causam bugs
+    const out={};
+    Object.keys(data).forEach(function(k){
+      const v=data[k];
+      // Firestore Timestamp tem método toDate()
+      if(v&&typeof v==='object'&&typeof v.toDate==='function'){
+        out[k]=v.toDate().toISOString();
+      } else {
+        out[k]=v;
+      }
+    });
+    return out;
+  }
+
+  function _onReady(){
+    if(!_histReady||!_logReady)return;
     setSyncStatus('ok');
-    // Limpeza de órfãos antes de renderizar
     try{if(typeof limparDadosOrfaos==='function')limparDadosOrfaos();}catch(e){}
     try{if(typeof renderCriancasCards==='function')renderCriancasCards();}catch(e){}
     try{if(typeof atualizarTudo==='function')atualizarTudo();}catch(e){console.error('[FB] atualizarTudo:',e);}
@@ -1869,56 +1886,53 @@ window.fbStartListeners = function(){
     try{if(typeof atualizarRecordes==='function')atualizarRecordes();}catch(e){}
     try{if(typeof atualizarSemanaResumo==='function')atualizarSemanaResumo();}catch(e){}
   }
-  _db.collection('historico').get().then(function(snap){
-    var arr=snap.docs.map(function(d){return Object.assign({id:d.id,doseId:d.id},d.data());});
-    arr=typeof dedupHist==='function'?dedupHist(arr):arr;
-    cacheSet('hist',arr);
-    window._fbHist=arr;
-    _histLoaded=true;
-    _onBothLoaded();
-  }).catch(function(e){console.error('[FB] get historico:',e);setSyncStatus('err');
-    _histLoaded=true;_onBothLoaded(); // continuar mesmo com erro
-  });
-  _db.collection('log').get().then(function(snap){
-    var arr=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
-    cacheSet('log',arr);
-    window._fbLog=arr;
-    _logLoaded=true;
-    _onBothLoaded();
-  }).catch(function(e){console.warn('[FB] get log:',e);
-    _logLoaded=true;_onBothLoaded();
-  });
 
-  // onSnapshot realtime — mantém sincronizado após a carga inicial
+  // onSnapshot dispara imediatamente com TODOS os documentos atuais
+  // E depois dispara novamente a cada mudança — é a fonte única de verdade
   window._fbUnsubHist = _db.collection('historico').onSnapshot(
     function(snap){
-      var arr = snap.docs.map(function(d){ return Object.assign({id:d.id,doseId:d.id}, d.data()); });
-      arr=dedupHist(arr); // deduplicar na recepção — seguro contra escritas simultâneas
-      cacheSet('hist', arr);
-      window._fbHist = arr;
+      var arr=snap.docs.map(function(d){
+        return Object.assign({id:d.id,doseId:d.id},_sanitizeDoc(d.data()));
+      });
+      arr=typeof dedupHist==='function'?dedupHist(arr):arr;
+      cacheSet('hist',arr);
+      window._fbHist=arr;
       setSyncStatus('ok');
-      try{ if(typeof atualizarTendencia==='function') atualizarTendencia(); }catch(e){}
-      try{ if(typeof atualizarRecordes==='function') atualizarRecordes(); }catch(e){}
-      try{ if(typeof atualizarSemanaResumo==='function') atualizarSemanaResumo(); }catch(e){}
-      try{ if(typeof atualizarTudo==='function') atualizarTudo(); }catch(e){}
+      if(!_histReady){
+        _histReady=true;
+        _onReady();
+      } else {
+        // Update incremental — atualizar UI sem reload completo
+        try{if(typeof atualizarTudo==='function')atualizarTudo();}catch(e){}
+      }
     },
     function(err){
-      console.error('[FB] historico onSnapshot erro:', err.code, err.message);
+      console.error('[FB] historico onSnapshot erro:',err.code,err.message);
       setSyncStatus('err');
-      setTimeout(function(){ if(window.fbStartListeners) window.fbStartListeners(); }, 5000);
+      _histReady=true;_onReady(); // continuar mesmo com erro
+      setTimeout(function(){if(window.fbStartListeners)window.fbStartListeners();},5000);
     }
   );
 
   window._fbUnsubLog = _db.collection('log').onSnapshot(
     function(snap){
-      var arr = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
-      cacheSet('log', arr);
-      window._fbLog = arr;
+      var arr=snap.docs.map(function(d){
+        return Object.assign({id:d.id},_sanitizeDoc(d.data()));
+      });
+      cacheSet('log',arr);
+      window._fbLog=arr;
+      if(!_logReady){
+        _logReady=true;
+        _onReady();
+      }
     },
-    function(err){ console.warn('[FB] log onSnapshot erro:', err.code); }
+    function(err){
+      console.warn('[FB] log onSnapshot erro:',err.code);
+      _logReady=true;_onReady();
+    }
   );
 
-  // Carregar configs
+  // Carregar configs em paralelo
   if(window.fbLoadMedsCfg) window.fbLoadMedsCfg(); else if(window.fbLoadMeds) window.fbLoadMeds();
   window.fbLoadObs();
   if(window.fbLoadEventos) window.fbLoadEventos();
@@ -2420,7 +2434,15 @@ function setEventos(e){localStorage.setItem('rm_eventos',JSON.stringify(e));}
 // getHist, getLog, cacheGet, cacheSet — definidos no bloco Firebase acima
 
 function hoje(){return new Date().toLocaleDateString('pt-BR');}
-function hojeISO(){return new Date().toISOString().split('T')[0];}
+// hojeISO: SEMPRE usar data local (não UTC) para evitar divergência de timezone
+// toISOString() retorna UTC — no Brasil UTC-3 às 21h já seria "amanhã" em UTC
+function hojeISO(){
+  const d=new Date();
+  const y=d.getFullYear();
+  const m=String(d.getMonth()+1).padStart(2,'0');
+  const dd=String(d.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+dd;
+}
 // Normaliza qualquer registro para obter dataISO (yyyy-mm-dd)
 function normalizarDataISO(r){
   if(r.dataISO) return r.dataISO;
