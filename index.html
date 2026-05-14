@@ -1958,10 +1958,13 @@ const _doseLocks={};
 
 window.fbAddDose = function(reg){
   const id=_doseId(reg);
-  // ── Idempotência local: não registrar se já existe com mesmo ID ──────────
-  if((window._fbHist||[]).some(r=>_doseId(r)===id&&!(r.nota&&r.nota.startsWith('NAO_TOMOU')))){
-    console.info('[dose] ignorado (já existe local):',id);return;
-  }
+  // ── Idempotência: verificar apenas registros JÁ persistidos no Firebase
+  // (têm r.doseId explícito = vieram do onSnapshot ou foram escritos com doseId)
+  // NÃO bloquear o registro que acabou de ser criado localmente
+  const _alreadyInFB=(window._fbHist||[]).some(r=>
+    r.doseId===id&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))&&(!r.status||r.status==='ativa')
+  );
+  if(_alreadyInFB){console.info('[dose] já no Firebase:',id);return;}
   if(!navigator.onLine){
     const q=JSON.parse(localStorage.getItem('rm_offline_queue')||'[]');
     // Deduplicar fila offline também
@@ -1997,9 +2000,16 @@ window.fbRemoveDose = function(data,nome,remedio,periodo){
 };
 
 window.fbAddLog = function(entry){
-  const id='log_'+Date.now()+'_'+Math.random().toString(36).substr(2,5);
+  if(!_db)return;
+  // ID único: timestamp + random + nome + remedio para evitar colisão
+  const uid=(entry.nome||'x').slice(0,6)+'_'+(entry.remedio||'x').slice(0,6);
+  const id='log_'+Date.now()+'_'+Math.random().toString(36).substr(2,8)+'_'+uid;
   _db.collection('log').doc(id).set(
-    Object.assign({}, entry, {_t: window.APP_TOKEN, ts: firebase.firestore.FieldValue.serverTimestamp()})
+    Object.assign({}, entry, {
+      logId: id,
+      _t: window.APP_TOKEN,
+      ts: firebase.firestore.FieldValue.serverTimestamp()
+    })
   ).catch(function(e){ console.error('[FB] fbAddLog:', e); });
 };
 
@@ -2826,19 +2836,23 @@ function marcarDose(nome,remedio,periodo,btn,nota,doseId){
   }
 
   const data=hoje();const hora=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-  const reg={data,dataISO:hojeISO(),nome,remedio,periodo,hora,usuario:activeUser,nota:nota||null,status:'ativa'};
+  const _regDoseId=hojeISO()+'_'+nome+'_'+remedio+'_'+periodo;
+  // reg inclui doseId IMEDIATAMENTE — essencial para evitar falso positivo
+  // na checagem de idempotência do fbAddDose
+  const reg={data,dataISO:hojeISO(),nome,remedio,periodo,hora,usuario:activeUser,
+             nota:nota||null,status:'ativa',doseId:_regDoseId};
 
-  // ── Idempotência: verificar novamente (outro dispositivo pode ter registrado) ──
+  // ── Idempotência: checar apenas registros que vieram do Firebase (têm doseId definido)
+  // Não checar 'reg' recém criado — ainda não foi para o Firebase
   const jaExiste=(window._fbHist||[]).some(r=>
-    r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo&&
+    r.doseId===_regDoseId&&
     !(r.nota&&r.nota.startsWith('NAO_TOMOU'))&&(!r.status||r.status==='ativa')
   );
   if(jaExiste){
-    // Tentativa ignorada — log sem criar entrada duplicada
     _registrarLog({
       tipo:'tentativa_ignorada',
       acao:'⚠️ Tentativa ignorada — dose já existia: '+remedio+' para '+nome,
-      nome,remedio,periodo,doseId
+      nome,remedio,periodo,doseId:_regDoseId
     });
     atualizarTudo();return;
   }
@@ -2866,8 +2880,10 @@ function _registrarLog({tipo,acao,nome,remedio,periodo,doseId}){
     const jaLogado=(window._fbLog||[]).some(l=>l.doseId===doseId&&l.tipo==='registro');
     if(jaLogado){console.info('[log] tentativa ignorada silenciosamente:',doseId);return;}
   }
+  const _logId='log_'+Date.now()+'_'+Math.random().toString(36).substr(2,6);
   const entry={ts:Date.now(),data,hora,usuario:activeUser,acao,tipo:tipo||'registro',
-    nome:nome||null,remedio:remedio||null,periodo:periodo||null,doseId:doseId||null};
+    nome:nome||null,remedio:remedio||null,periodo:periodo||null,
+    doseId:doseId||null,logId:_logId};
   window._fbLog=[...(window._fbLog||[]),entry];
   if(window.fbAddLog)window.fbAddLog(entry);
 }
@@ -3271,7 +3287,8 @@ function marcarRecuperacao(i){
   const el=document.getElementById('rec-opt-'+i);if(!el)return;
   const {nome,remedio,periodo,df}=el.dataset;
   const hora='08:00';
-  const reg={data:df,dataISO:df.split('/').reverse().join('-'),nome,remedio,periodo,hora,usuario:activeUser,nota:'🔄 Dose de recuperação'};
+  const _recDoseId=df.split('/').reverse().join('-')+'_'+nome+'_'+remedio+'_'+periodo;
+  const reg={data:df,dataISO:df.split('/').reverse().join('-'),nome,remedio,periodo,hora,usuario:activeUser,nota:'🔄 Dose de recuperação',doseId:_recDoseId,status:'ativa'};
   window._fbHist=[...(window._fbHist||[]),reg];if(window.fbAddDose)window.fbAddDose(reg);
   el.classList.add('sel');el.onclick=null;
   setTimeout(()=>{fecharMo('mo-recuperacao');atualizarTudo();},600);
