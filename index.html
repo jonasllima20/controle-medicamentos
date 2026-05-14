@@ -1805,8 +1805,8 @@ function cacheSet(k,v){try{localStorage.setItem('fb_cache_'+k,JSON.stringify(v))
 function cacheGet(k){try{const v=localStorage.getItem('fb_cache_'+k);return v?JSON.parse(v):null;}catch(e){return null;}}
 
 // ── Estado global dos dados ───────────────────────────────
-window._fbHist = cacheGet('hist') || [];
-window._fbLog  = cacheGet('log')  || [];
+window._fbHist = []; // populated by Firebase onSnapshot
+window._fbLog  = []; // populated by Firebase onSnapshot
 window._fbUnsubHist = null;
 window._fbUnsubLog  = null;
 
@@ -1856,21 +1856,28 @@ window.fbStartListeners = function(){
   if(window._fbUnsubHist){ try{ window._fbUnsubHist(); }catch(e){} window._fbUnsubHist=null; }
   if(window._fbUnsubLog) { try{ window._fbUnsubLog();  }catch(e){} window._fbUnsubLog=null;  }
 
-  // Limpar estado ao iniciar nova sessão de listeners
-  window._fbHist=[];
-  window._fbLog=[];
+  // NÃO zerar _fbHist aqui — manter dados existentes como fallback visual
+  // enquanto o onSnapshot do Firebase carrega (evita flash de tela vazia)
+  // O onSnapshot substituirá com dados autoritativos quando chegar
   var _histReady=false, _logReady=false;
 
   function _sanitizeDoc(data){
-    // Remover campos Firestore Timestamp não serializáveis que causam bugs
+    // Converte Timestamp Firestore para string local (nunca UTC)
+    // Preserva todos os outros campos intactos
     const out={};
     Object.keys(data).forEach(function(k){
       const v=data[k];
-      // Firestore Timestamp tem método toDate()
-      if(v&&typeof v==='object'&&typeof v.toDate==='function'){
-        out[k]=v.toDate().toISOString();
+      // Timestamp real: tem toDate() E seconds numérico
+      if(v&&typeof v==='object'&&typeof v.toDate==='function'&&typeof v.seconds==='number'){
+        const d=v.toDate();
+        const y=d.getFullYear();
+        const mo=String(d.getMonth()+1).padStart(2,'0');
+        const dd=String(d.getDate()).padStart(2,'0');
+        const hh=String(d.getHours()).padStart(2,'0');
+        const mm=String(d.getMinutes()).padStart(2,'0');
+        out[k]=y+'-'+mo+'-'+dd+'T'+hh+':'+mm; // hora LOCAL sem Z
       } else {
-        out[k]=v;
+        out[k]=v; // string, number, null, bool — preservar exatamente
       }
     });
     return out;
@@ -2544,8 +2551,9 @@ function fazerLogout(){
   // Cancelar listeners Firebase ANTES de limpar estado
   if(window._fbUnsubHist){try{window._fbUnsubHist();}catch(e){}window._fbUnsubHist=null;}
   if(window._fbUnsubLog) {try{window._fbUnsubLog(); }catch(e){}window._fbUnsubLog=null;}
-  // Limpar estado em memória para o próximo login começar limpo
-  window._fbHist=[]; window._fbLog=[];
+  // Keep _fbHist as display fallback; onSnapshot will refresh on next login
+  // Only clear the log (less critical) to avoid stale log entries
+  window._fbLog=[];
   activeUser=null;selUserKey=null;
   clearTimeout(_toTimer);clearTimeout(_toBanner);
   document.getElementById('timeout-banner').style.display='none';
@@ -3067,7 +3075,7 @@ function salvarObs(del){
 // ═══════════════ TENDÊNCIA SEMANAL ═══════════════
 function atualizarTendencia(){
   const wrap=document.getElementById('tendencia-wrap');if(!wrap)return;
-  if(!window._fbHist||!window._fbHist.length){const cached=cacheGet('hist');if(cached&&cached.length)window._fbHist=cached;}
+  // _fbHist is managed exclusively by Firebase onSnapshot
   const dados=window._fbHist||[];
   const CRIANCAS=getCriancas();
   const totalD=CRIANCAS.reduce((s,c)=>s+getMeds(c).filter(m=>!m.suspenso).reduce((ss,m)=>ss+getPeriodosMed(m).length,0),0);
@@ -3154,7 +3162,7 @@ function atualizarTendencia(){
 // ═══════════════ RECORDES ═══════════════
 function atualizarRecordes(){
   const wrap=document.getElementById('recordes-wrap');if(!wrap)return;
-  if(!window._fbHist||!window._fbHist.length){const cached=cacheGet('hist');if(cached&&cached.length)window._fbHist=cached;}
+  // _fbHist is managed exclusively by Firebase onSnapshot
   const dados=window._fbHist||[];
   if(!dados.length){
     wrap.innerHTML=`<div style="text-align:center;padding:16px 0">
