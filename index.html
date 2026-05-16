@@ -1958,13 +1958,10 @@ const _doseLocks={};
 
 window.fbAddDose = function(reg){
   const id=_doseId(reg);
-  // ── Idempotência: verificar apenas registros JÁ persistidos no Firebase
-  // (têm r.doseId explícito = vieram do onSnapshot ou foram escritos com doseId)
-  // NÃO bloquear o registro que acabou de ser criado localmente
-  const _alreadyInFB=(window._fbHist||[]).some(r=>
-    r.doseId===id&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))&&(!r.status||r.status==='ativa')
-  );
-  if(_alreadyInFB){console.info('[dose] já no Firebase:',id);return;}
+  // ── SEM verificação local: Firestore merge:true É a garantia de idempotência ──
+  // Verificar _fbHist aqui causava o bug crítico: reg adicionado localmente
+  // em marcarDose() era encontrado e o write ao Firestore era bloqueado,
+  // fazendo a dose existir APENAS em memória e desaparecer no próximo login.
   if(!navigator.onLine){
     const q=JSON.parse(localStorage.getItem('rm_offline_queue')||'[]');
     // Deduplicar fila offline também
