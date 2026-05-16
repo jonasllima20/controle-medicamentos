@@ -1811,16 +1811,27 @@ window._fbUnsubHist = null;
 window._fbUnsubLog  = null;
 
 // ── Helpers de acesso ─────────────────────────────────────
-// dedupHist: remove duplicatas por doseId determinístico — proteção contra race condition
+// dedupHist: mantém UMA entrada por doseId — status=removida SEMPRE prevalece
 function dedupHist(arr){
   if(!Array.isArray(arr))return[];
-  const seen=new Set();
-  return arr.filter(r=>{
-    if(!r||!r.nome||!r.remedio||!r.periodo)return false;
-    const id=r.doseId||((r.dataISO||r.data||'')+'_'+r.nome+'_'+r.remedio+'_'+r.periodo);
-    if(seen.has(id))return false;
-    seen.add(id);return true;
+  const map={};
+  arr.forEach(function(r){
+    if(!r||!r.nome||!r.remedio||!r.periodo)return;
+    const id=r.doseId||r.id||((r.dataISO||r.data||'')+'_'+r.nome+'_'+r.remedio+'_'+r.periodo);
+    if(!id)return;
+    const prev=map[id];
+    if(!prev){map[id]=r;return;}
+    const rRem=r.status==='removida'||r.status==='removed'||r.status==='desfeita'||r.status==='undone';
+    const pRem=prev.status==='removida'||prev.status==='removed'||prev.status==='desfeita'||prev.status==='undone';
+    // status=removida sempre prevalece sobre ativa
+    if(rRem&&!pRem){map[id]=r;return;}
+    if(!rRem&&pRem)return; // manter prev (removida)
+    // Ambos iguais: manter o mais recente por ts
+    const rTs=typeof r.ts==='string'?new Date(r.ts).getTime():(r.ts&&r.ts.seconds?r.ts.seconds*1000:0);
+    const pTs=typeof prev.ts==='string'?new Date(prev.ts).getTime():(prev.ts&&prev.ts.seconds?prev.ts.seconds*1000:0);
+    if(rTs>pTs)map[id]=r;
   });
+  return Object.values(map);
 }
 window.dedupHist=dedupHist;
 // ── Helper: compatibilidade entre valor legado 'all' e novo 'all' ───────
@@ -1828,8 +1839,15 @@ function _isAll(v){ return !v||v==='all'||v==='Ambos'; }
 window._isAll=_isAll;
 
 // getHist: apenas doses ativas (status!='removida') — usado em métricas e cards
-// status===undefined significa dose ativa (dados antigos não têm o campo)
-function getHist(){ return dedupHist((window._fbHist||[]).filter(r=>!r.status||r.status==='ativa')); }
+// getHist: exclui doses com qualquer status de remoção
+function getHist(){
+  return dedupHist((window._fbHist||[]).filter(r=>{
+    if(!r||!r.nome)return false;
+    const s=r.status;
+    if(s==='removida'||s==='removed'||s==='desfeita'||s==='undone')return false;
+    return true;
+  }));
+}
 // getHistCompleto: inclui doses removidas — usado no histórico completo com badge de status
 function getHistCompleto(){ return dedupHist(window._fbHist||[]); }
 function getLog() { return window._fbLog  || []; }
@@ -2736,7 +2754,9 @@ function clicarMed(nome,remedio,periodo,btn){
   if(regExistente){
     // Dose já registrada — mostrar modal informativo em vez de desmarcar silenciosamente
     delete _doseLocks[doseId]; // libera lock pois não vai escrever agora
-    _doseCtx={nome,remedio,periodo,btn,doseId,regExistente};
+    // CRÍTICO: usar doseId do registro real (doc.id do Firestore), não o calculado localmente
+    const realDoseId=regExistente.doseId||regExistente.id||doseId;
+    _doseCtx={nome,remedio,periodo,btn,doseId:realDoseId,regExistente};
     const per={'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo;
     const quemReg=regExistente.usuario||'—';
     const hora=regExistente.hora||'—';
@@ -2788,22 +2808,28 @@ function _confirmarDesfazer(){
   fecharMo('mo-desfazer-dose');
 
   const data=hoje();
-  // Marcar dose como status='removida' em vez de deletar — audit trail
+  const removidaEm=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  const _updateFields={status:'removida',motivoRemocao:motivoFull,removidaPor:activeUser,removidaEm};
+
+  // Atualizar _fbHist local — checar por doseId primeiro (mais confiável)
   window._fbHist=(window._fbHist||[]).map(r=>{
-    if(r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo&&r.status!=='removida'){
-      return Object.assign({},r,{status:'removida',motivoRemocao:motivoFull,removidaPor:activeUser,removidaEm:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})});
-    }
+    const rid=r.doseId||r.id;
+    if(rid&&rid===doseId&&r.status!=='removida') return Object.assign({},r,_updateFields);
+    // Fallback por data+criança+remédio+período
+    if(!rid&&r.data===data&&r.nome===nome&&r.remedio===remedio&&r.periodo===periodo&&r.status!=='removida') return Object.assign({},r,_updateFields);
     return r;
   });
 
-  // Atualizar no Firestore com status='removida' (não deletar)
+  // Persistir no Firestore usando o doc.id real (vindo do _doseCtx)
   if(window._db){
+    console.info('[undo] Gravando status=removida no Firestore, doc:',doseId);
     window._db.collection('historico').doc(doseId).set(
-      {status:'removida',motivoRemocao:motivoFull,removidaPor:activeUser,
-       removidaEm:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),
-       _t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()},
+      Object.assign({},_updateFields,{
+        _t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()
+      }),
       {merge:true}
-    ).catch(function(e){console.error('[FB] desfazer dose:',e);});
+    ).then(function(){ console.info('[undo] Firestore OK:',doseId); })
+     .catch(function(e){ console.error('[undo] FALHOU:',e,'doc:',doseId); });
   }
 
   // Log com tipo='desfeita' — não gera nova entrada de "marcou"
