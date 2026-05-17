@@ -2510,7 +2510,8 @@ function getResumoDia(dados,df){
   const esperado=totalDosesDiario(df.includes('/')?_dfToISO(df):df);
   const tomadas=contarDosesDia(dados,df);
   const naoTomou=dados.filter(r=>r.data===df&&r.nota&&r.nota.startsWith('NAO_TOMOU')).length;
-  const registros=dados.filter(r=>r.data===df);
+  // Excluir registros removidos ao calcular resumo do dia
+  const registros=dados.filter(r=>r.data===df&&r.status!=='removida'&&r.status!=='removed'&&r.status!=='desfeita');
   return{
     df,                                   // "dd/mm/yyyy"
     esperado,                             // total de doses esperadas
@@ -2526,8 +2527,9 @@ function getResumoDia(dados,df){
 function getResumoDiaCrianca(dados,df,crianca){
   const dISO=df.includes('/')?_dfToISO(df):df;
   const esperado=totalDoses(crianca,dISO);
-  const tomadas=dados.filter(r=>r.data===df&&r.nome===crianca&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
-  const temDados=dados.some(r=>r.data===df&&r.nome===crianca);
+  const _isRem=r=>r.status==='removida'||r.status==='removed'||r.status==='desfeita'||r.status==='undone';
+  const tomadas=dados.filter(r=>r.data===df&&r.nome===crianca&&!_isRem(r)&&!(r.nota&&r.nota.startsWith('NAO_TOMOU'))).length;
+  const temDados=dados.some(r=>r.data===df&&r.nome===crianca&&!_isRem(r));
   return{df,crianca,esperado,tomadas,temDados,concluido:esperado>0&&tomadas>=esperado,pct:esperado>0?Math.round(tomadas/esperado*100):0};
 }
 // doseEsperada: retorna true se um remédio+criança+período deveria ser aplicado
@@ -2695,7 +2697,8 @@ function renderCards(){
     const cont=document.getElementById('ml-'+nome);if(!cont)return;cont.innerHTML='';
     lista.forEach(med=>{
       const suspenso=!!med.suspenso;
-      const reg=!suspenso&&dados.find(r=>r.data===dHj&&r.nome===nome&&r.remedio===med.remedio&&r.periodo===per);
+      const _isRemReg=r=>r.status==='removida'||r.status==='removed'||r.status==='desfeita'||r.status==='undone';
+      const reg=!suspenso&&dados.find(r=>r.data===dHj&&r.nome===nome&&r.remedio===med.remedio&&r.periodo===per&&!_isRemReg(r));
       const done=!!reg;
       // Horário específico desta criança (já é individual no novo modelo)
       const horaAlvo=getMedHorario(med,per)||'';
@@ -3114,8 +3117,7 @@ function salvarObs(del){
 // ═══════════════ TENDÊNCIA SEMANAL ═══════════════
 function atualizarTendencia(){
   const wrap=document.getElementById('tendencia-wrap');if(!wrap)return;
-  // _fbHist is managed exclusively by Firebase onSnapshot
-  const dados=window._fbHist||[];
+  const dados=getHist(); // usar getHist() para excluir status=removida
   const CRIANCAS=getCriancas();
   const totalD=CRIANCAS.reduce((s,c)=>s+getMeds(c).filter(m=>!m.suspenso).reduce((ss,m)=>ss+getPeriodosMed(m).length,0),0);
   const espSem=Math.max(1,totalD*7);
@@ -3201,8 +3203,7 @@ function atualizarTendencia(){
 // ═══════════════ RECORDES ═══════════════
 function atualizarRecordes(){
   const wrap=document.getElementById('recordes-wrap');if(!wrap)return;
-  // _fbHist is managed exclusively by Firebase onSnapshot
-  const dados=window._fbHist||[];
+  const dados=getHist(); // usar getHist() para excluir status=removida
   if(!dados.length){
     wrap.innerHTML=`<div style="text-align:center;padding:16px 0">
       <div style="font-size:2rem;margin-bottom:8px">🏆</div>
@@ -3707,7 +3708,7 @@ function atualizarGrafico(){
 // ═══════════════ PIZZA ═══════════════
 let pizzaInst=null;
 function atualizarPizza(){
-  const dados=window._fbHist||cacheGet('hist')||[];
+  const dados=getHist(); // usar getHist() para excluir status=removida
   const ctx=document.getElementById('grafico-pizza')?.getContext('2d');if(!ctx)return;
   if(pizzaInst)pizzaInst.destroy();
   const medsUnicos=getMedsNomes();
@@ -4270,7 +4271,7 @@ function atualizarSemanaResumo(){
     const cached=cacheGet('hist');
     if(cached&&cached.length) window._fbHist=cached;
   }
-  const dados=window._fbHist||[];
+  const dados=getHist(); // usar getHist() para excluir status=removida
   const now=new Date();const CRIANCAS=getCriancas();
   const DIAS_PT=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
 
