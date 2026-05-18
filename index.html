@@ -1619,7 +1619,8 @@ input,textarea,select,button{font-family:'DM Sans',sans-serif}
     <div class="mt">🔄 Registrar dose de ontem?</div>
     <div id="rec-context" style="font-size:.8rem;color:var(--muted);margin-bottom:12px"></div>
     <div id="rec-opcoes"></div>
-    <div class="mbtns">
+    <div class="mbtns" style="flex-wrap:wrap;gap:8px">
+      <button class="mbtn save" onclick="marcarTodasRecuperacao()" style="background:var(--green)">✅ Marcar todas</button>
       <button class="mbtn cancel" onclick="fecharMo('mo-recuperacao')">Não, obrigado</button>
     </div>
   </div>
@@ -1765,6 +1766,25 @@ if(typeof firebase === 'undefined'){
 const _fbApp = typeof firebase !== 'undefined' ? firebase.initializeApp(_FB_CONFIG) : null;
 const _db    = _fbApp ? firebase.firestore() : null;
 window._fbDb = _db;
+
+// ══════════════════════════════════════════════════════════════════════
+// VERSIONAMENTO — SemVer profissional
+// ══════════════════════════════════════════════════════════════════════
+const APP_VERSION = '1.8.0';
+const APP_ENV     = 'HML';
+const APP_BUILD   = '2026-05-17.01';
+const APP_COLOR   = '🟡';
+
+// Log de build no console
+console.info('[APP VERSION]', {
+  version: APP_VERSION,
+  env: APP_ENV,
+  build: APP_BUILD,
+  firebase: typeof _FB_CONFIG !== 'undefined' ? _FB_CONFIG.projectId : 'n/a'
+});
+window.APP_VERSION = APP_VERSION;
+window.APP_ENV = APP_ENV;
+window.APP_BUILD = APP_BUILD;
 window.APP_TOKEN = "rem-fam-2026-HML-xK9mQzP4";
 window.HML_DEBUG=true; // Logs de integridade ativos no HML
 // ── Prefixo de localStorage isolado para HML ─────────────
@@ -1812,6 +1832,12 @@ window._fbUnsubLog  = null;
 
 // ── Helpers de acesso ─────────────────────────────────────
 // dedupHist: mantém UMA entrada por doseId — status=removida SEMPRE prevalece
+// REGRA ABSOLUTA: remoção ganha sobre ativo sem exceção, independente de timestamp
+function _isStatusRemovido(r){
+  const s=r&&r.status;
+  return s==='removida'||s==='removed'||s==='desfeita'||s==='undone';
+}
+window._isStatusRemovido=_isStatusRemovido;
 function dedupHist(arr){
   if(!Array.isArray(arr))return[];
   const map={};
@@ -1821,15 +1847,10 @@ function dedupHist(arr){
     if(!id)return;
     const prev=map[id];
     if(!prev){map[id]=r;return;}
-    const rRem=r.status==='removida'||r.status==='removed'||r.status==='desfeita'||r.status==='undone';
-    const pRem=prev.status==='removida'||prev.status==='removed'||prev.status==='desfeita'||prev.status==='undone';
-    // status=removida sempre prevalece sobre ativa
-    if(rRem&&!pRem){map[id]=r;return;}
-    if(!rRem&&pRem)return; // manter prev (removida)
-    // Ambos iguais: manter o mais recente por ts
-    const rTs=typeof r.ts==='string'?new Date(r.ts).getTime():(r.ts&&r.ts.seconds?r.ts.seconds*1000:0);
-    const pTs=typeof prev.ts==='string'?new Date(prev.ts).getTime():(prev.ts&&prev.ts.seconds?prev.ts.seconds*1000:0);
-    if(rTs>pTs)map[id]=r;
+    // Removida SEMPRE ganha — sem comparação de timestamp
+    if(_isStatusRemovido(r)&&!_isStatusRemovido(prev)){map[id]=r;return;}
+    if(!_isStatusRemovido(r)&&_isStatusRemovido(prev)){return;}
+    // Mesmo status: manter (onSnapshot garante ordem correta)
   });
   return Object.values(map);
 }
@@ -1839,14 +1860,9 @@ function _isAll(v){ return !v||v==='all'||v==='Ambos'; }
 window._isAll=_isAll;
 
 // getHist: apenas doses ativas (status!='removida') — usado em métricas e cards
-// getHist: exclui doses com qualquer status de remoção
+// getHist: fonte única de verdade — sempre via dedupHist + filtro de remoção
 function getHist(){
-  return dedupHist((window._fbHist||[]).filter(r=>{
-    if(!r||!r.nome)return false;
-    const s=r.status;
-    if(s==='removida'||s==='removed'||s==='desfeita'||s==='undone')return false;
-    return true;
-  }));
+  return dedupHist((window._fbHist||[]).filter(r=>r&&r.nome&&!_isStatusRemovido(r)));
 }
 // getHistCompleto: inclui doses removidas — usado no histórico completo com badge de status
 function getHistCompleto(){ return dedupHist(window._fbHist||[]); }
@@ -1916,18 +1932,49 @@ window.fbStartListeners = function(){
   // E depois dispara novamente a cada mudança — é a fonte única de verdade
   window._fbUnsubHist = _db.collection('historico').onSnapshot(
     function(snap){
-      var arr=snap.docs.map(function(d){
-        return Object.assign({id:d.id,doseId:d.id},_sanitizeDoc(d.data()));
-      });
-      arr=typeof dedupHist==='function'?dedupHist(arr):arr;
-      cacheSet('hist',arr);
-      window._fbHist=arr;
+      // Usar docChanges() para merge incremental — evita race conditions
+      // onde estado antigo sobrescreve estado novo
+      var isFirstLoad=!_histReady;
+      if(isFirstLoad){
+        // Primeiro load: reconstruir _fbHist completo do Firestore
+        var arr=snap.docs.map(function(d){
+          return Object.assign({id:d.id,doseId:d.id},_sanitizeDoc(d.data()));
+        });
+        arr=typeof dedupHist==='function'?dedupHist(arr):arr;
+        window._fbHist=arr;
+      } else {
+        // Updates subsequentes: aplicar apenas as mudanças (docChanges)
+        // Isso preserva status=removida que foi definido localmente
+        var changes=snap.docChanges();
+        var current={};
+        (window._fbHist||[]).forEach(function(r){
+          var k=r.doseId||r.id;
+          if(k)current[k]=r;
+        });
+        changes.forEach(function(change){
+          var d=change.doc;
+          var doc=Object.assign({id:d.id,doseId:d.id},_sanitizeDoc(d.data()));
+          if(change.type==='removed'){
+            delete current[d.id];
+          } else {
+            // Para modified: aplicar apenas se o doc do Firestore tiver
+            // status=removida, ou se o estado local não tiver removida
+            var prev=current[d.id];
+            if(!prev||_isStatusRemovido(doc)||!_isStatusRemovido(prev)){
+              current[d.id]=doc;
+            }
+            // Se local já tem removida mas Firestore manda ativa: manter removida local
+            // (write para Firestore ainda pode estar em trânsito)
+          }
+        });
+        var arr=typeof dedupHist==='function'?dedupHist(Object.values(current)):Object.values(current);
+        window._fbHist=arr;
+      }
       setSyncStatus('ok');
       if(!_histReady){
         _histReady=true;
         _onReady();
       } else {
-        // Update incremental — atualizar UI sem reload completo
         try{if(typeof atualizarTudo==='function')atualizarTudo();}catch(e){}
       }
     },
@@ -2201,6 +2248,7 @@ function removerCrianca(nome){
 
   mostrarNotifInApp('✅ Removido',''+nome+' e todos os dados vinculados foram removidos.','ok');
   renderCriancasCards();renderAdesaoGrid();popularTodosSelects();
+  if(typeof renderVersionBadge==='function')renderVersionBadge();
   aplicarNomesCriancas();atualizarTudo();abrirCriancasConfig();
 }
 window.removerCrianca=removerCrianca;
@@ -2823,16 +2871,48 @@ function _confirmarDesfazer(){
     return r;
   });
 
-  // Persistir no Firestore usando o doc.id real (vindo do _doseCtx)
+  // Persistir no Firestore — verificar se o doc existe pelo doseId
+  // Se não existir, buscar pelo conteúdo (nome+remedio+periodo+data)
   if(window._db){
-    console.info('[undo] Gravando status=removida no Firestore, doc:',doseId);
-    window._db.collection('historico').doc(doseId).set(
-      Object.assign({},_updateFields,{
-        _t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()
-      }),
-      {merge:true}
-    ).then(function(){ console.info('[undo] Firestore OK:',doseId); })
-     .catch(function(e){ console.error('[undo] FALHOU:',e,'doc:',doseId); });
+    console.info('[undo] Gravando status=removida, doc:',doseId);
+    (function(){
+      var writeStatus=function(targetId){
+        return window._db.collection('historico').doc(targetId).set(
+          Object.assign({},_updateFields,{_t:window.APP_TOKEN,ts:firebase.firestore.FieldValue.serverTimestamp()}),
+          {merge:true}
+        );
+      };
+      // Tentar com o doseId que temos
+      window._db.collection('historico').doc(doseId).get()
+        .then(function(snap){
+          if(snap.exists){
+            return writeStatus(doseId);
+          }
+          // Doc não existe com esse ID — buscar por conteúdo
+          console.warn('[undo] Doc não encontrado:',doseId,'— buscando por nome+remedio+periodo+data');
+          return window._db.collection('historico')
+            .where('nome','==',nome)
+            .where('remedio','==',remedio)
+            .where('periodo','==',periodo)
+            .where('data','==',data)
+            .get()
+            .then(function(q){
+              if(q.empty){
+                console.error('[undo] Nenhum doc encontrado para desfazer');
+                return;
+              }
+              // Atualizar todos os docs que correspondem (pode haver mais de um)
+              return Promise.all(q.docs.map(function(d){
+                console.info('[undo] Encontrado por conteúdo:',d.id);
+                // Atualizar também o _doseCtx.doseId para futuros refs
+                if(_doseCtx)_doseCtx.doseId=d.id;
+                return writeStatus(d.id);
+              }));
+            });
+        })
+        .then(function(){console.info('[undo] Firestore OK');})
+        .catch(function(e){console.error('[undo] FALHOU:',e);});
+    })();
   }
 
   // Log com tipo='desfeita' — não gera nova entrada de "marcou"
@@ -3312,11 +3392,42 @@ function marcarRecuperacao(i){
   const {nome,remedio,periodo,df}=el.dataset;
   const hora='08:00';
   const _recDoseId=df.split('/').reverse().join('-')+'_'+nome+'_'+remedio+'_'+periodo;
-  const reg={data:df,dataISO:df.split('/').reverse().join('-'),nome,remedio,periodo,hora,usuario:activeUser,nota:'🔄 Dose de recuperação',doseId:_recDoseId,status:'ativa'};
+  const _recDataISO=df.split('/').reverse().join('-');
+  const _regDataISO=hojeISO();
+  const reg={data:df,dataISO:_recDataISO,nome,remedio,periodo,hora,usuario:activeUser,
+             nota:'⏪ Dose retroativa',doseId:_recDoseId,status:'ativa',
+             retroativo:true,dataOriginal:_recDataISO,dataRegistro:_regDataISO};
   window._fbHist=[...(window._fbHist||[]),reg];if(window.fbAddDose)window.fbAddDose(reg);
   el.classList.add('sel');el.onclick=null;
   setTimeout(()=>{fecharMo('mo-recuperacao');atualizarTudo();},600);
 }
+function marcarTodasRecuperacao(){
+  // Aplicar todas as doses pendentes do modal de recuperação
+  const items=document.querySelectorAll('#rec-lista [id^="rec-opt-"]');
+  let count=0;
+  items.forEach(function(el){
+    if(!el.classList.contains('sel')){
+      const {nome,remedio,periodo,df}=el.dataset;
+      const _recDataISO=df.split('/').reverse().join('-');
+      const _recDoseId=_recDataISO+'_'+nome+'_'+remedio+'_'+periodo;
+      const reg={data:df,dataISO:_recDataISO,nome,remedio,periodo,hora:'08:00',
+                 usuario:activeUser,nota:'⏪ Dose retroativa',doseId:_recDoseId,status:'ativa',
+                 retroativo:true,dataOriginal:_recDataISO,dataRegistro:hojeISO()};
+      // Verificar se já não existe
+      const jaExiste=(window._fbHist||[]).some(r=>r.doseId===_recDoseId&&!_isStatusRemovido(r));
+      if(!jaExiste){
+        window._fbHist=dedupHist([...(window._fbHist||[]),reg]);
+        if(window.fbAddDose)window.fbAddDose(reg);
+        _registrarLog({tipo:'registro',acao:'⏪ Dose retroativa: '+remedio+' ('+({'manha':'manhã','tarde':'tarde','noite':'noite'}[periodo]||periodo)+') para '+nome+' — Data original: '+df,nome,remedio,periodo,doseId:_recDoseId});
+        count++;
+      }
+      el.classList.add('sel');el.onclick=null;
+    }
+  });
+  setTimeout(function(){fecharMo('mo-recuperacao');atualizarTudo();},400);
+  if(count>0) mostrarNotifInApp('✅ '+count+' doses registradas','Doses retroativas salvas no Firebase.','ok');
+}
+window.marcarTodasRecuperacao=marcarTodasRecuperacao;
 
 // ═══════════════ RENDERIZAÇÃO DINÂMICA DE CRIANÇAS ═══════════════
 
@@ -3830,6 +3941,7 @@ function entrar(){
   document.querySelector('.agenda-fab')?.style&&(document.querySelector('.agenda-fab').style.display='flex');
   initDark();aplicarAvatares();atualizarHeaderUser();
   renderCriancasCards();renderAdesaoGrid();popularTodosSelects();
+  if(typeof renderVersionBadge==='function')renderVersionBadge();
   aplicarNomesCriancas();
   document.getElementById('data-hoje').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   // Iniciar listeners Firebase — eles chamam atualizarTudo() quando os dados chegarem
@@ -4422,7 +4534,9 @@ function renderHistorico(){
       const isRemovida=r.status==='removida';
       const motivoTitle=isRemovida&&r.motivoRemocao?' | Desfeita — '+r.motivoRemocao:'';
       const estilo=isRemovida?'background:#F3F4F6;color:#9CA3AF;text-decoration:line-through;opacity:.65':'background:'+_hcor+'22;color:'+_hcor;
-      return '<span class="hpill" style="'+estilo+'" title="'+(r.nota||'')+motivoTitle+'">'+icon+' '+r.remedio+' '+per+' '+(u?.emoji||'')+nota+(isRemovida?' ↩️':'')+'</span>';
+      const isRetroativo=r.retroativo===true;
+      const retroTag=isRetroativo&&!isRemovida?' <span style="font-size:.6rem;background:#FEF3C7;color:#B45309;border-radius:4px;padding:1px 4px">⏪</span>':'';
+      return '<span class="hpill" style="'+estilo+'" title="'+(r.nota||'')+motivoTitle+'">'+icon+' '+r.remedio+' '+per+' '+(u?.emoji||'')+nota+retroTag+(isRemovida?' ↩️':'')+'</span>';
     }).join('');
     return '<div class="hdia"><div class="hdata">📅 '+d+'</div><div class="hitems">'+pills+'</div></div>';
   }).join('');
@@ -5131,6 +5245,21 @@ document.querySelector('.agenda-fab').style.display='none';
 mostrarSplash();
 initAuth();
 initDark();
+// ── Renderizar badge de versão no rodapé ────────────────────────────────
+function renderVersionBadge(){
+  var badge=document.getElementById('app-version-badge');
+  if(!badge){
+    badge=document.createElement('div');
+    badge.id='app-version-badge';
+    badge.style.cssText='position:fixed;bottom:8px;left:50%;transform:translateX(-50%);font-size:.65rem;color:var(--muted);background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:3px 10px;z-index:9000;pointer-events:none;white-space:nowrap;opacity:.7';
+    document.body.appendChild(badge);
+  }
+  var envColor={'HML':'#F59E0B','PRD':'#10B981','DEV':'#EF4444'};
+  var dot='<span style="color:'+(envColor[APP_ENV]||'#6B7280')+';font-size:.8rem">●</span>';
+  badge.innerHTML=dot+' v'+APP_VERSION+' | '+APP_ENV+' | build '+APP_BUILD;
+}
+window.renderVersionBadge=renderVersionBadge;
+
 if('serviceWorker' in navigator) initServiceWorker();
 </script>
 <audio id="audio-celebracao" src="trombetas.mp3" preload="auto"></audio>
